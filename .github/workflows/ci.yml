@@ -47,3 +47,11 @@ jobs:
         env:
           ARBRUME_GLB_OUT: ${{ runner.temp }}/glb
       - run: node tools/validate_glb.mjs "$RUNNER_TEMP/glb"
+      - name: Generate every preset with the command line
+        run: |
+          cargo build -p arbrume
+          for species in $(target/debug/arbrume species list | cut -f1); do
+            target/debug/arbrume gen --species "$species" --count 2 --seed 1 \
+              --age-range 8..20 --lods 2 --out "$RUNNER_TEMP/presets" --quiet
+          done
+      - run: node tools/validate_glb.mjs "$RUNNER_TEMP/presets"

@@ -1,0 +1,62 @@
+//! Species presets embedded in the library.
+//!
+//! Each preset is a species file in `crates/arbrume-gen/species/`, compiled into the
+//! binary. To add one, drop `<name>.toml` in that directory and add its line to
+//! [`PRESETS`]; the tests generate and export every preset.
+
+use arbrume_core::species::Species;
+
+/// Name and TOML text of every preset, sorted by name.
+const PRESETS: &[(&str, &str)] = &[
+    ("broadleaf", include_str!("../species/broadleaf.toml")),
+    ("conifer", include_str!("../species/conifer.toml")),
+    ("shrub", include_str!("../species/shrub.toml")),
+];
+
+/// Name and TOML text of every built-in preset, sorted by name.
+#[must_use]
+pub const fn presets() -> &'static [(&'static str, &'static str)] {
+    PRESETS
+}
+
+/// TOML text of the preset `name`.
+#[must_use]
+pub fn preset_toml(name: &str) -> Option<&'static str> {
+    PRESETS
+        .iter()
+        .find(|(preset, _)| *preset == name)
+        .map(|(_, text)| *text)
+}
+
+/// The parsed preset `name`, or `None` if there is no such preset.
+///
+/// # Panics
+///
+/// Panics if the embedded file is not a valid species, which the tests of this crate
+/// rule out.
+#[must_use]
+pub fn preset(name: &str) -> Option<Species> {
+    preset_toml(name).map(|text| {
+        Species::from_toml_str(text)
+            .unwrap_or_else(|error| panic!("built-in preset `{name}` is invalid: {error}"))
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{preset, preset_toml, presets};
+
+    #[test]
+    fn presets_are_sorted_valid_and_found_by_name() {
+        let names: Vec<&str> = presets().iter().map(|(name, _)| *name).collect();
+        let mut sorted = names.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(names, sorted);
+        for name in names {
+            assert!(preset(name).is_some());
+            assert!(preset_toml(name).is_some());
+        }
+        assert!(preset("no such preset").is_none());
+    }
+}

@@ -1,0 +1,62 @@
+# Starter broadleaf tree for the parametric mode of arbrume-grow.
+#
+# An illustrative deciduous tree with a rounded crown, not a measured species: every
+# value is a starting point for tuning.
+
+schema_version = 0
+name = "Starter broadleaf"
+
+[architecture]
+branching = "monopodial"
+growth_rhythm = "rhythmic"
+branching_pattern = "diffuse"
+branch_timing = "proleptic"
+max_order = 3
+phyllotaxis = { leaves_per_node = 1, divergence_deg = 137.5 }
+
+# Erect trunk; branches with leaves and twigs in two ranks.
+[[architecture.axes]]
+orientation = "orthotropic"
+
+[[architecture.axes]]
+orientation = "plagiotropic"
+phyllotaxis = { leaves_per_node = 1, divergence_deg = 180.0 }
+
+[growth]
+# Trunk height, then branch length over the attachment position: the order 1 curve
+# draws a crown that is widest in its lower third.
+axis_length = { by_order = [
+    10.0,
+    { points = [[0.0, 3.0], [0.35, 4.5], [0.7, 3.2], [1.0, 0.8]], interp = "smooth" },
+    [[0.0, 1.8], [1.0, 0.7]],
+    0.4,
+] }
+shoot_length = { by_order = [0.5, 0.45, 0.3, 0.2] }
+length_variation = 0.15
+internode_length = { by_order = [0.25, 0.2, 0.08, 0.05] }
+branch_probability = { by_order = [0.6, 0.5, 0.7] }
+bare_base = { by_order = [0.25, 0.1, 0.0] }
+# Wide angles low on the trunk, narrower near the top.
+branching_angle = { by_order = [50.0, [[0.0, 75.0], [1.0, 40.0]], 50.0] }
+branching_angle_variation = 8.0
+direction_variation = { by_order = [1.5, 4.0, 8.0] }
+gnarl = { by_order = [4.0, 12.0, 20.0] }
+curvature = { by_order = [0.0, [[0.0, 20.0], [0.5, 0.0], [1.0, -25.0]], 0.0] }
+gravitropic_setpoint = { by_order = [0.0, 70.0, 80.0] }
+tropism_weight = { by_order = [0.05, 0.03] }
+# The leader may split in the upper half of the trunk.
+fork_probability = { by_order = [[[0.0, 0.0], [0.5, 0.0], [0.6, 0.15], [1.0, 0.15]], 0.0] }
+fork_angle = 18.0
+weight_bending = 2e-6
+
+[geometry]
+radius_model = "pipe"
+pipe_exponent = 2.3
+tip_radius = 0.0025
+
+[foliage]
+length = 0.09
+width_ratio = 0.6
+size_along_axis = [[0.0, 0.7], [1.0, 1.0]]
+inclination_deg = 50.0
+retention_cycles = 1
