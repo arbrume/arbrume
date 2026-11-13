@@ -51,6 +51,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "arbrume-gen"
+version = "0.0.1"
+
+[[package]]
 name = "arbrume-grow"
 version = "0.0.1"
 dependencies = [
@@ -74,6 +78,10 @@ dependencies = [
 
 [[package]]
 name = "arbrume-py"
+version = "0.0.1"
+
+[[package]]
+name = "arbrume-raster"
 version = "0.0.1"
 
 [[package]]
