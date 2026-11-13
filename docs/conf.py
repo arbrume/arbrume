@@ -1,8 +1,9 @@
-# Sphinx configuration for the Arbrume developer docs.
-#
-# With the Vlam3d shared setup (vlam3d-doc-utils, a sibling clone that is not public) the
-# site gets the archilab look and sidebar, and paper folder names link to the paper
-# library. Without it, the docs build with plain Furo and the same content.
+"""Sphinx configuration for the Arbrume developer docs.
+
+With the Vlam3d shared setup (vlam3d-doc-utils, a sibling clone that is not public) the
+site gets the archilab look and sidebar, and paper folder names link to the paper
+library. Without it, the docs build with plain Furo and the same content.
+"""
 
 project = "Arbrume"
 author = "Les Logiciels VLAM3D inc."

@@ -1,0 +1,5 @@
+# Function size limits. clippy counts code lines in the body (blank lines and comments excluded).
+# After rustfmt, 100 lines is about 50-70 statements, roughly as strict as Python's 100 statements.
+too-many-lines-threshold = 100
+too-many-arguments-threshold = 7
+excessive-nesting-threshold = 5
