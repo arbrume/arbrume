@@ -1,0 +1,13 @@
+[project]
+name = "arbrume-docs"
+version = "0.0.0"
+description = "Documentation for Arbrume, an open-source procedural tree generator"
+requires-python = ">=3.11"
+license = "GPL-3.0-or-later"
+
+[dependency-groups]
+docs = ["sphinx>=8", "myst-parser", "furo"]
+
+[tool.uv]
+package = false
+default-groups = ["docs"]
