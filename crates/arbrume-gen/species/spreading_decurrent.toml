@@ -1,0 +1,79 @@
+# Spreading decurrent tree, self-organizing: the laterals are favoured over the leader,
+# so the trunk soon dissolves into wide limbs under a low dome broader than it is tall.
+#
+# Typical size at age 25: about 9 m tall, crown 20 m wide. Every value is a starting
+# point chosen by eye, not a measurement.
+
+schema_version = 0
+name = "Spreading decurrent tree"
+
+[architecture]
+branching = "monopodial"
+growth_rhythm = "rhythmic"
+branching_pattern = "diffuse"
+branch_timing = "proleptic"
+max_order = 5
+phyllotaxis = { leaves_per_node = 1, divergence_deg = 137.5 }
+
+[growth]
+mode = "self_organizing"
+environment_weight = 0.06
+axis_length = { by_order = [4.5, 11.0, 6.0, 3.0, 1.5, 1.0] }
+shoot_length = { by_order = [0.5, 0.6, 0.5, 0.4] }
+length_variation = 0.15
+internode_length = { by_order = [0.3, 0.32, 0.28, 0.24] }
+branch_probability = { by_order = [[[0.0, 0.0], [0.3, 0.0], [0.4, 0.8]], 0.65] }
+branching_angle = { by_order = [50.0, 75.0, 65.0, 55.0] }
+branching_angle_variation = 12.0
+direction_variation = { by_order = [3.0, 6.0, 8.0, 7.0] }
+gnarl = { by_order = [5.0, 16.0, 16.0, 10.0] }
+gravitropic_setpoint = { by_order = [0.0, 88.0, 90.0, 85.0] }
+tropism_weight = { by_order = [0.06, 0.22, 0.18, 0.08] }
+
+[growth.self_organization]
+sensing = "shadow"
+allocation = "borchert_honda"
+axis_bias = { by_order = [0.42, 0.5] }
+resource_coefficient = 2.0
+shedding_threshold = 0.012
+bud_lifespan = 4
+
+[geometry]
+radius_model = "pipe"
+pipe_exponent = 2.0
+tip_radius = 0.006
+flare = 0.8
+
+[foliage]
+length = 0.14
+width_ratio = 0.55
+shape = "obovate"
+segments = 2
+inclination_deg = 50.0
+retention_cycles = 3
+density = 0.6
+per_node = 2
+color = [0.065, 0.18, 0.035]
+hue_variation = 0.1
+brightness_variation = 0.35
+twig = { leaves = 7, length = 0.24, inclination_deg = 50.0, bend_deg = 10.0, stem_radius = 0.0025 }
+
+[bark]
+color = [0.1, 0.09, 0.078]
+young_color = [0.12, 0.09, 0.06]
+young_radius = 0.05
+color_variation = 0.2
+
+[variation]
+age = [10, 30]
+scale = [0.85, 1.2]
+
+[variation.jitter]
+"growth.internode_length" = 0.08
+"growth.branching_angle" = 0.12
+"growth.gravitropic_setpoint" = 0.08
+"growth.gnarl" = 0.3
+"growth.self_organization.resource_coefficient" = 0.1
+"foliage.length" = 0.1
+"foliage.color" = 0.1
+"bark.color" = 0.08

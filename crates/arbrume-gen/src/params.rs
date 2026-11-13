@@ -1,7 +1,9 @@
 //! Parameters of one plant and the error type of the pipeline.
 
 use arbrume_core::species::SpeciesError;
-use arbrume_grow::GrowParams;
+use std::sync::Arc;
+
+use arbrume_grow::{GrowParams, Surroundings};
 use arbrume_mesh::{MeshError, MeshOptions};
 
 /// Error from the generation pipeline.
@@ -35,8 +37,9 @@ pub enum GenError {
 ///
 /// The plant is grown with `seed`, `age` and `scale` (see `arbrume_grow::GrowParams`) and
 /// meshed with `mesh`. `mesh.seed` seeds the mesh-level variation (leaf order, size and
-/// colour); [`GenParams::new`] sets it to the plant seed.
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// colour); [`GenParams::new`] sets it to the plant seed. A species in the
+/// self-organizing mode also responds to `surroundings`.
+#[derive(Debug, Clone, PartialEq)]
 pub struct GenParams {
     /// Seed of every random draw of the growth.
     pub seed: u64,
@@ -46,6 +49,9 @@ pub struct GenParams {
     pub scale: f32,
     /// Resolution and level of detail of the mesh.
     pub mesh: MeshOptions,
+    /// Envelope, obstacles and neighbours around the plant, in meters in the frame of
+    /// the plant; `None` for open ground. Read by the self-organizing mode only.
+    pub surroundings: Option<Arc<Surroundings>>,
 }
 
 impl Default for GenParams {
@@ -67,7 +73,15 @@ impl GenParams {
                 seed,
                 ..MeshOptions::default()
             },
+            surroundings: None,
         }
+    }
+
+    /// The same parameters with the plant standing in `surroundings`.
+    #[must_use]
+    pub fn with_surroundings(mut self, surroundings: impl Into<Arc<Surroundings>>) -> Self {
+        self.surroundings = Some(surroundings.into());
+        self
     }
 
     /// The same parameters with another scale.
@@ -96,18 +110,27 @@ impl GenParams {
         }
     }
 
-    /// Checks the scale and the mesh options.
+    /// Checks the scale, the surroundings and the mesh options.
     ///
     /// # Errors
     ///
-    /// Returns [`GenError::InvalidParam`] for a scale that is not positive and finite,
-    /// and [`GenError::Mesh`] for invalid mesh options.
+    /// Returns [`GenError::InvalidParam`] for a scale that is not positive and finite or
+    /// for surroundings with an empty or infinite volume, and [`GenError::Mesh`] for
+    /// invalid mesh options.
     pub fn validate(&self) -> Result<(), GenError> {
         if !(self.scale > 0.0 && self.scale.is_finite()) {
             return Err(GenError::InvalidParam {
                 field: "scale",
                 reason: format!("{} is not positive and finite", self.scale),
             });
+        }
+        if let Some(surroundings) = &self.surroundings {
+            surroundings
+                .validate()
+                .map_err(|reason| GenError::InvalidParam {
+                    field: "surroundings",
+                    reason,
+                })?;
         }
         self.mesh.validate()?;
         Ok(())

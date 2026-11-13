@@ -64,6 +64,8 @@ pub struct Meristem {
     pub key: u64,
     /// Origin of the meristem.
     pub kind: SiteKind,
+    /// Meristem of the bearing axis; `None` for a seed.
+    pub parent: Option<MeristemId>,
     /// Activity.
     pub state: MeristemState,
     /// Branching order of its axis.

@@ -3,8 +3,9 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
+use arbrume_core::graph::PlantGraph;
 use arbrume_core::species::Species;
-use arbrume_grow::grow;
+use arbrume_grow::{Surroundings, grow_in};
 use arbrume_mesh::{DEFAULT_TOLERANCE, MeshCounts, MeshOptions, Mesher};
 
 use crate::params::{GenError, GenParams, quality_options};
@@ -118,7 +119,9 @@ impl Generator {
         species.validate()?;
         params.validate()?;
         let start = Instant::now();
-        let graph = grow(species, &params.grow_params());
+        let open = Surroundings::none();
+        let surroundings = params.surroundings.as_deref().unwrap_or(&open);
+        let graph = grow_in(species, &params.grow_params(), surroundings);
         let grown = Instant::now();
         let mut options = params.mesh;
         if *budget != Budget::NONE {
@@ -141,10 +144,23 @@ impl Generator {
         plant.graph = graph;
         plant.params = GenParams {
             mesh: options,
-            ..*params
+            ..params.clone()
         };
         plant.stats = Stats::of(&plant.graph, &plant.mesh);
         Ok(timings)
+    }
+
+    /// Meshes `graph` into the mesh of `plant` with `options`.
+    pub(crate) fn mesh_graph(
+        &mut self,
+        graph: &PlantGraph,
+        species: &Species,
+        options: &MeshOptions,
+        plant: &mut Plant,
+    ) -> Result<(), GenError> {
+        self.mesher
+            .mesh_into(graph, species, options, &mut plant.mesh)?;
+        Ok(())
     }
 
     /// Meshes the graph of `plant` again with `options`, for another level of detail.

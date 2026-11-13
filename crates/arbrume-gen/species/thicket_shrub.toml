@@ -1,0 +1,86 @@
+# Thicket shrub, self-organizing: several stems from the ground compete for light, the
+# outer ones lean out, and the twigs crowd at the lit surface of a rounded bush.
+#
+# Typical size at age 10: about 1.7 m tall and 2.3 m wide. Every value is a starting
+# point chosen by eye, not a measurement.
+
+schema_version = 0
+name = "Thicket shrub"
+
+[architecture]
+branching = "monopodial"
+growth_rhythm = "rhythmic"
+branching_pattern = "diffuse"
+branch_timing = "proleptic"
+max_order = 4
+phyllotaxis = { leaves_per_node = 1, divergence_deg = 137.5 }
+
+[growth]
+mode = "self_organizing"
+environment_weight = 0.25
+stems = 7
+stem_spread = 0.15
+stem_angle = 22.0
+axis_length = { by_order = [2.4, 1.6, 1.0, 0.5, 0.3] }
+shoot_length = { by_order = [0.3, 0.22, 0.18, 0.15] }
+length_variation = 0.2
+internode_length = { by_order = [0.1, 0.09, 0.08, 0.07] }
+branch_probability = { by_order = [[[0.0, 0.0], [0.08, 0.6], [1.0, 0.7]], 0.6] }
+branching_angle = { by_order = [20.0, 50.0, 55.0, 50.0] }
+branching_angle_variation = 14.0
+direction_variation = { by_order = [5.0, 8.0, 8.0] }
+gnarl = { by_order = [12.0, 16.0, 14.0] }
+gravitropic_setpoint = { by_order = [15.0, 55.0, 70.0] }
+tropism_weight = { by_order = [0.05, 0.04, 0.03] }
+
+[growth.self_organization]
+sensing = "shadow"
+allocation = "borchert_honda"
+axis_bias = 0.47
+resource_coefficient = 2.0
+shadow_cell = 2.0
+shedding_threshold = 0.012
+bud_lifespan = 3
+shadow_strength = 0.1
+shadow_depth = 4
+
+[geometry]
+radius_model = "pipe"
+pipe_exponent = 2.2
+tip_radius = 0.002
+flare = 0.2
+
+[foliage]
+length = 0.045
+width_ratio = 0.55
+shape = "elliptic"
+segments = 2
+inclination_deg = 50.0
+retention_cycles = 3
+density = 0.7
+per_node = 2
+color = [0.07, 0.2, 0.04]
+hue_variation = 0.12
+brightness_variation = 0.35
+twig = { leaves = 6, length = 0.1, inclination_deg = 50.0, bend_deg = 10.0, stem_radius = 0.0012 }
+
+[bark]
+color = [0.13, 0.1, 0.075]
+young_color = [0.15, 0.11, 0.06]
+young_radius = 0.01
+color_variation = 0.15
+
+[variation]
+age = [5, 14]
+scale = [0.7, 1.3]
+
+[variation.jitter]
+"growth.internode_length" = 0.08
+"growth.branching_angle" = 0.1
+"growth.gravitropic_setpoint" = 0.08
+"growth.gnarl" = 0.3
+"growth.stems" = 0.3
+"growth.self_organization.resource_coefficient" = 0.1
+"foliage.length" = 0.1
+"foliage.color" = 0.1
+"bark.color" = 0.08

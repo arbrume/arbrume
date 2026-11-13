@@ -17,6 +17,8 @@ arbrume gen --species conifer --count 1000 --quality 0.5 --lods 3 --out out --ma
 arbrume gen --species my_oak.toml --count 10 --age 25 --out out
 arbrume gen --config batch.toml
 arbrume gen --random --count 256 --seed 1 --thumb --out plants
+arbrume gen --species open_grown_broadleaf --age 25 --surroundings wall.toml --out out
+arbrume gen --species forest_grown_broadleaf --age 40 --growth-frames 20 --out growth
 arbrume info my_oak.toml
 arbrume bench
 ```
@@ -54,6 +56,8 @@ configuration or species files.
 | `--thumb [SIZE]` | 256 when given | write a thumbnail of `SIZE` by `SIZE` pixels next to each plant |
 | `--thumb-format F` | `jpg` | `jpg` or `png` |
 | `--lods N` | 1 | levels of detail per plant |
+| `--surroundings FILE` | | TOML file of the envelope, obstacles and neighbours around each plant |
+| `--growth-frames K` | | write each plant as `K` frames of its growth instead of one file; excludes `--lods` above 1 and `--random` |
 | `--out DIR` | | output directory, created if missing |
 | `--jobs J` | all cores | worker threads; without it `RAYON_NUM_THREADS` applies |
 | `--resume` | | skip plants already complete |
@@ -74,6 +78,33 @@ preset name or the file stem of the species file (or the `name` of a config entr
 `Q * 0.5^k`: every level has roughly half the sides, rings and leaves of the previous
 one. Each worker thread writes its own files and reuses its buffers, so memory stays at
 one plant per thread whatever the count.
+
+**Surroundings.** `--surroundings FILE` reads an envelope and occluders, in meters
+around a plant standing at the origin ([Growth](growth.md#surroundings) lists the shapes):
+
+```toml
+envelope = { shape = "ellipsoid", center = [0.0, 5.0, 0.0], radii = [2.5, 5.0, 2.5] }
+
+[[occluders]]
+shape = "box"
+min = [1.5, 0.0, -8.0]
+max = [2.0, 9.0, 8.0]
+```
+
+Every plant of the run grows in them. Species in the self-organizing mode respond;
+parametric species are not changed. The surroundings are written to the metadata of each
+file (`surroundings`), so the plant can be regenerated; a voxel mask, which only the
+library can pass, is not written out.
+
+**Growth sequences.** With `--growth-frames K` a plant is grown once and written as it
+stood at `K` ages spread evenly over its growth, the last being the full-grown plant:
+`<species>_<seed>_<i>_frame000.glb` to `_frame<K-1>.glb` (fewer when the plant has fewer
+cycles than `K`). Each frame holds the metamers born by its cycle, the branches the
+plant had not yet shed, the radii its radius model gives at that age and the leaves it
+retained; axes keep the position they have in the grown plant
+([Growth](growth.md#age-and-growth-sequences)). The manifest lists the frames with their
+`cycle`, the metadata of each file records it as `mesh.max_cycle`, the thumbnail shows
+the last frame, and `--resume` requires every frame.
 
 **Random plants.** With `--random`, plant `i` is drawn by
 `arbrume_gen::RandomSampler` from the base seed and `i` alone: a preset, with a
@@ -140,10 +171,19 @@ thumb = 256                     # same as --thumb 256 (default: no thumbnail)
 thumb_format = "jpg"            # or "png"
 age = { uniform = [10, 30] }    # age of the entries that set none (default 10)
 scale = 1.0                     # scale of the entries that set none (default 1)
+growth_frames = 0               # same as --growth-frames (default 0: one file per plant)
+
+[surroundings]                  # around the plants of the entries that set none
+occluders = [{ shape = "box", min = [1.5, 0.0, -8.0], max = [2.0, 9.0, 8.0] }]
 
 [[species]]
 preset = "broadleaf"
 count = 100
+
+[[species]]
+preset = "hedge_shrub"
+count = 20
+surroundings = { envelope = { shape = "box", min = [-0.5, 0.0, -1.5], max = [0.5, 1.4, 1.5] } }
 
 [[species]]
 preset = "broadleaf"
@@ -195,6 +235,43 @@ plants on many cores can be limited by the write speed of the disk instead.
 `cargo bench -p arbrume-gen` measures the same stages with criterion
 (`pipeline/<stage>/<preset>/<age>`).
 
+The self-organizing presets, measured this way on one 16-thread desktop (a record of one
+machine, not a target; `grow`, `mesh` and `export` are medians in milliseconds):
+
+| species | age | nodes | triangles | grow | mesh | export | file MB | trees/s (1 thread) | trees/s (16 threads) |
+|---|---|---|---|---|---|---|---|---|---|
+| `open_grown_broadleaf` | 10 | 231 | 17 195 | 0.23 | 0.16 | 0.14 | 1.13 | 2488 | 3154 |
+| `open_grown_broadleaf` | 20 | 4 331 | 218 970 | 3.49 | 1.29 | 1.16 | 14.59 | 142 | 322 |
+| `open_grown_broadleaf` | 30 | 16 954 | 590 920 | 15.28 | 3.73 | 3.22 | 40.39 | 41 | 114 |
+| `open_grown_broadleaf` | 40 | 32 499 | 513 149 | 27.54 | 3.27 | 2.99 | 34.57 | 28 | 98 |
+| `forest_grown_broadleaf` | 10 | 329 | 23 241 | 0.17 | 0.15 | 0.15 | 1.51 | 3408 | 5307 |
+| `forest_grown_broadleaf` | 20 | 2 835 | 94 486 | 1.85 | 0.77 | 0.50 | 6.23 | 310 | 679 |
+| `forest_grown_broadleaf` | 30 | 8 222 | 210 141 | 7.23 | 1.82 | 1.22 | 13.66 | 109 | 402 |
+| `forest_grown_broadleaf` | 40 | 15 408 | 200 598 | 15.04 | 1.84 | 1.65 | 12.94 | 55 | 288 |
+| `excurrent_conifer` | 10 | 265 | 10 535 | 0.27 | 0.17 | 0.15 | 1.08 | 1659 | 4347 |
+| `excurrent_conifer` | 20 | 2 066 | 80 250 | 2.69 | 0.94 | 0.73 | 8.41 | 233 | 668 |
+| `excurrent_conifer` | 30 | 6 428 | 222 295 | 5.38 | 2.06 | 1.98 | 23.23 | 96 | 257 |
+| `excurrent_conifer` | 40 | 12 435 | 326 323 | 10.79 | 3.37 | 3.13 | 34.02 | 54 | 165 |
+| `spreading_decurrent` | 10 | 237 | 15 256 | 0.19 | 0.16 | 0.16 | 0.97 | 3041 | 4283 |
+| `spreading_decurrent` | 20 | 2 826 | 95 440 | 1.61 | 0.54 | 0.43 | 6.09 | 353 | 904 |
+| `spreading_decurrent` | 30 | 6 890 | 129 524 | 4.84 | 0.75 | 0.64 | 8.00 | 147 | 511 |
+| `spreading_decurrent` | 40 | 9 867 | 88 143 | 7.90 | 0.56 | 0.46 | 5.49 | 103 | 469 |
+| `thicket_shrub` | 10 | 688 | 17 415 | 0.31 | 0.18 | 0.14 | 1.04 | 1786 | 8460 |
+| `thicket_shrub` | 20 | 2 390 | 23 408 | 1.21 | 0.17 | 0.10 | 1.33 | 608 | 3108 |
+| `hedge_shrub` | 10 | 946 | 23 668 | 0.43 | 0.28 | 0.14 | 2.38 | 975 | 2047 |
+| `hedge_shrub` | 20 | 3 604 | 89 195 | 1.76 | 0.98 | 0.62 | 9.32 | 268 | 709 |
+| `envelope_tree` | 10 | 116 | 7 986 | 1.09 | 0.08 | 0.08 | 0.57 | 419 | 1745 |
+| `envelope_tree` | 20 | 1 905 | 129 090 | 5.24 | 0.86 | 0.87 | 9.42 | 64 | 407 |
+| `envelope_tree` | 30 | 1 943 | 131 936 | 7.38 | 0.91 | 0.97 | 9.63 | 50 | 325 |
+
+`arbrume bench --engine` prints another table for the species in the self-organizing
+mode: the growth time of one plant with the default engine options, with a sparse shadow
+grid, with the buds sensed on the pool and with the markers given to buds on one thread,
+then the throughput of plants grown one per task with the default options and with
+nothing parallel inside a plant. [Growth](growth.md#performance-and-engine-options) has
+the measurements and the defaults taken from them; `cargo bench -p arbrume-gen --bench
+engine` measures the same options and the two data structures alone with criterion.
+
 ## Library
 
 ```rust
@@ -208,7 +285,9 @@ println!("{} triangles, {:.1} m", plant.stats.triangles, plant.stats.height);
 | Item | Use |
 |---|---|
 | `generate(species, params)` | one plant: graph, mesh, statistics |
-| `GenParams { seed, age, scale, mesh }`, `GenParams::new(seed, age)`, `.with_scale(x)`, `.with_quality(q)` | parameters of one plant |
+| `GenParams { seed, age, scale, mesh, surroundings }`, `GenParams::new(seed, age)`, `.with_scale(x)`, `.with_quality(q)`, `.with_surroundings(s)` | parameters of one plant |
+| `Surroundings { envelope, occluders }`, `Shape`, `Occluder`, `VoxelMask` | what stands around a plant, re-exported from `arbrume-grow` |
+| `Generator::timeline(species, params)`, `Timeline::frame_cycles(k)`, `Generator::frame(species, &timeline, cycle, &mut plant)` | growth sequences: one growth, meshed at several ages |
 | `Plant { params, graph, mesh, stats }` | the result; `graph` is the skeleton for sidecar exporters |
 | `Stats { nodes, chains, leaf_sites, vertices, triangles, bounds, height }` | summary; `height` is the vertical extent of the mesh |
 | `Generator::new()`, `.generate(..)`, `.generate_into(.., &mut plant)`, `.remesh(&mut plant, species, options)` | batch loops; reuses the mesher and the mesh buffers, returns timings |
@@ -239,6 +318,9 @@ sheet of thumbnails into one PNG, for tuning a species by eye:
 arbrume sheet --species oak_like,pine_like --ages 15,30,60 --seeds 2 --azimuths 20,110 --out sheet.png
 arbrume sheet --species my_oak.toml --ages 40 --view crown --size 512 --out crown.png
 arbrume sheet --random 64 --offset 64 --seeds 1 --size 160 --out random_1.png
+arbrume sheet --species open_grown_broadleaf --ages 12,22 --surroundings wall.toml --out wall.png
+arbrume sheet --species forest_grown_broadleaf --ages 40 --growth-frames 6 --out frames.png
+arbrume sheet --species hedge_shrub --ages 6,12 --row 5 --spacing 0.8 --surroundings box.toml --out hedge.png
 ```
 
 A species sheet has one row per species, seed and azimuth and one column per age; a
@@ -246,3 +328,10 @@ random sheet shows plants `offset` to `offset + N` of the random sampler with ba
 `--seeds`. `--view` is `full`, `crown` (the middle of the crown, enlarged) or `junction`
 (the trunk and its first branches). One line per plant goes to standard output: quality
 reached, height, width, trunk diameter, triangles, vertices, nodes, leaf sites and time.
+
+`--surroundings FILE` grows every plant in the surroundings of the file and draws its
+blocking occluders. `--growth-frames K` replaces the age columns by `K` frames of the
+growth of the oldest age, all framed like the last. `--row N` grows `N` plants of the
+species side by side along X, `--spacing` meters apart (default 4), with
+`arbrume_grow::grow_together`, so that they share their light; with surroundings the
+row is centred on their origin.

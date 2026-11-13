@@ -3,9 +3,11 @@
 use arbrume_core::species::Species;
 use arbrume_export::{GlbOptions, write_glb};
 use arbrume_gen::{
-    Budget, Distribution, GENERATOR, GenParams, Generator, Plant, RandomSampler, Sampler, generate,
-    generate_many, metadata, preset, presets, run_batch,
+    Budget, Distribution, GENERATOR, GenError, GenParams, Generator, Occluder, Plant,
+    RandomSampler, Sampler, Shape, Surroundings, generate, generate_many, metadata, preset,
+    presets, run_batch,
 };
+use glam::Vec3;
 
 fn all_presets() -> Vec<(&'static str, Species)> {
     presets()
@@ -265,4 +267,105 @@ fn a_budget_lowers_the_quality_until_the_mesh_fits() {
         .generate_within(&species, &params, &roomy, &mut plant)
         .unwrap();
     assert_eq!(plant, full);
+}
+
+/// The presets in the self-organizing mode.
+fn competing_presets() -> Vec<(&'static str, Species)> {
+    let competing = |(_, species): &(&str, Species)| {
+        species.growth.mode == arbrume_core::species::GrowthMode::SelfOrganizing
+    };
+    all_presets().into_iter().filter(competing).collect()
+}
+
+#[test]
+fn self_organizing_presets_do_not_depend_on_the_number_of_threads() {
+    let species = competing_presets();
+    assert!(species.len() >= 6, "{} presets", species.len());
+    for (name, species) in &species {
+        let [young, old] = species.variation.age;
+        let params = GenParams::new(21, young.midpoint(old).min(16)).with_quality(0.4);
+        let reference = generate(species, &params).unwrap();
+        assert!(reference.stats.nodes > 50, "{name}");
+        for threads in [1, 2, 8] {
+            let plant = pool(threads).install(|| generate(species, &params).unwrap());
+            assert_eq!(plant, reference, "{name} on {threads} threads");
+        }
+    }
+}
+
+#[test]
+fn surroundings_shape_self_organizing_plants_only() {
+    let wall = Shape::Box {
+        min: Vec3::new(0.6, 0.0, -20.0),
+        max: Vec3::new(1.0, 30.0, 20.0),
+    };
+    let surroundings = Surroundings {
+        envelope: None,
+        occluders: vec![Occluder::obstacle(wall.clone())],
+    };
+    let open = GenParams::new(5, 12).with_quality(0.4);
+    let walled = open.clone().with_surroundings(surroundings);
+    for (name, species) in competing_presets() {
+        let (free, held) = (
+            generate(&species, &open).unwrap(),
+            generate(&species, &walled).unwrap(),
+        );
+        assert_ne!(free.graph, held.graph, "{name}");
+        let inside = held.graph.positions().iter().any(|&p| wall.contains(p));
+        assert!(!inside, "{name} grows into the wall");
+        let extras = metadata(&species, &held);
+        assert_eq!(extras["surroundings"]["occluders"][0]["shape"], "box");
+        assert!(metadata(&species, &free)["surroundings"].is_null());
+    }
+    let parametric = preset("broadleaf").unwrap();
+    let (free, held) = (
+        generate(&parametric, &open).unwrap(),
+        generate(&parametric, &walled).unwrap(),
+    );
+    assert_eq!(free.graph, held.graph);
+    let flat = Shape::Box {
+        min: Vec3::ZERO,
+        max: Vec3::new(1.0, 0.0, 1.0),
+    };
+    let empty = Surroundings {
+        envelope: Some(flat),
+        occluders: Vec::new(),
+    };
+    let result = generate(&parametric, &open.with_surroundings(empty));
+    assert!(matches!(
+        result,
+        Err(GenError::InvalidParam {
+            field: "surroundings",
+            ..
+        })
+    ));
+}
+
+#[test]
+fn growth_frames_of_self_organizing_presets_grow_into_the_plant() {
+    for (name, species) in competing_presets() {
+        let [young, old] = species.variation.age;
+        let params = GenParams::new(8, young.midpoint(old).min(18)).with_quality(0.4);
+        let mut generator = Generator::new();
+        let timeline = generator.timeline(&species, &params).unwrap();
+        let full = generator.generate(&species, &params).unwrap();
+        let mut plant = Plant::default();
+        let cycles = timeline.frame_cycles(4);
+        let mut nodes = Vec::new();
+        for &cycle in &cycles {
+            generator
+                .frame(&species, &timeline, cycle, &mut plant)
+                .unwrap();
+            let graph = &plant.graph;
+            graph.check_invariants().unwrap();
+            let shown = graph.births().iter().zip(graph.flags());
+            nodes.push(shown.filter(|(b, f)| **b <= cycle && !f.is_shed()).count());
+            assert!(plant.stats.triangles > 0, "{name} at cycle {cycle}");
+        }
+        let live = full.graph.flags().iter().filter(|f| !f.is_shed()).count();
+        assert_eq!(nodes.last(), Some(&live), "{name}");
+        assert!(nodes[0] < live, "{name}: {nodes:?}");
+        let bark = |plant: &Plant| plant.mesh.parts[0].buffers.positions.len();
+        assert_eq!(bark(&plant), bark(&full), "{name}");
+    }
 }

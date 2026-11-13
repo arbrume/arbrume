@@ -12,6 +12,11 @@
 //! thumb_format = "jpg"            # or "png"
 //! age = { uniform = [10, 30] }    # default age distribution
 //! scale = 1.0                     # default scale distribution
+//! growth_frames = 0               # frames of a growth sequence per plant, 0 for none
+//!
+//! [surroundings]                  # around every plant that sets none, in meters
+//! envelope = { shape = "ellipsoid", center = [0.0, 4.0, 0.0], radii = [3.0, 4.0, 3.0] }
+//! occluders = [{ shape = "box", min = [1.5, 0.0, -5.0], max = [1.8, 3.0, 5.0] }]
 //!
 //! [[species]]
 //! preset = "broadleaf"            # or `path = "oak.toml"`, relative to this file
@@ -24,13 +29,19 @@
 //! age = { normal = [25, 5], min = 5, max = 40 }
 //! scale = { uniform = [0.8, 1.2] }
 //! overrides = { "growth.axis_length" = 18.0 }
+//! surroundings = { occluders = [{ shape = "sphere", center = [4.0, 6.0, 0.0], radius = 3.0, blocks = false, shade = 3.0 }] }
 //! ```
+//!
+//! Surroundings act on species in the self-organizing mode; `docs/growth.md` describes
+//! the shapes.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use arbrume_core::species::Species;
-use arbrume_gen::{Distribution, GenParams, RandomSampler, Sampler, species_with_overrides};
+use arbrume_gen::species_with_overrides;
+use arbrume_gen::{Distribution, GenParams, RandomSampler, Sampler, Surroundings};
 use serde::Deserialize;
 
 use crate::batch::ThumbFormat;
@@ -48,6 +59,8 @@ pub struct Entry {
     pub count: u32,
     /// Parameters of each plant.
     pub sampler: Sampler,
+    /// What stands around each plant; `None` for open ground.
+    pub surroundings: Option<Arc<Surroundings>>,
 }
 
 /// Thumbnails to write next to the plants.
@@ -70,6 +83,8 @@ pub struct Batch {
     pub manifest: bool,
     /// Thumbnails, if any.
     pub thumb: Option<Thumb>,
+    /// Frames of the growth sequence written for each plant; 0 writes the plant only.
+    pub growth_frames: u16,
     /// The species to generate.
     pub entries: Vec<Entry>,
     /// Random plants to generate: their sampler and their number.
@@ -90,6 +105,9 @@ struct ConfigFile {
     thumb_format: Option<ThumbFormat>,
     age: Option<Distribution>,
     scale: Option<Distribution>,
+    #[serde(default)]
+    growth_frames: u16,
+    surroundings: Option<Surroundings>,
     species: Vec<EntryFile>,
 }
 
@@ -107,6 +125,7 @@ struct EntryFile {
     scale: Option<Distribution>,
     #[serde(default)]
     overrides: toml::Table,
+    surroundings: Option<Surroundings>,
 }
 
 /// Defaults applied to the entries of a batch.
@@ -151,7 +170,23 @@ pub fn entry(
         species,
         count,
         sampler,
+        surroundings: None,
     })
+}
+
+/// Reads and checks the surroundings file at `path`.
+pub fn load_surroundings(path: &Path) -> Result<Arc<Surroundings>, CliError> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|error| CliError::usage(format!("{}: {error}", path.display())))?;
+    let surroundings: Surroundings = toml::from_str(&text)
+        .map_err(|error| CliError::usage(format!("{}: {error}", path.display())))?;
+    checked(surroundings).map_err(|error| CliError::usage(format!("{}: {error}", path.display())))
+}
+
+/// `surroundings` once validated.
+fn checked(surroundings: Surroundings) -> Result<Arc<Surroundings>, String> {
+    surroundings.validate()?;
+    Ok(Arc::new(surroundings))
 }
 
 /// Reads the batch config file at `path`.
@@ -168,11 +203,21 @@ pub fn load(path: &Path) -> Result<Batch, CliError> {
         age: file.age.unwrap_or(fallback.age),
         scale: file.scale.unwrap_or(fallback.scale),
     };
-    let entries = file
+    let shared = file
+        .surroundings
+        .map(checked)
+        .transpose()
+        .map_err(|error| CliError::usage(format!("surroundings: {error}")))?;
+    let mut entries = file
         .species
         .iter()
         .map(|entry| load_entry(entry, base, &defaults))
         .collect::<Result<Vec<_>, _>>()?;
+    for entry in &mut entries {
+        if entry.surroundings.is_none() {
+            entry.surroundings.clone_from(&shared);
+        }
+    }
     let lods = file.lods.unwrap_or(1);
     check_batch(&entries, lods)?;
     Ok(Batch {
@@ -183,6 +228,7 @@ pub fn load(path: &Path) -> Result<Batch, CliError> {
             size,
             format: file.thumb_format.unwrap_or(ThumbFormat::Jpg),
         }),
+        growth_frames: file.growth_frames,
         entries,
         random: None,
     })
@@ -211,7 +257,14 @@ fn load_entry(file: &EntryFile, base: &Path, defaults: &Defaults) -> Result<Entr
         scale: file.scale.unwrap_or(defaults.scale),
         quality: file.quality.unwrap_or(defaults.quality),
     };
-    entry(&source, &file.overrides, file.count, sampler)
+    let mut entry = entry(&source, &file.overrides, file.count, sampler)?;
+    entry.surroundings = file
+        .surroundings
+        .clone()
+        .map(checked)
+        .transpose()
+        .map_err(|error| CliError::usage(format!("species `{}`: {error}", entry.label)))?;
+    Ok(entry)
 }
 
 /// Checks that labels are unique and that `lods` is at least 1.

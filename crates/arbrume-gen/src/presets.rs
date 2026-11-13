@@ -15,10 +15,27 @@ const PRESETS: &[(&str, &str)] = &[
     ("broadleaf", include_str!("../species/broadleaf.toml")),
     ("conifer", include_str!("../species/conifer.toml")),
     ("cypress_like", include_str!("../species/cypress_like.toml")),
+    (
+        "envelope_tree",
+        include_str!("../species/envelope_tree.toml"),
+    ),
+    (
+        "excurrent_conifer",
+        include_str!("../species/excurrent_conifer.toml"),
+    ),
     ("fern_like", include_str!("../species/fern_like.toml")),
+    (
+        "forest_grown_broadleaf",
+        include_str!("../species/forest_grown_broadleaf.toml"),
+    ),
+    ("hedge_shrub", include_str!("../species/hedge_shrub.toml")),
     ("larch_like", include_str!("../species/larch_like.toml")),
     ("maple_like", include_str!("../species/maple_like.toml")),
     ("oak_like", include_str!("../species/oak_like.toml")),
+    (
+        "open_grown_broadleaf",
+        include_str!("../species/open_grown_broadleaf.toml"),
+    ),
     ("palm_like", include_str!("../species/palm_like.toml")),
     ("pine_like", include_str!("../species/pine_like.toml")),
     ("poplar_like", include_str!("../species/poplar_like.toml")),
@@ -26,10 +43,18 @@ const PRESETS: &[(&str, &str)] = &[
     ("sapling", include_str!("../species/sapling.toml")),
     ("shrub", include_str!("../species/shrub.toml")),
     (
+        "spreading_decurrent",
+        include_str!("../species/spreading_decurrent.toml"),
+    ),
+    (
         "spreading_shrub",
         include_str!("../species/spreading_shrub.toml"),
     ),
     ("spruce_like", include_str!("../species/spruce_like.toml")),
+    (
+        "thicket_shrub",
+        include_str!("../species/thicket_shrub.toml"),
+    ),
     (
         "upright_shrub",
         include_str!("../species/upright_shrub.toml"),

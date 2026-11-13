@@ -417,3 +417,90 @@ fn thumbnails_follow_the_format_and_resume() {
     let conflict = arbrume(&["gen", "--random", "--species", "shrub", "--out", out]);
     assert_eq!(conflict.status.code(), Some(2));
 }
+
+#[test]
+fn surroundings_and_growth_frames() {
+    let dir = tempfile::tempdir().unwrap();
+    let wall = dir.path().join("wall.toml");
+    let text = "[[occluders]]\nshape = \"box\"\nmin = [0.5, 0.0, -9.0]\nmax = [0.8, 9.0, 9.0]\n";
+    fs::write(&wall, text).unwrap();
+    let species = ["gen", "--species", "thicket_shrub", "--age", "7", "--quiet"];
+    let run = |name: &str, extra: &[&str]| {
+        let out = dir.path().join(name);
+        let mut args = species.to_vec();
+        args.extend(["--out", path(&out), "--manifest"]);
+        args.extend(extra);
+        ok(&args);
+        out
+    };
+    let open = run("open", &[]);
+    let walled = run("walled", &["--surroundings", path(&wall)]);
+    let (open_files, walled_files) = (glb_files(&open), glb_files(&walled));
+    assert_eq!(open_files.len(), 1);
+    assert_ne!(open_files, walled_files);
+    let extras = glb_json(walled_files.values().next().unwrap());
+    let extras = &extras["nodes"][0]["extras"];
+    assert_eq!(extras["surroundings"]["occluders"][0]["shape"], "box");
+
+    let frames = run("frames", &["--growth-frames", "3", "--thumb", "64"]);
+    let files = glb_files(&frames);
+    let names: Vec<&str> = files.keys().map(String::as_str).collect();
+    assert_eq!(
+        names,
+        [
+            "thicket_shrub_0_0_frame000.glb",
+            "thicket_shrub_0_0_frame001.glb",
+            "thicket_shrub_0_0_frame002.glb"
+        ]
+    );
+    let sizes: Vec<usize> = files.values().map(Vec::len).collect();
+    assert!(sizes[0] < sizes[2], "{sizes:?}");
+    let record = &manifest(&frames)[0];
+    let cycles: Vec<u64> = record["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|file| file["cycle"].as_u64().unwrap())
+        .collect();
+    assert_eq!(cycles, [2, 4, 6]);
+    assert_eq!(files_with(&frames, "jpg").len(), 1);
+    let before = fs::metadata(frames.join("thicket_shrub_0_0_frame002.glb")).unwrap();
+    let mut again = species.to_vec();
+    again.extend(["--out", path(&frames), "--manifest", "--growth-frames", "3"]);
+    again.extend(["--thumb", "64", "--resume"]);
+    ok(&again);
+    let after = fs::metadata(frames.join("thicket_shrub_0_0_frame002.glb")).unwrap();
+    assert_eq!(before.modified().unwrap(), after.modified().unwrap());
+
+    let config = dir.path().join("batch.toml");
+    let text = "growth_frames = 2\n\
+        [surroundings]\n\
+        envelope = { shape = \"sphere\", center = [0.0, 1.0, 0.0], radius = 1.0 }\n\
+        [[species]]\npreset = \"hedge_shrub\"\ncount = 1\nage = 6\n\
+        [[species]]\npreset = \"thicket_shrub\"\ncount = 1\nage = 6\n\
+        surroundings = { occluders = [{ shape = \"sphere\", center = [1.0, 1.0, 0.0], radius = 0.5 }] }\n";
+    fs::write(&config, text).unwrap();
+    let out = dir.path().join("config");
+    ok(&[
+        "gen",
+        "--config",
+        path(&config),
+        "--out",
+        path(&out),
+        "--quiet",
+    ]);
+    assert_eq!(glb_files(&out).len(), 4);
+
+    let bad = dir.path().join("bad.toml");
+    fs::write(
+        &bad,
+        "envelope = { shape = \"sphere\", center = [0.0, 0.0, 0.0], radius = -1.0 }\n",
+    )
+    .unwrap();
+    let mut args = species.to_vec();
+    args.extend(["--out", path(&out), "--surroundings", path(&bad)]);
+    assert_eq!(arbrume(&args).status.code(), Some(2));
+    let mut args = species.to_vec();
+    args.extend(["--out", path(&out), "--growth-frames", "2", "--lods", "2"]);
+    assert_eq!(arbrume(&args).status.code(), Some(2));
+}

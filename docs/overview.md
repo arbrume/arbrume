@@ -8,8 +8,10 @@ Each growth cycle runs three stages:
 3. **Orientation**: where new shoots point.
 
 Species parameters are curves over relative position along a branch and branch order.
-The parametric mode ships first; self-organizing growth comes later. L-systems appear only
-as test fixtures, not as the runtime.
+A species grows in the parametric mode, where every axis follows those curves, or in
+the self-organizing mode, where buds compete for light and space and the plant responds
+to an envelope, obstacles and neighbours. L-systems appear only as test fixtures, not as
+the runtime.
 
 Planned parts:
 

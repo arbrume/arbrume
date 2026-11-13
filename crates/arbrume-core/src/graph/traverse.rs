@@ -225,6 +225,7 @@ impl PlantGraph {
         self.order = permute(&self.order, &order);
         self.birth = permute(&self.birth, &order);
         self.flags = permute(&self.flags, &order);
+        self.shed_cycle = permute(&self.shed_cycle, &order);
         for chain in &mut self.chains {
             chain.first = translate(chain.first);
             chain.last = translate(chain.last);

@@ -1,4 +1,4 @@
-//! Growth time of the starter species at a few ages.
+//! Growth time of the starter species and of the self-organizing fixture at a few ages.
 //!
 //! Each benchmark is named `grow/<species>/<age>`; the node, chain and leaf counts of
 //! the plant grown with seed 1 are printed once before it is measured.
@@ -19,7 +19,7 @@ fn species(name: &str) -> Species {
 }
 
 fn bench_species(criterion: &mut Criterion) {
-    for name in ["broadleaf", "conifer", "shrub"] {
+    for name in ["broadleaf", "conifer", "shrub", "competing"] {
         let species = species(name);
         for age in AGES {
             let params = GrowParams {

@@ -42,7 +42,7 @@ fn example_file_loads_with_the_expected_values() {
     assert!(close(growth.branch_probability.eval(0, 0.1), 0.0));
     assert!(close(growth.branching_angle.eval(0, 0.5), 55.0));
     assert!(close(growth.branching_angle.eval(3, 0.5), 50.0));
-    assert!(close(growth.self_organization.axis_bias, 0.52));
+    assert!(close(growth.self_organization.axis_bias.eval(0, 0.0), 0.52));
     assert!(close(growth.self_organization.occupancy_radius, 2.0));
 
     assert_eq!(species.geometry.radius_model, RadiusModel::Pipe);

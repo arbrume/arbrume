@@ -1,8 +1,8 @@
 # Growth
 
 `arbrume-grow` turns a `Species` and a seed into a `PlantGraph`. This page describes the
-growth cycle, the parametric mode that ships today, every growth parameter of a species,
-and what the result contains.
+growth cycle, its two modes (parametric and self-organizing), every growth parameter of a
+species, the surroundings a plant can respond to, and what the result contains.
 
 ```rust
 use arbrume_core::species::Species;
@@ -30,12 +30,12 @@ growth unit, which for most temperate trees is one year.
 The cycle has pluggable stages, the structure shared by Palubicki et al. (2009) and
 Longay et al. (2012). Each stage is a trait in `arbrume_grow::stage`.
 
-| Stage | Trait | Role | Available now |
-|---|---|---|---|
-| 1 | `Environment` | gives each bud an exposure `Q` and a preferred direction `V` | `NoEnvironment` (`Q = 1`, no `V`) |
-| 2 | `BudFate` | decides which buds form, which flush, and how long each shoot is | `GradientFate` |
-| 3 | `ShootOrientation` | direction of each new metamer | `TropismBlend`, `Straight` |
-| 4 | `Shedding` | removes branches | `NoShedding` |
+| Stage | Trait | Role | Parametric | Self-organizing |
+|---|---|---|---|---|
+| 1 | `Environment` | gives each bud an exposure `Q` and a preferred direction `V` | `NoEnvironment` (`Q = 1`, no `V`) | `Competition` |
+| 2 | `BudFate` | decides which buds form, which flush, and how long each shoot is | `GradientFate` | `ResourceFate` |
+| 3 | `ShootOrientation` | direction of each new metamer; may end a shoot early | `TropismBlend` | `Confined<TropismBlend>` |
+| 4 | `Shedding` | removes branches | `NoShedding` | `ExposureShedding` |
 
 Between stages 2 and 3 the *shoot builder* does what no growth mode changes: it appends
 the metamers, places leaves and axillary buds around each node from the phyllotaxis,
@@ -43,10 +43,10 @@ gives each bud its insertion angle, and ends the apex (last shoot, relay of a sy
 axis, or fork). After the last cycle, `finish` makes chains contiguous, keeps the leaf
 sites that are retained, computes the radii and applies bending under weight.
 
-`grow` runs `NoEnvironment`, `GradientFate`, `TropismBlend` and `NoShedding`: the
-parametric mode. `grow_with` runs any combination of stages; self-organizing stages
-(shadow propagation, space colonization, resource allocation between buds, shedding) are
-meant to be added as further implementations of the same traits.
+A species selects its mode with `growth.mode`, `"parametric"` (the default) or
+`"self_organizing"`; both read the same species file. `grow` runs the stages of that
+mode, `grow_with` any combination of stages, and `run_cycle` one cycle of a plant, for
+callers that drive the loop themselves.
 
 ### Meristems
 
@@ -57,9 +57,13 @@ bud forms and builds one chain.
 
 ### Determinism
 
-The result depends only on the species, the parameters, the seed and the crate version.
-One plant is grown sequentially; plants can be grown in parallel since nothing is shared
-between calls. Every meristem has a 64-bit key derived from the seed and from its place
+The result depends only on the species, the parameters (surroundings included), the
+seed and the crate version, never on the number of threads. The structure of a plant is
+built on one thread; in the self-organizing mode the sensing of buds and markers may use
+the `rayon` pool, each result being written to its own slot and the sums made
+afterwards in a fixed order (see [Performance and engine
+options](#performance-and-engine-options)). Plants can be grown in parallel since
+nothing is shared between calls. Every meristem has a 64-bit key derived from the seed and from its place
 in the plant: the stem number, then for each ancestor the index of the bearing metamer
 and the slot of the bud. Every random draw is seeded by such a key, with a stream and a
 counter derived from the index of the metamer, never by a node id (node ids change when
@@ -216,8 +220,366 @@ limited to the angle that brings the centre of mass below the base. The pass run
 from base to tips. It is a first-order estimate: it does not iterate to equilibrium,
 leaves add no load, and the reaction wood by which real axes resist sagging is ignored.
 
-`[growth.self_organization]` is reserved for the self-organizing stages and is not read
-by the parametric mode.
+`[growth.self_organization]` is read by the self-organizing mode only.
+
+## Self-organizing mode
+
+With `growth.mode = "self_organizing"` the same cycle runs with other stages: buds
+compete for light and space, so a crown adapts to its own shade, to an envelope, to
+obstacles and to neighbours. The model is that of Palubicki et al. (2009, section 4),
+with the direction equation and the combination of markers and light of Longay et al.
+(2012).
+
+```rust
+use arbrume_grow::{GrowParams, Occluder, Shape, Surroundings, grow_in};
+use glam::Vec3;
+
+let wall = Shape::Box { min: Vec3::new(1.5, 0.0, -8.0), max: Vec3::new(2.0, 9.0, 8.0) };
+let surroundings = Surroundings { envelope: None, occluders: vec![Occluder::obstacle(wall)] };
+let graph = grow_in(&species, &GrowParams { seed: 1, age: 20, scale: 1.0 }, &surroundings);
+```
+
+`grow` grows the plant on open ground, `grow_in` in given surroundings. A parametric
+species ignores the surroundings.
+
+| Stage | Implementation | What it does |
+|---|---|---|
+| 1 | `Competition` | exposure `Q` and direction `V` of every live bud, from a `ShadowGrid`, from `Markers`, or from both |
+| 2 | `ResourceFate` | basipetal sum of `Q`, acropetal split of the resource `v`, shoots of `floor(v)` metamers |
+| 3 | `Confined<TropismBlend>` | the heading equation above with `E = V`; keeps every metamer inside the envelope, out of the obstacles and above the ground |
+| 4 | `ExposureShedding` | sheds the branches whose light per internode is too low; ends old dormant buds |
+
+Lengths in `[growth.self_organization]` are in *internode units*, as in the paper: one
+unit is the `internode_length` of order 1 at the base of an axis.
+
+### Light: shadow propagation
+
+Space is cut into cubic voxels of edge `shadow_cell`, each holding a shadow value `s`.
+A metamer in voxel $(I, J, K)$ adds
+
+$$
+\Delta s = a\,b^{-q}
+$$
+
+to the voxels $(I \pm p,\ J - q,\ K \pm p)$ for $q = 0 \ldots q_{max}$ and
+$p = 0 \ldots q$: a pyramid opening downwards whose layer $q$ is a full square of
+$2q + 1$ voxels a side. The exposure of a bud is
+
+$$
+Q = \max(C - s + a,\ 0)
+$$
+
+where the $+a$ cancels the shadow of the metamer that bears the bud, and its preferred
+direction $V$ is the opposite of the gradient of $s$, taken by central differences.
+$a$ is `shadow_strength`, $b$ `shadow_decay`, $q_{max}$ `shadow_depth` and $C$
+`full_exposure`. Every metamer casts its pyramid when it appears and takes it back when
+it is shed, so a cycle costs the new metamers, not the whole plant. Light comes from
+above only: a crown is lit on its top and its upper flanks.
+
+The grid (`ShadowGrid`) is only the field, with `cast`, `shadow`, `exposure` and
+`gradient`; it knows nothing of plants, and several plants can write to one grid
+(below).
+
+### Space: markers
+
+With `sensing = "markers"` the free space is a set of marker points scattered uniformly
+in the crown envelope, `marker_density` per cubic internode unit and at most
+`marker_limit`. Each cycle the markers within `occupancy_radius` of a bud are removed;
+each other marker inside the perception cone of one or more buds (length
+`perception_distance`, full angle `perception_angle_deg`, about the direction of the
+bud) goes to the closest of them. A bud with markers has $Q = 1$ and
+
+$$
+V = \frac{n}{\lVert n \rVert}, \qquad n = \sum_{m \in S} \frac{m - p}{\lVert m - p \rVert}
+$$
+
+with $p$ the bud and $S$ its markers (Runions et al. 2007, eq. 2); a bud without markers
+has $Q = 0$. Their eq. 3 adds a bias vector to this direction; that role is played here
+by the $\beta T$ term of the heading equation. The envelope is that of the surroundings, or without one an ellipsoid standing
+on the ground, as tall as the `axis_length` of the trunk and as wide as the longest
+`axis_length` of order 1 on each side (`default_envelope`).
+
+With `sensing = "both"`, a bud takes the $Q$ of the shadow model if it has markers and 0
+otherwise, and the $V$ of its markers. This is the mode for shaping a crown with an
+envelope: the markers fill the volume and the light thins the inside.
+
+### Resource: Borchert-Honda and priority
+
+Each cycle the exposures are summed from the tips to the base over the axes (resting
+buds included), each stem receives
+
+$$
+v_{base} = \alpha\,Q_{base}
+$$
+
+with $\alpha$ the `resource_coefficient`, and the resource is split on the way up.
+
+**Extended Borchert-Honda** (`allocation = "borchert_honda"`). The branching points of an
+axis are taken from its base to its tip. At each one the resource $v$ in the axis is
+divided between the continuation of the axis, which gathers the light $Q_m$, and the
+lateral, which gathers $Q_l$:
+
+$$
+v_m = v\,\frac{\lambda Q_m}{\lambda Q_m + (1 - \lambda)\,Q_l}, \qquad
+v_l = v\,\frac{(1 - \lambda)\,Q_l}{\lambda Q_m + (1 - \lambda)\,Q_l}
+$$
+
+$\lambda$ is `axis_bias`: 0.5 shares in proportion to the light, more favours the
+leader (excurrent trees), less the laterals (decurrent trees). The paper shows the range
+0.46 to 0.54; a few hundredths change the habit. `axis_bias` is a curve over the order
+of the bearing axis and the position of the branching point, so the bias can differ
+between trunk and branches or fade along an axis.
+
+**Priority** (`allocation = "priority"`). The axes borne by an axis and its terminal bud
+are ranked by the light they gather per bud; where `apical_control` is at least 0.5 the
+terminal bud heads the list whatever its light. Item $i$ of $N$ receives
+
+$$
+v_i = v\,\frac{Q_i\,w_i}{\sum_{j=1}^{N} Q_j\,w_j}
+$$
+
+where the weight falls linearly with the rank from `priority_max` at the head of the
+list to `priority_min` at the fraction `priority_knee` of its length and stays there.
+The paper gives the weight function as a figure only; the linear ramp is the reading of
+this implementation. `apical_control` is a curve over the order of the axis and the
+position of its tip: letting it fall below 0.5 towards the end of the trunk gives a tree
+that is excurrent when young and decurrent when old.
+
+**Shoots.** A bud that receives $v \ge 1$ flushes $n = \lfloor v \rfloor$ metamers, each
+$v / n$ times the `internode_length` at that place. A lateral bud flushes at the
+earliest the cycle after it formed.
+
+### What the gradient curves do in this mode
+
+The species file is the same; the curves act as limits and biases.
+
+| Field | Role in the self-organizing mode |
+|---|---|
+| `axis_length` | the length at which an axis stops; relative positions along an axis refer to it. Order 1 over the height of the trunk still shapes the crown |
+| `shoot_length` | the longest shoot of one cycle: metamers above it are not built |
+| `internode_length` | the internode a resource of 1 buys |
+| `branch_probability`, `unit_branching`, `whorl` | where buds form, as in the parametric mode; a zero at the base of the trunk leaves a clear bole |
+| `branching_angle`, phyllotaxis, `gravitropic_setpoint`, `tropism_weight`, `curvature`, `gnarl`, `direction_variation` | unchanged |
+| `environment_weight` | weight $\gamma$ of $V$: how strongly shoots turn towards light or free space |
+| `apical_dominance`, `parent_length_exponent`, `length_variation` | act on the limit `axis_length` |
+| `bare_base`, `branch_lifespan`, `aging_angle` | not used: shedding does this |
+| `branch_timing` | not used: buds are proleptic |
+| forks, relays, stems, `weight_bending` | unchanged |
+
+### Shedding
+
+After each cycle, the light gathered by a branch (the exposures of the buds it bears
+that can still grow, as sensed at the start of the cycle) is divided by its number of
+internodes at the start of the cycle. Below `shedding_threshold` the branch is shed with
+all it bears (Palubicki et al. 2009, section 4.4, after Takenaka 1994). Stems are never
+shed. Shed metamers stay in the graph, flagged `SHED` with the cycle of their shedding
+(`shed_cycles()`); the pipe model keeps counting them, so radii are not reduced by
+shedding. The rule suits the shadow model; with markers alone `Q` is 0 or 1 and a branch
+would be shed as soon as it stops.
+
+A lateral bud that has not flushed `bud_lifespan` cycles after it formed dies. The paper
+keeps buds for ever (0); a limit bounds the dormant buds a large plant carries, and the
+time of every cycle with them.
+
+### Parameters of `[growth.self_organization]`
+
+| Field | Default | Meaning |
+|---|---|---|
+| `sensing` | `shadow` | `shadow`, `markers` or `both` |
+| `allocation` | `borchert_honda` | `borchert_honda` or `priority` |
+| `axis_bias` | 0.5 | $\lambda$, curve over the bearing order and the position of the branching point |
+| `resource_coefficient` | 2 | $\alpha$ |
+| `light_exponent` | 1 | exponent applied to $Q$ before it is summed; above 1 penalizes shaded buds (the light sensitivity of Longay et al. 2012) |
+| `shadow_cell` | 1 | voxel edge, in internode units |
+| `shadow_strength` | 0.2 | $a$ |
+| `shadow_decay` | 2 | $b$, above 1 |
+| `shadow_depth` | 6 | $q_{max}$, at most 16 |
+| `full_exposure` | 1 | $C$ |
+| `occupancy_radius` | 2 | radius in which a bud removes markers, in internode units |
+| `perception_distance` | 4 | length of the perception cone, in internode units |
+| `perception_angle_deg` | 90 | full angle of the perception cone |
+| `marker_density` | 0.5 | markers per cubic internode unit of the envelope |
+| `marker_limit` | 200000 | largest number of markers |
+| `priority_max`, `priority_min` | 1, 0.006 | weights at the head and past the knee of a priority list |
+| `priority_knee` | 0.5 | fraction of the list over which the weight falls |
+| `apical_control` | 1 | curve over the order of the axis and the position of its tip; at least 0.5 puts the terminal bud first |
+| `shedding_threshold` | 0 | exposure per internode below which a branch is shed; 0 for no shedding |
+| `bud_lifespan` | 0 | cycles a lateral bud stays able to flush; 0 for ever |
+
+Palubicki et al. (2009) give typical values for the occupancy radius (2 internodes), the
+perception cone (4 to 6 internodes, about 90 degrees), the depth of the shadow (4 to 8
+layers), $\alpha$ (2), $\lambda$ (0.46 to 0.54) and the priority weights (1, 0.006 and a
+knee of 0.5 or 0.35): the defaults take those. The paper gives no value for $a$, $b$,
+$C$ or the shedding threshold; those defaults, like `light_exponent`, `shadow_cell`,
+`marker_density` and `bud_lifespan`, are starting points of this implementation.
+
+The parameter set of Stava et al. (2014) is the reference for coverage. Its parameters
+map to species fields as follows; the rules differ (their buds flush with a probability,
+here with a resource), so their values do not carry over.
+
+| Stava et al. (2014) | Here |
+|---|---|
+| apical angle variance | `direction_variation`, `gnarl` |
+| number of lateral buds | `architecture.phyllotaxis.leaves_per_node`, `whorl` |
+| branching angle mean and variance | `branching_angle`, `branching_angle_variation` |
+| roll angle mean and variance | `architecture.phyllotaxis.divergence_deg`, `phyllotaxis_variation` |
+| internode base length and its age factor | `internode_length` (a curve over position, not age) |
+| growth rate | `resource_coefficient`, `shoot_length` |
+| apical and lateral bud extinction | `bud_lifespan` for lateral buds; an apex ends at `axis_length` or with its branch |
+| apical and lateral light factors | `light_exponent` (one for both) |
+| apical dominance: base, distance and age factors | `axis_bias`, or `priority_*` |
+| apical control and its age factor | `apical_control`, `apical_dominance` |
+| phototropism | `environment_weight` |
+| gravitropism | `gravitropic_setpoint`, `tropism_weight` |
+| pruning factor | `shedding_threshold` |
+| low branch pruning factor | `branch_probability` at the base of the trunk |
+| gravity bending strength and angle | `weight_bending` |
+
+### Surroundings
+
+`Surroundings` holds what stands around one plant, in meters in the frame of the plant
+(the plant stands at the origin, Y up; the scale of the plant does not apply):
+
+```rust
+pub struct Surroundings {
+    pub envelope: Option<Shape>,   // volume the crown may fill
+    pub occluders: Vec<Occluder>,  // volumes that block growth, cast shade, or both
+}
+pub struct Occluder { pub shape: Shape, pub blocks: bool, pub shade: f32 }
+```
+
+| `Shape` | Fields |
+|---|---|
+| `Sphere` | `center`, `radius` |
+| `Ellipsoid` | `center`, `radii` along X, Y, Z |
+| `Box` | `min`, `max` |
+| `Cylinder` | `base` (centre of the bottom disc), `radius`, `height`; vertical |
+| `Cone` | `base`, `radius`, `height`; vertical, apex up |
+| `Voxels` | a `VoxelMask`: a grid of filled and empty cubes, the way to pass a voxelized mesh |
+
+In TOML (CLI configs, `--surroundings` files) a shape is a table with a `shape` key;
+`blocks` defaults to true and `shade` to 1. A voxel mask is built in code
+(`VoxelMask::new`, `set`, `from_fn`).
+
+```toml
+envelope = { shape = "ellipsoid", center = [0.0, 5.0, 0.0], radii = [2.5, 5.0, 2.5] }
+
+[[occluders]]                 # a wall
+shape = "box"
+min = [1.5, 0.0, -8.0]
+max = [2.0, 9.0, 8.0]
+
+[[occluders]]                 # the crown of a neighbour: shade only
+shape = "ellipsoid"
+center = [-5.0, 9.0, 0.0]
+radii = [5.0, 6.0, 5.0]
+blocks = false
+shade = 4.0
+```
+
+**Blocking.** No metamer ends inside a blocking occluder, outside the envelope, or below
+the ground for a shoot heading down. The fate stage allots only the metamers that fit
+along the straight continuation of the axis; the orientation stage checks each metamer
+where it really goes, tries it straight ahead if it is blocked, and ends the shoot
+there if that is blocked too. A bud that cannot take one step is left out of the
+allocation, so its share goes to the buds that have room: a plant pressed against a
+clip volume branches behind it, the response to clipping of Prusinkiewicz et al.
+(1994). A step that starts outside the envelope is allowed while it comes closer to
+it, so a trunk can rise into a crown envelope that floats above the ground. A voxel
+envelope should hold the base of the plant, since its distance is only known to within
+a voxel.
+
+**Shade.** An occluder with `shade > 0` darkens the buds near and below it: a bud
+receives `shade * a * b^-q` for every depth `q` in `0..=q_max` such that the volume
+comes within `q` voxels of the point `q` voxels above the bud. This treats a solid as
+one opaque layer per depth with one strength, a coarse rule of this implementation, not
+a light simulation. A wall has `shade = 1`; the crown of a neighbour is an ellipsoid
+with `blocks = false` and a larger `shade`. The shade of occluders does not enter `V`.
+
+**Several plants.** `grow_together` grows several plants in lockstep, each at its
+position, the self-organizing ones casting into one shadow grid and reading it:
+
+```rust
+let stand = [
+    Standing { species: &oak, params, position: Vec3::new(-2.5, 0.0, 0.0) },
+    Standing { species: &oak, params: other, position: Vec3::new(2.5, 0.0, 0.0) },
+];
+let graphs = grow_together(&stand, &Surroundings::none());
+```
+
+Each graph comes back in the frame of its own plant. The grid takes the shadow
+coefficients of the first plant that senses light; within a cycle the plants grow in the
+order given, each seeing the shadows cast up to the previous cycle. This is a first
+form of shared light, enough for two trees or a hedge row; it does not yet batch or
+mesh the group.
+
+### Age and growth sequences
+
+The stages of this mode do not look at the age of the run. A plant grown for `n` cycles
+is the metamers born before cycle `n` of the same plant grown longer, at the same
+places, and the branches it has shed by then are those shed before cycle `n` of the
+longer run. Radii and leaf sites depend on the age, as in the parametric mode.
+
+Every metamer records its birth and, when shed, the cycle of its shedding, so one growth
+holds every earlier state:
+
+```rust
+let record = arbrume_grow::grow_timeline(&species, &params, &surroundings);
+let at_cycle_9 = record.at_cycle(&species, params.scale, 9);  // then mesh with max_cycle = Some(9)
+```
+
+`grow_timeline` keeps the leaf sites of every metamer (a `GrowthRecord`).
+`at_cycle(c)` copies the graph, restores the branches shed after cycle `c`, sets the
+radii the radius model gives on the structure of that cycle (`radii_at_cycle`: the pipe
+model from the tips the plant had then, or the tapered model with the lengths of then;
+one pass over the nodes), and keeps the leaves at the tip of the axes that had stopped by
+then. The mesher then leaves out what was born later (`MeshOptions::max_cycle`). The
+result has the live metamers of the plant grown to that age, with the same pipe radii.
+Axes keep the position they have in the grown plant, so nothing jumps between frames;
+with `weight_bending` they carry the sag of the final weight at every age, and an axis
+that paused and grew again is treated as growing throughout for its leaves.
+`arbrume_gen::Generator::timeline` and `frame` wrap this, and `arbrume gen
+--growth-frames K` writes the sequence ([Command line](cli.md)).
+
+### Performance and engine options
+
+`EngineOptions` holds the choices that change time and memory but never the plant; the
+defaults come from the measurements below (`arbrume bench --engine`, and
+`cargo bench -p arbrume-gen --bench engine`), taken on one 16-thread desktop: they
+compare options, they are not targets.
+
+- **Shadow grid storage.** `GridStorage::Dense` is one array over the bounding box of
+  what was cast, enlarged when a pyramid leaves it; `GridStorage::Sparse` is a hash
+  table of blocks of 8 x 8 x 8 voxels. Casting and reading the shadows of the 19 756
+  nodes of one tree took 3.9 ms dense and 18.9 ms sparse, for 3.9 MB and 1.1 MB of
+  voxels; whole growths are 1.2 to 2.1 times slower with the sparse grid. The default
+  is dense.
+- **Sensing buds in parallel** (`parallel_buds`). Reading the grid for each bud is a few
+  memory reads; spreading it over the pool changed the growth time by -15 % to +50 %
+  from one run to the next without a consistent gain. The default is sequential.
+- **Giving markers to buds in parallel** (`parallel_markers`). Each marker looks up the
+  buds around it in a read-only hash grid; the sums are then made on one thread in
+  marker order, so the result does not depend on the threads. One cycle with 6 934
+  markers took 0.69 ms on one thread and 0.17 ms on the pool, and a whole growth of the
+  marker preset is about 2.4 times faster; in a batch that already uses every thread it
+  changes nothing. The default is parallel.
+
+Growth time of one plant, default options (median of 7, milliseconds):
+
+| preset | age | nodes | default | sparse grid | parallel buds | sequential markers |
+|---|---|---|---|---|---|---|
+| `open_grown_broadleaf` | 20 | 4 331 | 3.5 | 6.9 | 3.0 | 3.5 |
+| `open_grown_broadleaf` | 40 | 32 499 | 35.6 | 74.0 | 29.9 | 36.0 |
+| `forest_grown_broadleaf` | 40 | 15 408 | 11.5 | 23.0 | 13.1 | 15.2 |
+| `excurrent_conifer` | 40 | 12 898 | 10.9 | 17.3 | 12.1 | 10.1 |
+| `spreading_decurrent` | 40 | 9 690 | 10.4 | 21.4 | 9.6 | 10.4 |
+| `thicket_shrub` | 20 | 2 511 | 1.8 | 2.9 | 1.7 | 1.7 |
+| `hedge_shrub` | 20 | 3 604 | 2.5 | 3.9 | 2.1 | 2.5 |
+| `envelope_tree` | 20 | 1 905 | 5.6 | 6.7 | 5.9 | 14.1 |
+
+Growth costs about one microsecond per node on these presets, and stays below the cost
+of meshing and export for the smaller plants ([Command line](cli.md) has the stage
+table). The batch of plants stays the main parallel unit.
 
 ## Radii
 
@@ -250,7 +612,9 @@ A node has `leaves_per_node` sites, at the same azimuths as its buds, or
 phyllotaxis gives thicken the foliage without adding buds. With `r` the
 `foliage.retention_cycles`, a node keeps its leaves when it was born in the last `r`
 cycles, or when it belongs to the last `r` shoots of an axis that has finished growing:
-the tip of a full-grown axis stays leafy, as if it kept making short shoots. For a
+the tip of a full-grown axis stays leafy, as if it kept making short shoots. In the
+self-organizing mode the same holds for an axis whose apex is alive but received too
+little to extend: a stalled branch keeps its tuft until it is shed. For a
 deciduous tree `r` counts the growth units whose short shoots still bear leaves, not the
 life of one leaf, so 3 or 4 fills a crown where 1 leaves only tufts at the tips.
 
@@ -266,7 +630,8 @@ several leaves, or a needle-clad branchlet, built by the mesher (see
 ## Species
 
 The preset library is described in [Species library](species.md).
-`crates/arbrume-grow/tests/data/` holds three older species files kept as test fixtures: a
+`crates/arbrume-grow/tests/data/` holds a fixture of the self-organizing mode
+(`competing.toml`) and three older species files kept as test fixtures: a
 broadleaf tree (`broadleaf.toml`: diffuse branching, plagiotropic branches, forks, pipe
 radii, bending), a conifer (`conifer.toml`: whorls at the end of each growth unit,
 conical crown, tapered radii, four cycles of needles) and a shrub (`shrub.toml`: six
@@ -289,11 +654,17 @@ total length against values derived from the published productions and tables.
   comprehensive approach to plant form, structure and ontogeny, Annals of Botany.
 - Longay, Runions, Boudon and Prusinkiewicz 2012, TreeSketch, Eurographics SBIM.
 - Palubicki et al. 2009, Self-organizing tree models for image synthesis, ACM TOG.
+- Prusinkiewicz, James and Mech 1994, Synthetic topiary, SIGGRAPH.
 - Prusinkiewicz and Lindenmayer 1990, The Algorithmic Beauty of Plants, Springer.
 - Prusinkiewicz, Mündermann, Karwowski and Lane 2001, The use of positional information
   in the modeling of plants, SIGGRAPH.
 - de Reffye et al. 1988, Plant models faithful to botanical structure and development,
   SIGGRAPH.
+- Runions, Lane and Prusinkiewicz 2007, Modeling trees with a space colonization
+  algorithm, Eurographics Workshop on Natural Phenomena.
 - Shinozaki, Yoda, Hozumi and Kira 1964, A quantitative analysis of plant form: the pipe
   model theory, Japanese Journal of Ecology.
+- Stava et al. 2014, Inverse procedural modelling of trees, Computer Graphics Forum.
+- Takenaka 1994, A simulation model of tree architecture development based on growth
+  response to local light environment, Journal of Plant Research.
 - Weber and Penn 1995, Creation and rendering of realistic trees, SIGGRAPH.

@@ -62,6 +62,9 @@ pub const JITTERABLE: &[&str] = &[
     "foliage.twig.length",
     "foliage.twig.bend_deg",
     "bark.color",
+    "growth.self_organization.axis_bias",
+    "growth.self_organization.resource_coefficient",
+    "growth.self_organization.shedding_threshold",
 ];
 
 /// How individuals of a species vary: the ranges a generator draws from, and the jitter
@@ -169,7 +172,9 @@ impl Species {
                 rng: Rng::new(seed, index, stream),
                 amount,
             };
-            if !individual.jitter_growth(name, &mut factors) {
+            let done = individual.jitter_growth(name, &mut factors)
+                || individual.jitter_competition(name, &mut factors);
+            if !done {
                 individual.jitter_appearance(name, &mut factors);
             }
         }
@@ -215,6 +220,26 @@ impl Species {
             _ => return false,
         };
         *curve = factors.curve(curve, lo, hi);
+        true
+    }
+
+    /// Jitters the self-organization parameter `name`; `false` when it is not one.
+    fn jitter_competition(&mut self, name: &str, factors: &mut Factors) -> bool {
+        let model = &mut self.growth.self_organization;
+        match name {
+            "growth.self_organization.axis_bias" => {
+                model.axis_bias = factors.curve(&model.axis_bias, 0.0, 1.0);
+            }
+            "growth.self_organization.resource_coefficient" => {
+                let alpha = model.resource_coefficient;
+                model.resource_coefficient = factors.scalar(alpha, 0.0, f32::MAX);
+            }
+            "growth.self_organization.shedding_threshold" => {
+                let threshold = model.shedding_threshold;
+                model.shedding_threshold = factors.scalar(threshold, 0.0, f32::MAX);
+            }
+            _ => return false,
+        }
         true
     }
 

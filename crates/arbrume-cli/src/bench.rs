@@ -6,15 +6,23 @@
 //! of `batch` plants of the species and age (base seed 1, indices `0..batch`), generated
 //! and exported to memory by [`run_batch`], on one thread and on every thread of the
 //! global pool. Nothing is written to disk.
+//!
+//! `--engine` prints another table instead, for the species in the self-organizing mode:
+//! the median growth time of the same plant with the default engine options, with a
+//! sparse shadow grid, with the buds sensed on the global pool and with the markers
+//! given to buds on one thread, then the throughput of a batch of plants grown one per
+//! task with the default options and with nothing parallel inside a plant.
 
 use std::time::{Duration, Instant};
 
-use arbrume_core::species::Species;
+use arbrume_core::species::{GrowthMode, Species};
 use arbrume_export::{GlbOptions, write_glb};
 use arbrume_gen::{
     Distribution, GENERATOR, Generator, Plant, Sampler, metadata, preset, presets, run_batch,
 };
+use arbrume_grow::{EngineOptions, GridStorage, GrowParams, Surroundings, grow_in_with};
 use clap::Args;
+use rayon::prelude::*;
 
 use crate::error::CliError;
 use crate::source::resolve;
@@ -37,6 +45,9 @@ pub struct BenchArgs {
     /// Mesh quality.
     #[arg(long, default_value_t = 1.0)]
     quality: f32,
+    /// Compare the engine options of the self-organizing mode instead.
+    #[arg(long)]
+    engine: bool,
 }
 
 /// One row of the table.
@@ -57,6 +68,10 @@ pub fn run(args: &BenchArgs) -> Result<(), CliError> {
     }
     let species = selected_species(&args.species)?;
     let threads = rayon::current_num_threads();
+    if args.engine {
+        engine_table(&species, args);
+        return Ok(());
+    }
     println!(
         "| species | age | nodes | triangles | grow ms | mesh ms | export ms | file MB \
          | trees/s (1 thread) | trees/s ({threads} threads) |"
@@ -181,4 +196,89 @@ fn throughput(species: &Species, sampler: &Sampler, count: u32) -> Result<f64, C
     let elapsed = start.elapsed().as_secs_f64();
     results.into_iter().collect::<Result<Vec<()>, _>>()?;
     Ok(f64::from(count) / elapsed)
+}
+
+/// Median time of `repeats` growths of the plant of `params` with `options`.
+fn time_growth(
+    species: &Species,
+    params: &GrowParams,
+    options: EngineOptions,
+    repeats: usize,
+) -> f64 {
+    let open = Surroundings::none();
+    let times = (0..repeats).map(|_| {
+        let start = Instant::now();
+        std::hint::black_box(grow_in_with(species, params, &open, options));
+        start.elapsed()
+    });
+    ms(median(times.collect()))
+}
+
+/// Plants per second of `count` plants of the species grown on the global pool, one
+/// plant per task, each sensing its buds as `options` says.
+fn growth_throughput(species: &Species, age: u16, options: EngineOptions, count: u32) -> f64 {
+    let open = Surroundings::none();
+    let start = Instant::now();
+    (0..count).into_par_iter().for_each(|index| {
+        let params = GrowParams {
+            seed: arbrume_gen::plant_seed(1, index),
+            age,
+            scale: 1.0,
+        };
+        std::hint::black_box(grow_in_with(species, &params, &open, options));
+    });
+    f64::from(count) / start.elapsed().as_secs_f64()
+}
+
+/// Prints the table of `--engine`.
+fn engine_table(species: &[(String, Species)], args: &BenchArgs) {
+    let threads = rayon::current_num_threads();
+    println!(
+        "| species | age | nodes | default ms | sparse grid ms | parallel buds ms \
+         | sequential markers ms | trees/s ({threads} threads) | trees/s, sequential plants |"
+    );
+    println!("|---|---|---|---|---|---|---|---|---|");
+    let default = EngineOptions::default();
+    let sparse = EngineOptions {
+        storage: GridStorage::Sparse,
+        ..default
+    };
+    let buds = EngineOptions {
+        parallel_buds: true,
+        ..default
+    };
+    let sequential = EngineOptions {
+        parallel_markers: false,
+        ..default
+    };
+    let competing = species
+        .iter()
+        .filter(|(_, species)| species.growth.mode == GrowthMode::SelfOrganizing);
+    for (label, species) in competing {
+        for &age in &args.ages {
+            let params = GrowParams {
+                seed: arbrume_gen::plant_seed(1, 0),
+                age,
+                scale: 1.0,
+            };
+            let nodes = grow_in_with(species, &params, &Surroundings::none(), default).node_count();
+            let time = |options| time_growth(species, &params, options, args.repeats);
+            let (batch, plain) = if args.batch == 0 {
+                (String::from("-"), String::from("-"))
+            } else {
+                let rate = |options| growth_throughput(species, age, options, args.batch);
+                (
+                    format!("{:.1}", rate(default)),
+                    format!("{:.1}", rate(sequential)),
+                )
+            };
+            println!(
+                "| {label} | {age} | {nodes} | {:.2} | {:.2} | {:.2} | {:.2} | {batch} | {plain} |",
+                time(default),
+                time(sparse),
+                time(buds),
+                time(sequential)
+            );
+        }
+    }
 }

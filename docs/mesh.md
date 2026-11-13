@@ -251,7 +251,10 @@ to choose a level that fits a triangle budget.
 cut to its nodes born by `c` (`ChainView::born_by`), and a leaf is kept when its site and
 node are born by `c` and it is not older than the retention of the species
 (`c - birth < foliage.retention_cycles`). Radii are those stored in the graph, so a
-younger plant keeps the girth of the grown one unless the caller recomputes them.
+younger plant keeps the girth of the grown one unless the caller recomputes them:
+`arbrume_grow::GrowthRecord::at_cycle` gives the graph of an earlier age with its radii,
+the branches it had not yet shed and the leaf sites of that age
+([Growth](growth.md#age-and-growth-sequences)).
 
 Without `max_cycle`, every leaf site of the graph gets a leaf.
 

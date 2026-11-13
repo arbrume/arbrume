@@ -54,7 +54,7 @@ pub use foliage::{
     MAX_TWIG_LEAVES, MAX_TWIG_VARIANTS, Twig,
 };
 pub use geometry::{Geometry, RadiusModel};
-pub use growth::{Growth, SelfOrganization};
+pub use growth::{Allocation, Growth, GrowthMode, SelfOrganization, Sensing};
 pub use variation::{JITTERABLE, Variation};
 
 use crate::curve::OrderCurve;

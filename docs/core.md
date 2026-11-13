@@ -138,6 +138,8 @@ let side = graph.add_chain(attach_node, ChainKind::Lateral, metamer);
 | `add_bud(node, kind, direction) -> BudId` | dormant bud; a terminal bud goes on the tip of a chain without one |
 | `sprout(bud, kind, metamer) -> NodeId` | a lateral bud becomes a chain and stays as its terminal bud |
 | `shed_subtree(node)` | flags the node and its descendants as shed, kills their buds |
+| `shed_subtrees(&nodes, cycle)` | the same for several branches in one pass, recording the growth cycle of the shedding |
+| `restore_shed_after(cycle)` | clears the flag of the nodes shed after `cycle`: the branches the plant still bore then |
 | `add_organ(site) -> usize`, `clear_organs()` | organ sites |
 
 A `Metamer` is `{ position, radius, birth, flags }`. `birth` must not be earlier than the
@@ -190,7 +192,10 @@ them; the result is a snapshot. `is_ancestor(a, n)` walks the parent links.
 ### Shedding and time
 
 Shed nodes stay in the graph with `NodeFlags::SHED`. A shed node has only shed
-descendants, so within a chain the shed nodes are at the distal end.
+descendants, so within a chain the shed nodes are at the distal end. `shed_cycles()`
+gives, for each shed node, the growth cycle in which it was shed (0 when it was shed
+with `shed_subtree`), so the plant can be shown with the branches it bore at an earlier
+age ([Growth](growth.md)).
 
 Births never decrease from parent to child. The plant as it was at cycle `c` is the set
 of nodes with `birth <= c`, which is a prefix of every chain.
@@ -295,7 +300,7 @@ its own fields, so layers can be extended independently.
 | Table | File | Fields |
 |---|---|---|
 | `[architecture]` | `architecture.rs` | `branching` (monopodial, sympodial), `growth_rhythm` (rhythmic, continuous), `branching_pattern` (rhythmic, continuous, diffuse), `branch_timing` (sylleptic, proleptic), `max_order`, `phyllotaxis` (`leaves_per_node`, `divergence_deg`), `axes` (per order: `orientation`, `short`, optional `phyllotaxis`) |
-| `[growth]` | `growth.rs` | lengths and extension, branching, shape of an axis, forks, relays, stems, shedding, bending: every field is listed in [Growth](growth.md) |
+| `[growth]` | `growth.rs` | `mode` (parametric, self_organizing), lengths and extension, branching, shape of an axis, forks, relays, stems, shedding, bending, and the `[growth.self_organization]` table: every field is listed in [Growth](growth.md) |
 | `[geometry]` | `geometry.rs` | `radius_model` (pipe, tapered), `pipe_exponent`, `tip_radius`, `radius_ratio`, `child_radius_exponent`, `taper`; `flare`, buttress, collar and `radial_segments` are listed in [Meshing](mesh.md) |
 | `[foliage]` | `foliage.rs` | which nodes bear leaves (`enabled`, `retention_cycles`, `density`, `per_node`, `min_order`, see [Growth](growth.md)); the leaf, its variation and the `[foliage.twig]` instanced at each site (see [Meshing](mesh.md)) |
 | `[bark]` | `bark.rs` | `color`, `young_color`, `young_radius`, `color_variation`, `roughness`, `texture_size`, `texture` (see [Meshing](mesh.md)) |
@@ -331,7 +336,8 @@ table does not change the others. The names accepted are those of
 `curvature`, `gnarl`, `direction_variation`, `bare_base`, `fork_probability`,
 `apical_dominance`, `stems`, `stem_angle`, `stem_spread`; `geometry.radius_ratio`,
 `flare`; `foliage.length`, `width_ratio`, `density`, `inclination_deg`, `color`,
-`twig.length`, `twig.bend_deg`; `bark.color`. Any other name is an error.
+`twig.length`, `twig.bend_deg`; `bark.color`; `growth.self_organization.axis_bias`,
+`resource_coefficient`, `shedding_threshold`. Any other name is an error.
 
 To add a parameter: add the field with its doc comment to the struct of its layer, give
 it a value in `Default`, and check its domain in that layer's `validate`. Because of

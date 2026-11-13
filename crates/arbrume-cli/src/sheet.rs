@@ -4,20 +4,28 @@
 //! row per species, seed and view azimuth and one column per age. With `--random N` the
 //! sheet shows plants `offset..offset + N` of the random sampler, row by row.
 //! `--view crown` and `--view junction` frame a part of the plant instead of the whole:
-//! the middle of the crown, or the trunk and its first branches. One line per plant
+//! the middle of the crown, or the trunk and its first branches. `--surroundings` puts
+//! every plant in the surroundings of a file and draws its obstacles, `--growth-frames`
+//! shows the frames of the growth sequence of the oldest age instead of the ages, and
+//! `--row N` grows N plants side by side that share their light. One line per plant
 //! (height, triangles, leaf sites, time) goes to standard output.
 
 use std::path::PathBuf;
 use std::time::Instant;
 
 use arbrume_core::species::Species;
-use arbrume_gen::{Budget, GenParams, Generator, Plant, RandomSampler, plant_seed};
+use arbrume_gen::plant_seed;
+use arbrume_gen::{Budget, GenParams, Generator, Plant, RandomSampler, Stats, Surroundings};
+use arbrume_grow::{Standing, grow_together};
+use arbrume_mesh::Mesher;
 use arbrume_raster::{Bounds, Camera, Image, Renderer, ThumbnailOptions};
 use clap::{Args, ValueEnum};
 use glam::Vec3;
 use rayon::prelude::*;
 
+use crate::config::load_surroundings;
 use crate::error::CliError;
+use crate::scene::{add_occluders, merge};
 use crate::source::resolve;
 
 /// Which part of a plant a thumbnail frames.
@@ -64,9 +72,32 @@ pub struct SheetArgs {
     /// Thumbnails per row of a random sheet.
     #[arg(long, default_value_t = 8)]
     columns: u32,
+    /// Surroundings file applied to every plant; its obstacles are drawn.
+    #[arg(long, value_name = "FILE", conflicts_with = "random")]
+    surroundings: Option<PathBuf>,
+    /// Show K frames of the growth of the oldest age, one column each.
+    #[arg(long, value_name = "K", conflicts_with = "random")]
+    growth_frames: Option<u16>,
+    /// Grow N plants in a row along X, sharing their light.
+    #[arg(long, value_name = "N", conflicts_with_all = ["random", "growth_frames"])]
+    row: Option<u32>,
+    /// Distance in meters between the plants of a row.
+    #[arg(long, value_name = "METERS", default_value_t = 4.0, requires = "row")]
+    spacing: f32,
     /// PNG file to write.
     #[arg(long)]
     out: PathBuf,
+}
+
+/// What a cell shows besides one plant at one age.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Variant {
+    /// The plant.
+    Plain,
+    /// Frame `index` of a growth sequence of `frames` frames.
+    Frame { frames: u16, index: usize },
+    /// `count` plants in a row, `spacing` meters apart.
+    Row { count: u32, spacing: f32 },
 }
 
 /// One thumbnail to make.
@@ -77,31 +108,54 @@ struct Cell {
     params: GenParams,
     budget: Budget,
     azimuth: f32,
+    variant: Variant,
 }
 
 /// The cells of a species sheet, row by row, and the number of columns.
 fn species_cells(args: &SheetArgs) -> Result<(Vec<Cell>, u32), CliError> {
+    let surroundings = args
+        .surroundings
+        .as_deref()
+        .map(load_surroundings)
+        .transpose()?;
+    let oldest = args.ages.iter().copied().max().unwrap_or(0);
+    let spacing = args.spacing;
+    let columns: Vec<(u16, Variant)> = match (args.growth_frames, args.row) {
+        (Some(frames), _) => {
+            let shown = usize::from(frames.min(oldest));
+            let frame = |index| (oldest, Variant::Frame { frames, index });
+            (0..shown).map(frame).collect()
+        }
+        (None, Some(count)) => {
+            let row = |&age| (age, Variant::Row { count, spacing });
+            args.ages.iter().map(row).collect()
+        }
+        (None, None) => args.ages.iter().map(|&age| (age, Variant::Plain)).collect(),
+    };
     let mut cells = Vec::new();
     for spec in &args.species {
         let source = resolve(spec, std::path::Path::new(""))?;
         let species = Species::from_toml_str(&source.text).map_err(CliError::usage)?;
         for seed in 0..args.seeds {
             for &azimuth in &args.azimuths {
-                for &age in &args.ages {
+                for &(age, variant) in &columns {
                     let seed = plant_seed(u64::from(seed) + 1, 0);
                     let quality = args.quality.unwrap_or(1.0);
+                    let mut params = GenParams::new(seed, age).with_quality(quality);
+                    params.surroundings.clone_from(&surroundings);
                     cells.push(Cell {
                         label: format!("{} age {age}", source.label),
                         species: species.clone(),
-                        params: GenParams::new(seed, age).with_quality(quality),
+                        params,
                         budget: Budget::NONE,
                         azimuth,
+                        variant,
                     });
                 }
             }
         }
     }
-    Ok((cells, args.ages.len() as u32))
+    Ok((cells, columns.len() as u32))
 }
 
 /// The cells of a random sheet and the number of columns.
@@ -120,6 +174,7 @@ fn random_cells(args: &SheetArgs, count: u32) -> Result<(Vec<Cell>, u32), CliErr
                 params: pick.params,
                 budget: pick.budget,
                 azimuth,
+                variant: Variant::Plain,
             })
         })
         .collect::<Result<Vec<_>, CliError>>()?;
@@ -152,14 +207,85 @@ fn camera(view: View, bounds: &Bounds, options: &ThumbnailOptions) -> Option<Cam
     ))
 }
 
+/// Grows `count` plants of the species of `cell` in a row along X, `spacing` meters
+/// apart and sharing their light, into `plant`: the graph and statistics of the first,
+/// the mesh of all.
+fn grow_row(cell: &Cell, (count, spacing): (u32, f32), plant: &mut Plant) -> Result<(), CliError> {
+    let fail = |e: &dyn std::fmt::Display| CliError::failed(format!("{}: {e}", cell.label));
+    cell.species.validate().map_err(|e| fail(&e))?;
+    cell.params.validate().map_err(|e| fail(&e))?;
+    let middle = 0.5 * count.saturating_sub(1) as f32;
+    let standing: Vec<Standing> = (0..count)
+        .map(|index| {
+            let mut params = cell.params.grow_params();
+            params.seed = plant_seed(cell.params.seed, index);
+            Standing {
+                species: &cell.species,
+                params,
+                position: Vec3::X * ((index as f32 - middle) * spacing),
+            }
+        })
+        .collect();
+    let open = Surroundings::none();
+    let surroundings = cell.params.surroundings.as_deref().unwrap_or(&open);
+    let mut graphs = grow_together(&standing, surroundings);
+    let mut mesher = Mesher::new();
+    plant.mesh.parts.clear();
+    for (graph, standing) in graphs.iter().zip(&standing) {
+        let mesh = mesher
+            .mesh(graph, &cell.species, &cell.params.mesh)
+            .map_err(|e| fail(&e))?;
+        merge(&mut plant.mesh, &mesh, standing.position);
+    }
+    if !graphs.is_empty() {
+        plant.graph = graphs.swap_remove(0);
+    }
+    plant.params = cell.params.clone();
+    plant.stats = Stats::of(&plant.graph, &plant.mesh);
+    Ok(())
+}
+
+/// Generates the plant of `cell` into `plant`. Returns the bounds to frame when they
+/// are not those of the mesh: a frame of a growth sequence is framed like its last.
+fn generate(cell: &Cell, plant: &mut Plant) -> Result<Option<Bounds>, CliError> {
+    let fail = |e: arbrume_gen::GenError| CliError::failed(format!("{}: {e}", cell.label));
+    let mut generator = Generator::new();
+    match cell.variant {
+        Variant::Plain => {
+            generator
+                .generate_within(&cell.species, &cell.params, &cell.budget, plant)
+                .map_err(fail)?;
+            Ok(None)
+        }
+        Variant::Row { count, spacing } => grow_row(cell, (count, spacing), plant).map(|()| None),
+        Variant::Frame { frames, index } => {
+            let timeline = generator
+                .timeline(&cell.species, &cell.params)
+                .map_err(fail)?;
+            let cycles = timeline.frame_cycles(frames);
+            let last = cycles.last().copied().unwrap_or(0);
+            generator
+                .frame(&cell.species, &timeline, last, plant)
+                .map_err(fail)?;
+            let bounds = Bounds::of_mesh(&plant.mesh);
+            let cycle = cycles.get(index).copied().unwrap_or(last);
+            generator
+                .frame(&cell.species, &timeline, cycle, plant)
+                .map_err(fail)?;
+            Ok(bounds)
+        }
+    }
+}
+
 /// Generates and renders one cell; returns its image and its report line.
 fn render(cell: &Cell, args: &SheetArgs) -> Result<(Image, String), CliError> {
     let start = Instant::now();
     let mut plant = Plant::default();
-    Generator::new()
-        .generate_within(&cell.species, &cell.params, &cell.budget, &mut plant)
-        .map_err(|e| CliError::failed(format!("{}: {e}", cell.label)))?;
+    let framed = generate(cell, &mut plant)?;
     let elapsed = start.elapsed();
+    if let Some(surroundings) = &cell.params.surroundings {
+        add_occluders(&mut plant.mesh, surroundings);
+    }
     let options = ThumbnailOptions {
         width: args.size,
         height: args.size,
@@ -168,6 +294,9 @@ fn render(cell: &Cell, args: &SheetArgs) -> Result<(Image, String), CliError> {
     };
     let mut scene = options.scene(&plant.mesh);
     let bounds = Bounds::of_mesh(&plant.mesh);
+    if let Some(whole) = framed {
+        scene.camera = Camera::frame(&whole, options.azimuth, options.elevation, options.fov);
+    }
     if let Some(camera) = bounds.and_then(|bounds| camera(args.view, &bounds, &options)) {
         scene.camera = camera;
     }

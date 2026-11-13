@@ -19,6 +19,7 @@ mod bench;
 mod config;
 mod error;
 mod progress;
+mod scene;
 mod sheet;
 mod source;
 mod species_cmd;

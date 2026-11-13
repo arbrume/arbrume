@@ -43,6 +43,49 @@ use glam::Vec3;
 /// Stream of the per-cycle bend of an axis.
 const GNARL: Stream = Stream::custom(1);
 
+/// Full-grown length of the stem of the seed `site`: the `axis_length` of order 0 with
+/// its variation. `None` when it is shorter than half an internode.
+pub(crate) fn seed_length(cx: &Context, site: &BudSite) -> Option<f32> {
+    let growth = &cx.species.growth;
+    let mut rng = Rng::new(site.key, 0, Stream::SHOOT_LENGTH);
+    let variation = growth.length_variation.eval(0, 0.0);
+    let length = growth.axis_length.eval(0, 0.0) * variation.mul_add(rng.signed(), 1.0);
+    (length >= 0.5 * growth.internode_length.eval(0, 0.0)).then_some(length)
+}
+
+/// Whether a lateral bud forms at `site` on the axis of `bearing`, and the full-grown
+/// length of its axis: the branching probability, then the length formula of the
+/// [module documentation](self). `None` when no bud forms.
+pub(crate) fn lateral_length(cx: &Context, bearing: &Meristem, site: &BudSite) -> Option<f32> {
+    let (growth, architecture) = (&cx.species.growth, &cx.species.architecture);
+    let x = site.position;
+    let mut probability = growth.branch_probability.eval(bearing.order, x);
+    let tiers = architecture.growth_rhythm == GrowthRhythm::Rhythmic
+        && architecture.branching_pattern == BranchingPattern::Rhythmic;
+    if tiers {
+        probability *= growth.unit_branching.eval(site.unit_position);
+    }
+    if probability <= 0.0 {
+        return None;
+    }
+    let mut rng = Rng::new(site.key, 0, Stream::BUD_FATE);
+    let every = architecture.branching_pattern == BranchingPattern::Continuous;
+    if !every && !rng.chance(probability) {
+        return None;
+    }
+    let order = site.order;
+    let mut length = growth.axis_length.eval(order, x) * (1.0 - growth.apical_dominance * x);
+    let reference = growth.axis_length.order(bearing.order).bounds().1;
+    if growth.parent_length_exponent > 0.0 && reference > 0.0 {
+        length *= (bearing.target / reference).powf(growth.parent_length_exponent);
+    }
+    length *= growth
+        .length_variation
+        .eval(order, x)
+        .mul_add(rng.signed(), 1.0);
+    (length >= 0.5 * growth.internode_length.eval(order, 0.0)).then_some(length)
+}
+
 /// Growth bookkeeping of one meristem.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Vigor {
@@ -100,13 +143,7 @@ impl<'a> GradientFate<'a> {
 
     /// Admission of a seed: the stem gets the `axis_length` of order 0.
     fn admit_seed(&mut self, site: &BudSite) -> Option<f32> {
-        let growth = &self.cx.species.growth;
-        let mut rng = Rng::new(site.key, 0, Stream::SHOOT_LENGTH);
-        let variation = growth.length_variation.eval(0, 0.0);
-        let length = growth.axis_length.eval(0, 0.0) * variation.mul_add(rng.signed(), 1.0);
-        if length < 0.5 * growth.internode_length.eval(0, 0.0) {
-            return None;
-        }
+        let length = seed_length(&self.cx, site)?;
         let limit = self.length_at_age(0, length, 0);
         self.vigor.push(Vigor {
             potential: 0.0,
@@ -115,7 +152,7 @@ impl<'a> GradientFate<'a> {
         Some(length)
     }
 
-    /// Admission of a lateral bud: bare base, probability, then length.
+    /// Admission of a lateral bud: bare base, lifespan, then probability and length.
     fn admit_lateral(&mut self, plant: &Plant, site: &BudSite, parent: MeristemId) -> Option<f32> {
         let species = self.cx.species;
         let (growth, architecture) = (&species.growth, &species.architecture);
@@ -126,40 +163,13 @@ impl<'a> GradientFate<'a> {
         if site.arc < bare * self.vigor[parent.index()].limit {
             return None;
         }
-        let x = site.position;
-        let lifespan = growth.branch_lifespan.eval(bearing.order, x);
+        let lifespan = growth.branch_lifespan.eval(bearing.order, site.position);
         if lifespan >= 0.5 && f32::from(self.cx.age.saturating_sub(site.cycle)) > lifespan {
             return None;
         }
-        let mut probability = growth.branch_probability.eval(bearing.order, x);
-        let tiers = architecture.growth_rhythm == GrowthRhythm::Rhythmic
-            && architecture.branching_pattern == BranchingPattern::Rhythmic;
-        if tiers {
-            probability *= growth.unit_branching.eval(site.unit_position);
-        }
-        if probability <= 0.0 {
-            return None;
-        }
-        let mut rng = Rng::new(site.key, 0, Stream::BUD_FATE);
-        let every = architecture.branching_pattern == BranchingPattern::Continuous;
-        if !every && !rng.chance(probability) {
-            return None;
-        }
-        let order = site.order;
-        let mut length = growth.axis_length.eval(order, x) * (1.0 - growth.apical_dominance * x);
-        let reference = growth.axis_length.order(bearing.order).bounds().1;
-        if growth.parent_length_exponent > 0.0 && reference > 0.0 {
-            length *= (bearing.target / reference).powf(growth.parent_length_exponent);
-        }
-        length *= growth
-            .length_variation
-            .eval(order, x)
-            .mul_add(rng.signed(), 1.0);
-        if length < 0.5 * growth.internode_length.eval(order, 0.0) {
-            return None;
-        }
+        let length = lateral_length(&self.cx, bearing, site)?;
         let delay = u16::from(architecture.branch_timing == BranchTiming::Proleptic);
-        let limit = self.length_at_age(order, length, site.cycle.saturating_add(delay));
+        let limit = self.length_at_age(site.order, length, site.cycle.saturating_add(delay));
         self.vigor.push(Vigor {
             potential: 0.0,
             limit,

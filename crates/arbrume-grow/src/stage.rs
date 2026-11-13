@@ -82,6 +82,8 @@ pub struct HeadingInput {
     pub heading: Vec3,
     /// Unit vector orthogonal to `heading`, transported along the axis.
     pub side: Vec3,
+    /// Point from which the metamer extends, in the scaled frame of the graph.
+    pub tip: Vec3,
     /// Direction `V` preferred by the environment; zero when there is none.
     pub preferred: Vec3,
     /// Relative position of the base of the metamer along the full-grown axis.
@@ -125,7 +127,8 @@ pub trait BudFate: Debug {
 /// Stage 3: direction of each new metamer.
 pub trait ShootOrientation: Debug {
     /// Unit direction of the metamer described by `input`. The metamers of a shoot are
-    /// asked in order, base to tip.
+    /// asked in order, base to tip. A zero vector ends the shoot before this metamer:
+    /// the apex stays alive and may grow again in a later cycle.
     fn heading(&mut self, input: &HeadingInput) -> Vec3;
 }
 

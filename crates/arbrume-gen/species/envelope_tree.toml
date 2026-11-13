@@ -1,0 +1,85 @@
+# Tree shaped by an envelope, self-organizing with space colonization and light: the
+# branches grow towards the free space left in the crown envelope and stop at its
+# surface. Without surroundings the envelope is an ellipsoid drawn from axis_length; give
+# another one (a cone, a cylinder, a voxel mask) to shape the crown.
+#
+# Typical size at age 25 in its default envelope: about 9.5 m tall, crown 8 m wide. Every
+# value is a starting point chosen by eye, not a measurement.
+
+schema_version = 0
+name = "Envelope-shaped tree"
+
+[architecture]
+branching = "monopodial"
+growth_rhythm = "rhythmic"
+branching_pattern = "diffuse"
+branch_timing = "proleptic"
+max_order = 5
+phyllotaxis = { leaves_per_node = 1, divergence_deg = 137.5 }
+
+[growth]
+mode = "self_organizing"
+environment_weight = 0.35
+# The trunk height and the longest branch of order 1 size the default envelope.
+axis_length = { by_order = [9.0, 3.5, 3.0, 2.0, 1.0, 0.6] }
+shoot_length = { by_order = [0.6, 0.5, 0.45, 0.4] }
+length_variation = 0.1
+internode_length = { by_order = [0.25, 0.25, 0.22, 0.2] }
+branch_probability = { by_order = [[[0.0, 0.0], [0.15, 0.0], [0.2, 0.7]], 0.65] }
+branching_angle = { by_order = [45.0, 60.0, 55.0, 50.0] }
+branching_angle_variation = 10.0
+direction_variation = { by_order = [2.0, 5.0, 6.0, 6.0] }
+gnarl = { by_order = [3.0, 8.0, 10.0, 8.0] }
+gravitropic_setpoint = { by_order = [0.0, 65.0, 75.0, 80.0] }
+tropism_weight = { by_order = [0.1, 0.03, 0.02, 0.02] }
+
+[growth.self_organization]
+sensing = "both"
+allocation = "borchert_honda"
+axis_bias = 0.51
+resource_coefficient = 2.0
+occupancy_radius = 2.0
+perception_distance = 5.0
+perception_angle_deg = 90.0
+marker_density = 0.4
+bud_lifespan = 4
+
+[geometry]
+radius_model = "pipe"
+pipe_exponent = 2.2
+tip_radius = 0.005
+flare = 0.5
+
+[foliage]
+length = 0.1
+width_ratio = 0.75
+shape = "ovate"
+segments = 2
+inclination_deg = 55.0
+retention_cycles = 4
+density = 0.85
+per_node = 2
+color = [0.08, 0.22, 0.05]
+hue_variation = 0.1
+brightness_variation = 0.35
+twig = { leaves = 6, length = 0.2, divergence_deg = 180.0, inclination_deg = 60.0, bend_deg = 20.0, stem_radius = 0.002 }
+
+[bark]
+color = [0.14, 0.12, 0.1]
+young_color = [0.13, 0.09, 0.06]
+young_radius = 0.035
+color_variation = 0.12
+
+[variation]
+age = [10, 30]
+scale = [0.85, 1.15]
+
+[variation.jitter]
+"growth.axis_length" = 0.12
+"growth.internode_length" = 0.06
+"growth.branching_angle" = 0.1
+"growth.gravitropic_setpoint" = 0.08
+"growth.gnarl" = 0.3
+"foliage.length" = 0.1
+"foliage.color" = 0.1
+"bark.color" = 0.08

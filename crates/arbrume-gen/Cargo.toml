@@ -22,8 +22,13 @@ toml = "1.2.1"
 [dev-dependencies]
 arbrume-export.workspace = true
 criterion = { version = "0.5", default-features = false }
+glam = "0.34.3"
 gltf = { version = "1.4", default-features = false, features = ["extras", "names", "utils"] }
 
 [[bench]]
 name = "pipeline"
+harness = false
+
+[[bench]]
+name = "engine"
 harness = false

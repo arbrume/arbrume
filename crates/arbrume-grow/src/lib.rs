@@ -24,36 +24,69 @@
 //! of the species. After the last cycle [`finish`] makes the chains contiguous, computes
 //! the radii and applies the optional bending under weight.
 //!
-//! [`grow`] runs the parametric mode: [`NoEnvironment`], [`GradientFate`],
-//! [`TropismBlend`] and [`NoShedding`]. [`grow_with`] runs any other combination.
+//! The species selects its mode (`growth.mode`). In the parametric mode the stages are
+//! [`NoEnvironment`], [`GradientFate`], [`TropismBlend`] and [`NoShedding`]. In the
+//! self-organizing mode buds compete for light and space: [`Competition`] (a
+//! [`ShadowGrid`], [`Markers`], and the envelope and occluders of the
+//! [`Surroundings`]), [`ResourceFate`] (extended Borchert-Honda or priority
+//! allocation), [`TropismBlend`] kept out of obstacles by [`Confined`], and
+//! [`ExposureShedding`]. [`grow`] grows a plant on
+//! open ground, [`grow_in`] in given surroundings, [`grow_together`] several plants
+//! that share their light, and [`grow_with`] runs any other combination of stages.
+//!
+//! A grown plant can be shown as it was at an earlier age: see [`grow_timeline`] and
+//! [`GrowthRecord`].
 //!
 //! # Determinism
 //!
 //! The result depends only on the species, the parameters, the seed and the version of
-//! this crate. A plant is grown sequentially; every random draw is seeded by the key of
-//! a meristem, derived from the seed and the position of the meristem in the plant (see
-//! [`plant`]). Growing several plants in parallel is safe, since nothing is shared
-//! between two calls.
+//! this crate, never on the number of threads. Every random draw is seeded by the key
+//! of a meristem, derived from the seed and the position of the meristem in the plant
+//! (see [`plant`]). The structure of a plant is built on one thread; the only pass
+//! that may use the `rayon` pool is the sensing of the buds
+//! ([`EngineOptions`]), which writes one independent result per bud and sums
+//! in a fixed order. Growing several plants in parallel is safe, since nothing is
+//! shared between two calls.
 
+pub mod allocation;
 mod bend;
+pub mod competition;
+pub mod confine;
 mod cycle;
+pub mod history;
+pub mod markers;
 mod math;
 pub mod parametric;
 pub mod plant;
 mod radii;
+pub mod shadow;
+pub mod shedding;
 mod shoot;
 pub mod stage;
+pub mod surroundings;
 
-pub use cycle::run_cycles;
+pub use allocation::{ResourceFate, borchert_honda, priority_weight};
+pub use competition::{Competition, EngineOptions, default_envelope, shadow_params};
+pub use confine::Confined;
+pub use cycle::{run_cycle, run_cycles, seed_plant};
+pub use history::{GrowthRecord, radii_at_cycle};
+pub use markers::{Markers, Perception};
 pub use parametric::{GradientFate, TropismBlend};
 pub use plant::{Meristem, MeristemId, MeristemState, Plant, SiteKind};
+pub use shadow::{GridStorage, ShadowGrid, ShadowParams};
+pub use shedding::ExposureShedding;
 pub use stage::{
     BudFate, BudSite, Context, Environment, Flush, HeadingInput, NoEnvironment, NoShedding,
     Shedding, ShootOrientation, Stages, Straight,
 };
+pub use surroundings::{Occluder, Shape, Surroundings, VoxelMask};
 
 use arbrume_core::graph::PlantGraph;
-use arbrume_core::species::Species;
+use arbrume_core::species::{GrowthMode, Sensing, Species};
+use glam::Vec3;
+
+/// Open ground, the surroundings of [`grow`].
+static OPEN: Surroundings = Surroundings::none();
 
 /// Parameters of one plant.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -92,21 +125,152 @@ impl GrowParams {
     }
 }
 
-/// Grows a plant of `species` in the parametric mode.
+/// The stages of the self-organizing mode.
+pub type SelfOrganizingStages<'a> =
+    Stages<Competition<'a>, ResourceFate<'a>, Confined<'a, TropismBlend<'a>>, ExposureShedding>;
+
+/// The stages of the self-organizing mode for the run `cx` in `surroundings`.
+#[must_use]
+pub fn self_organizing_stages<'a>(
+    cx: &Context<'a>,
+    surroundings: &'a Surroundings,
+    options: EngineOptions,
+) -> SelfOrganizingStages<'a> {
+    Stages {
+        environment: Competition::new(cx, surroundings, options),
+        fate: ResourceFate::new(*cx, surroundings),
+        orientation: Confined::new(TropismBlend::new(*cx), cx, surroundings),
+        shedding: ExposureShedding::new(cx),
+    }
+}
+
+/// Grows a plant of `species` on open ground, in the mode the species selects.
 ///
 /// The species must be valid ([`Species::validate`]; species loaded from TOML are). The
 /// returned graph satisfies `check_invariants`, is contiguous, has its radii set and
 /// carries the leaf sites of the youngest growth.
 #[must_use]
 pub fn grow(species: &Species, params: &GrowParams) -> PlantGraph {
+    grow_in(species, params, &OPEN)
+}
+
+/// Grows a plant of `species` in `surroundings`, in the mode the species selects. A
+/// parametric species ignores the surroundings. The result is that of [`grow`].
+#[must_use]
+pub fn grow_in(species: &Species, params: &GrowParams, surroundings: &Surroundings) -> PlantGraph {
+    grow_in_with(species, params, surroundings, EngineOptions::default())
+}
+
+/// Same as [`grow_in`] with explicit engine options, which change the time and memory
+/// taken but never the plant.
+#[must_use]
+pub fn grow_in_with(
+    species: &Species,
+    params: &GrowParams,
+    surroundings: &Surroundings,
+    options: EngineOptions,
+) -> PlantGraph {
     let cx = params.context(species);
-    let mut stages = Stages {
-        environment: NoEnvironment,
-        fate: GradientFate::new(cx),
-        orientation: TropismBlend::new(cx),
-        shedding: NoShedding,
-    };
-    grow_with(&cx, &mut stages)
+    finish(grow_plant(&cx, surroundings, options), &cx)
+}
+
+/// Same as [`grow_in`], keeping the leaf sites of every metamer instead of those of the
+/// youngest growth only, so that the plant can be shown at any earlier age: see
+/// [`GrowthRecord`].
+#[must_use]
+pub fn grow_timeline(
+    species: &Species,
+    params: &GrowParams,
+    surroundings: &Surroundings,
+) -> GrowthRecord {
+    let cx = params.context(species);
+    let plant = grow_plant(&cx, surroundings, EngineOptions::default());
+    let mut lasting = Vec::new();
+    let graph = finish_with(plant, &cx, Some(&mut lasting));
+    GrowthRecord { graph, lasting }
+}
+
+/// Runs the cycles of the mode of the species.
+fn grow_plant(cx: &Context, surroundings: &Surroundings, options: EngineOptions) -> Plant {
+    match cx.species.growth.mode {
+        GrowthMode::Parametric => {
+            let mut stages = Stages {
+                environment: NoEnvironment,
+                fate: GradientFate::new(*cx),
+                orientation: TropismBlend::new(*cx),
+                shedding: NoShedding,
+            };
+            run_cycles(cx, &mut stages)
+        }
+        GrowthMode::SelfOrganizing => {
+            run_cycles(cx, &mut self_organizing_stages(cx, surroundings, options))
+        }
+    }
+}
+
+/// One plant of a group grown by [`grow_together`].
+#[derive(Debug, Clone, Copy)]
+pub struct Standing<'a> {
+    /// Its species.
+    pub species: &'a Species,
+    /// Its seed, age and scale.
+    pub params: GrowParams,
+    /// Where it stands, in the frame of the surroundings.
+    pub position: Vec3,
+}
+
+/// Grows several plants that shade one another, in lockstep: all the self-organizing
+/// plants that sense light write to one shadow grid and read it.
+///
+/// A plant younger than the oldest starts later, so that all end together. Each graph
+/// is returned in the frame of its own plant, standing at the origin. The grid takes
+/// the shadow coefficients of the first plant that senses light. Parametric plants are
+/// grown as by [`grow`] and neither cast nor sense shade. Within a cycle the plants
+/// are grown in the order given, each seeing the shadows cast up to the previous cycle.
+#[must_use]
+pub fn grow_together(plants: &[Standing], surroundings: &Surroundings) -> Vec<PlantGraph> {
+    let oldest = plants.iter().map(|p| p.params.age).max().unwrap_or(0);
+    let contexts: Vec<Context> = plants.iter().map(|p| p.params.context(p.species)).collect();
+    let mut runs: Vec<Option<(SelfOrganizingStages, Plant)>> = plants
+        .iter()
+        .zip(&contexts)
+        .map(|(standing, cx)| {
+            (standing.species.growth.mode == GrowthMode::SelfOrganizing).then(|| {
+                let mut stages = self_organizing_stages(cx, surroundings, EngineOptions::default());
+                stages.environment = stages.environment.at(standing.position);
+                stages.fate = stages.fate.at(standing.position);
+                stages.orientation = stages.orientation.at(standing.position);
+                let plant = seed_plant(cx, &mut stages.fate);
+                (stages, plant)
+            })
+        })
+        .collect();
+    let mut shared: Option<ShadowGrid> = None;
+    for step in 0..oldest {
+        for (run, cx) in runs.iter_mut().zip(&contexts) {
+            let Some((stages, plant)) = run else {
+                continue;
+            };
+            let Some(cycle) = (step + cx.age).checked_sub(oldest) else {
+                continue;
+            };
+            let senses_light = cx.species.growth.self_organization.sensing != Sensing::Markers;
+            if senses_light && shared.is_some() {
+                *stages.environment.shadow_mut() = shared.take();
+            }
+            run_cycle(plant, cx, stages, cycle);
+            if senses_light {
+                shared = stages.environment.shadow_mut().take();
+            }
+        }
+    }
+    runs.into_iter()
+        .zip(plants.iter().zip(&contexts))
+        .map(|(run, (standing, cx))| match run {
+            Some((_, plant)) => finish(plant, cx),
+            None => grow(standing.species, &standing.params),
+        })
+        .collect()
 }
 
 /// Grows a plant with the given stages, then finishes it like [`grow`].
@@ -125,9 +289,15 @@ where
 /// retained, radii from the radius model of the species, then bending under weight when
 /// the species asks for it.
 #[must_use]
-pub fn finish(mut plant: Plant, cx: &Context) -> PlantGraph {
+pub fn finish(plant: Plant, cx: &Context) -> PlantGraph {
+    finish_with(plant, cx, None)
+}
+
+/// [`finish`]; with `lasting`, every leaf site is kept and described there (see
+/// `retain_leaves`).
+fn finish_with(mut plant: Plant, cx: &Context, lasting: Option<&mut Vec<u16>>) -> PlantGraph {
     let remap = plant.graph.ensure_contiguous();
-    shoot::retain_leaves(&mut plant, cx, remap.as_deref());
+    shoot::retain_leaves(&mut plant, cx, remap.as_deref(), lasting);
     radii::assign_radii(&mut plant, cx.species, cx.scale);
     bend::bend_under_weight(&mut plant.graph, cx.species.growth.weight_bending);
     plant.graph

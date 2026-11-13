@@ -35,6 +35,13 @@ Triangles are those of one plant at the stated age and full quality.
 | `bamboo_like` | cane | clump of thin green canes, bare below, whorls of twigs and narrow leaves above | 6 | 8 m | 4 m | 5 cm | 45 k |
 | `fern_like` | herb | shuttlecock of arching fronds with two ranks of feathered pinnae | 2 | 0.8 m | 1.6 m | | 25 k |
 | `rosette_herb` | herb | low clump of large stalked leaves from one point, hosta-like | 1 | 0.4 m | 1 m | | 0.7 k |
+| `open_grown_broadleaf` | broadleaf tree, self-organizing | full crown on every side that keeps its low limbs and thins out inside | 25 | 16 m | 17 m | 0.5 m | 420 k |
+| `forest_grown_broadleaf` | broadleaf tree, self-organizing | tall clean bole under a high narrow crown; shaded limbs are shed | 40 | 27 m | 16 m | 0.7 m | 200 k |
+| `excurrent_conifer` | conifer, self-organizing | one straight leader, whorls shorter towards the top, lowest whorls shed (priority model) | 30 | 18 m | 10 m | 0.3 m | 225 k |
+| `spreading_decurrent` | broadleaf tree, self-organizing | short trunk dissolving into wide level limbs, low dome twice as wide as tall | 25 | 9 m | 20 m | 0.45 m | 120 k |
+| `thicket_shrub` | shrub, self-organizing | several leaning stems, twigs crowded at the lit surface of a rounded bush | 10 | 1.7 m | 2.3 m | 2.5 cm | 17 k |
+| `hedge_shrub` | shrub, self-organizing | dense small-leaved bush that fills and stops at a clip volume | 10 | 1.4 m | 2 m | 2.5 cm | 24 k |
+| `envelope_tree` | broadleaf tree, self-organizing | crown that fills an envelope, by default an ellipsoid (markers and light) | 25 | 9.5 m | 8 m | 0.18 m | 130 k |
 
 `broadleaf`, `conifer` and `shrub` are the generic presets; the three files of the same
 names in `crates/arbrume-grow/tests/data/` are older starter species kept as test
@@ -42,8 +49,9 @@ fixtures of the growth engine.
 
 ## How the presets are built
 
-All presets use the parametric growth mode ([Growth](growth.md)) and the foliage and bark
-of the mesher ([Meshing](mesh.md)). A few devices recur:
+Seven presets grow in the self-organizing mode (next section); the others use the
+parametric growth mode ([Growth](growth.md)). All use the foliage and bark of the mesher
+([Meshing](mesh.md)). In the parametric presets a few devices recur:
 
 - **Crown shape** is the `axis_length` curve of order 1 over the height of the trunk,
   with `apical_dominance` for cones, a narrow `branching_angle` and an upward
@@ -62,6 +70,43 @@ of the mesher ([Meshing](mesh.md)). A few devices recur:
   The fronds of the fern and the leaves of the rosette are stems rising from the ground.
 - **Bark** has a `young_color` for thin axes: dark twigs on the white birch, orange
   limbs on the pine, green stalks on the palm.
+
+## Self-organizing presets
+
+These presets set `growth.mode = "self_organizing"`: their buds compete for light, their
+shaded branches are shed, and they respond to the surroundings given to the generator
+(an envelope, obstacles, the shade of neighbours). Their habit comes from a few
+parameters of `[growth.self_organization]` rather than from length curves:
+
+| Preset | Sensing | Allocation | What sets the habit |
+|---|---|---|---|
+| `open_grown_broadleaf` | shadow | Borchert-Honda | `axis_bias` 0.52, a low `shedding_threshold` (0.02), no bud on the lowest tenth of the trunk |
+| `forest_grown_broadleaf` | shadow | Borchert-Honda | `axis_bias` 0.55 on the trunk, `shedding_threshold` 0.05, narrow branching angles |
+| `excurrent_conifer` | shadow | priority | apical control on the trunk and the branches, whorls at the end of each growth unit, an `axis_length` of order 1 that shortens towards the top |
+| `spreading_decurrent` | shadow | Borchert-Honda | `axis_bias` 0.42 on the trunk, a set-point near horizontal with a strong `tropism_weight`, a small `environment_weight` |
+| `thicket_shrub` | shadow | Borchert-Honda | seven stems, `axis_bias` 0.47, a light shadow (`shadow_strength` 0.1 over 4 layers) |
+| `hedge_shrub` | shadow | Borchert-Honda | five stems, decussate buds, an even lighter shadow so that buds stay alive inside a clipped volume |
+| `envelope_tree` | both | Borchert-Honda | markers in the envelope, `environment_weight` 0.35 |
+
+In these files `axis_length` and `shoot_length` are limits (where an axis stops, how long
+one shoot can be), not what the plant is drawn from. The sizes in the table of presets
+are those of plants on open ground; the same seed in other surroundings gives another
+plant. The crowns of `hedge_shrub` and `envelope_tree` are the ones to give an envelope
+to: in a tight envelope the species with a dense shadow thin out, because light only
+comes from above and their lit surface is the part that is clipped.
+
+Scenes to try (`--surroundings` takes the TOML file of the surroundings, see
+[Command line](cli.md)):
+
+```sh
+# a tree next to a wall: the crown leans away and nothing enters the wall
+arbrume sheet --species open_grown_broadleaf --ages 12,22 --azimuths 0,90 --surroundings wall.toml --out wall.png
+# two trees sharing their light
+arbrume sheet --species open_grown_broadleaf --ages 15,25 --row 2 --spacing 5 --out pair.png
+# a crown in an envelope, and a hedge row clipped to a box
+arbrume sheet --species envelope_tree --ages 10,18,28 --surroundings cone.toml --out cone.png
+arbrume sheet --species hedge_shrub --ages 5,9,14 --row 5 --spacing 0.8 --surroundings box.toml --out hedge.png
+```
 
 ## Age
 
@@ -82,11 +127,17 @@ changes. Each preset states the range of ages it is meant for in `[variation]`:
 | `maple_like` | 15 to 50 | `spruce_like` | 12 to 50 |
 | | | `upright_shrub` | 4 to 16 |
 | | | `willow_like` | 20 to 50 |
+| `envelope_tree` | 10 to 30 | `open_grown_broadleaf` | 10 to 30 |
+| `excurrent_conifer` | 10 to 40 | `spreading_decurrent` | 10 to 30 |
+| `forest_grown_broadleaf` | 15 to 45 | `thicket_shrub` | 5 to 14 |
+| `hedge_shrub` | 5 to 12 | | |
 
 Below its range a tree is a thin sapling with little foliage, which is why the ranges of
 the spreading trees start late. Node counts need not grow with age: a `bare_base` and a
 `branch_lifespan` remove the lowest branches as the trunk lengthens, as self-pruning
-does.
+does. A self-organizing preset has no full-grown state set in advance: it grows as long
+as its buds find light below the limits of `axis_length`, and past its range of ages the
+shrubs turn leggy and the trees very large.
 
 ## Variation
 
@@ -108,7 +159,9 @@ weight = 1.0            # relative frequency in a random mix
 multiplied by a factor drawn uniformly within its half-width and clamped to its domain,
 with one factor per branching order for curves and one per channel for colours. The
 presets jitter lengths, angles, tropism, crookedness, trunk girth, leaf size and the
-colours of leaves and bark.
+colours of leaves and bark; the self-organizing ones also jitter `axis_bias`, the
+`resource_coefficient` or the `shedding_threshold`, by a few percent, since the habit is
+sensitive to them.
 
 `arbrume gen --random` and `arbrume_gen::RandomSampler` draw a preset by weight, an age
 and a scale in its ranges and an individual, all from `(seed, index)`

@@ -1,0 +1,96 @@
+# Excurrent conifer, self-organizing with the priority model: the leader heads the
+# priority list of the trunk, so one straight stem carries whorls of branches that get
+# shorter towards the top, and the shaded lowest whorls are shed.
+#
+# Typical size at age 30: about 18 m tall, crown 10 m wide at the base. Every value is a
+# starting point chosen by eye, not a measurement.
+
+schema_version = 0
+name = "Excurrent conifer"
+
+[architecture]
+branching = "monopodial"
+growth_rhythm = "rhythmic"
+branching_pattern = "rhythmic"
+branch_timing = "proleptic"
+max_order = 3
+phyllotaxis = { leaves_per_node = 1, divergence_deg = 137.5 }
+
+[[architecture.axes]]
+orientation = "orthotropic"
+
+[[architecture.axes]]
+orientation = "plagiotropic"
+phyllotaxis = { leaves_per_node = 2, divergence_deg = 180.0 }
+
+[growth]
+mode = "self_organizing"
+environment_weight = 0.1
+axis_length = { by_order = [24.0, [[0.0, 4.5], [1.0, 1.2]], 1.6, 0.8] }
+shoot_length = { by_order = [0.56, 0.3, 0.25, 0.2] }
+length_variation = { by_order = [0.05, 0.1] }
+internode_length = { by_order = [0.27, 0.17, 0.15, 0.12] }
+# The trunk branches in the whorl that ends each growth unit.
+branch_probability = { by_order = [1.0, 0.55, 0.4] }
+unit_branching = [[0.0, 0.0], [0.99, 0.0], [1.0, 1.0]]
+whorl = { by_order = [5.0, 0.0] }
+branching_angle = { by_order = [0.0, 80.0, 50.0, 45.0] }
+branching_angle_variation = 6.0
+direction_variation = { by_order = [0.5, 2.0, 4.0] }
+gnarl = { by_order = [0.0, 5.0, 6.0] }
+gravitropic_setpoint = { by_order = [0.0, 95.0, 95.0, 90.0] }
+tropism_weight = { by_order = [0.15, 0.05, 0.04] }
+
+[growth.self_organization]
+sensing = "shadow"
+allocation = "priority"
+resource_coefficient = 2.0
+priority_max = 1.0
+priority_min = 0.02
+priority_knee = 0.6
+apical_control = { by_order = [1.0, 1.0, 0.0] }
+shedding_threshold = 0.03
+bud_lifespan = 2
+
+[geometry]
+radius_model = "pipe"
+pipe_exponent = 2.0
+tip_radius = 0.004
+flare = 0.4
+
+[foliage]
+length = 0.035
+width_ratio = 0.25
+shape = "needle"
+segments = 1
+petiole_length = 0.0
+inclination_deg = 60.0
+retention_cycles = 6
+per_node = 2
+density = 0.75
+color = [0.035, 0.11, 0.05]
+hue_variation = 0.1
+brightness_variation = 0.4
+size_variation = 0.25
+orientation_variation_deg = 14.0
+twig = { leaves = 12, length = 0.45, inclination_deg = 50.0, bend_deg = 30.0, stem_radius = 0.004, terminal_leaf = false, radial = true, fins = 3, fin_width = 0.035, fin_shade = 0.75, variants = 5 }
+
+[bark]
+color = [0.16, 0.10, 0.075]
+young_color = [0.2, 0.12, 0.06]
+young_radius = 0.03
+color_variation = 0.15
+
+[variation]
+age = [10, 40]
+scale = [0.85, 1.15]
+
+[variation.jitter]
+"growth.internode_length" = 0.08
+"growth.branching_angle" = 0.08
+"growth.gravitropic_setpoint" = 0.06
+"growth.gnarl" = 0.3
+"growth.self_organization.resource_coefficient" = 0.08
+"foliage.length" = 0.1
+"foliage.color" = 0.1
+"bark.color" = 0.08

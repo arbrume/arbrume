@@ -22,6 +22,10 @@
 //!   within a triangle budget.
 //! * [`presets`] are species files embedded in the library; [`species_with_overrides`]
 //!   changes fields of a species file by dotted path before it is parsed.
+//! * [`GenParams::with_surroundings`] places the plant in an envelope, next to obstacles
+//!   or under neighbours ([`Surroundings`]); species in the self-organizing mode respond.
+//! * [`Generator::timeline`] and [`Generator::frame`] mesh one grown plant at several
+//!   ages, for growth sequences.
 //! * [`metadata`] is the JSON stored in the `extras` of an exported file, enough to
 //!   generate the same plant again.
 //!
@@ -42,7 +46,9 @@ mod plant;
 mod presets;
 mod random;
 mod sample;
+mod timeline;
 
+pub use arbrume_grow::{Occluder, Shape, Surroundings, VoxelMask};
 pub use batch::{Budget, Generator, generate, generate_many, run_batch};
 pub use metadata::{GENERATOR, VERSION, metadata};
 pub use overrides::species_with_overrides;
@@ -51,3 +57,4 @@ pub use plant::{Bounds, Plant, Stats, Timings};
 pub use presets::{preset, preset_toml, presets};
 pub use random::{RANDOM_BUDGET, RANDOM_QUALITY, RandomPick, RandomSampler};
 pub use sample::{Distribution, Sampler, plant_seed};
+pub use timeline::Timeline;

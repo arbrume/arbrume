@@ -1,0 +1,83 @@
+# Forest-grown broadleaf tree, self-organizing: a tall clean bole under a high, narrow
+# crown. The trunk is favoured and the limbs that fall into the shade of the crown are
+# shed, as in a closed stand.
+#
+# Typical size at age 40: about 27 m tall, crown 16 m wide, trunk 0.7 m across at the
+# base. Every value is a starting point chosen by eye, not a measurement.
+
+schema_version = 0
+name = "Forest-grown broadleaf"
+
+[architecture]
+branching = "monopodial"
+growth_rhythm = "rhythmic"
+branching_pattern = "diffuse"
+branch_timing = "proleptic"
+max_order = 4
+phyllotaxis = { leaves_per_node = 1, divergence_deg = 137.5 }
+
+[growth]
+mode = "self_organizing"
+environment_weight = 0.2
+axis_length = { by_order = [26.0, 7.0, 4.0, 2.0, 1.0] }
+shoot_length = { by_order = [[[0.0, 0.9], [1.0, 0.5]], 0.5, 0.45, 0.4] }
+length_variation = 0.1
+internode_length = { by_order = [0.32, 0.3, 0.28, 0.25] }
+branch_probability = { by_order = [[[0.0, 0.0], [0.04, 0.0], [0.06, 0.7]], 0.7] }
+branching_angle = { by_order = [45.0, 50.0, 50.0, 48.0] }
+branching_angle_variation = 9.0
+direction_variation = { by_order = [1.5, 5.0, 7.0, 7.0] }
+gnarl = { by_order = [2.0, 8.0, 11.0, 9.0] }
+gravitropic_setpoint = { by_order = [0.0, 45.0, 65.0, 75.0] }
+tropism_weight = { by_order = [0.12, 0.04, 0.02, 0.02] }
+
+[growth.self_organization]
+sensing = "shadow"
+allocation = "borchert_honda"
+axis_bias = { by_order = [0.55, 0.51] }
+resource_coefficient = 2.0
+light_exponent = 1.0
+shadow_strength = 0.2
+shedding_threshold = 0.05
+bud_lifespan = 3
+
+[geometry]
+radius_model = "pipe"
+pipe_exponent = 2.1
+tip_radius = 0.006
+flare = 0.6
+
+[foliage]
+length = 0.12
+width_ratio = 0.7
+shape = "elliptic"
+segments = 2
+inclination_deg = 55.0
+retention_cycles = 3
+density = 0.85
+per_node = 2
+color = [0.06, 0.19, 0.045]
+hue_variation = 0.1
+brightness_variation = 0.35
+twig = { leaves = 6, length = 0.22, divergence_deg = 180.0, inclination_deg = 60.0, bend_deg = 20.0, stem_radius = 0.002 }
+
+[bark]
+color = [0.17, 0.16, 0.15]
+young_color = [0.14, 0.1, 0.07]
+young_radius = 0.04
+color_variation = 0.1
+
+[variation]
+age = [15, 45]
+scale = [0.85, 1.15]
+
+[variation.jitter]
+"growth.internode_length" = 0.08
+"growth.branching_angle" = 0.1
+"growth.gravitropic_setpoint" = 0.1
+"growth.gnarl" = 0.3
+"growth.self_organization.resource_coefficient" = 0.08
+"growth.self_organization.shedding_threshold" = 0.15
+"foliage.length" = 0.1
+"foliage.color" = 0.1
+"bark.color" = 0.08

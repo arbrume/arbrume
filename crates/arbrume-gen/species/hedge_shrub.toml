@@ -1,0 +1,84 @@
+# Hedge shrub, self-organizing: a dense small-leaved shrub that branches freely, meant to
+# be grown inside a box envelope or against clip volumes, where its buds fill the volume
+# left to them and stop at its faces. On open ground it makes a dense upright bush.
+#
+# Typical size at age 10 on open ground: about 1.4 m tall and 2 m wide. Every value is a
+# starting point chosen by eye, not a measurement.
+
+schema_version = 0
+name = "Hedge shrub"
+
+[architecture]
+branching = "monopodial"
+growth_rhythm = "rhythmic"
+branching_pattern = "diffuse"
+branch_timing = "proleptic"
+max_order = 5
+phyllotaxis = { leaves_per_node = 2, divergence_deg = 90.0 }
+
+[growth]
+mode = "self_organizing"
+environment_weight = 0.2
+stems = 5
+stem_spread = 0.12
+stem_angle = 12.0
+axis_length = { by_order = [3.5, 1.6, 1.0, 0.6, 0.4, 0.3] }
+shoot_length = { by_order = [0.25, 0.2, 0.16, 0.14] }
+length_variation = 0.15
+internode_length = { by_order = [0.08, 0.07, 0.07, 0.06] }
+branch_probability = { by_order = [[[0.0, 0.0], [0.08, 0.5]], 0.5] }
+branching_angle = { by_order = [12.0, 45.0, 50.0, 50.0] }
+branching_angle_variation = 12.0
+direction_variation = { by_order = [4.0, 7.0, 8.0] }
+gnarl = { by_order = [8.0, 12.0, 12.0] }
+gravitropic_setpoint = { by_order = [5.0, 50.0, 65.0] }
+tropism_weight = { by_order = [0.06, 0.04, 0.03] }
+
+[growth.self_organization]
+sensing = "shadow"
+allocation = "borchert_honda"
+axis_bias = 0.47
+resource_coefficient = 2.0
+shadow_cell = 2.0
+shadow_strength = 0.08
+bud_lifespan = 3
+shadow_depth = 4
+
+[geometry]
+radius_model = "pipe"
+pipe_exponent = 2.3
+tip_radius = 0.0015
+flare = 0.2
+
+[foliage]
+length = 0.03
+width_ratio = 0.5
+shape = "elliptic"
+segments = 1
+inclination_deg = 45.0
+retention_cycles = 4
+density = 0.8
+per_node = 2
+color = [0.05, 0.16, 0.04]
+hue_variation = 0.08
+brightness_variation = 0.3
+twig = { leaves = 8, length = 0.09, divergence_deg = 90.0, inclination_deg = 45.0, bend_deg = 8.0, stem_radius = 0.001 }
+
+[bark]
+color = [0.14, 0.11, 0.08]
+young_color = [0.12, 0.13, 0.06]
+young_radius = 0.008
+color_variation = 0.12
+
+[variation]
+age = [5, 12]
+scale = [0.8, 1.2]
+
+[variation.jitter]
+"growth.internode_length" = 0.06
+"growth.branching_angle" = 0.1
+"growth.gnarl" = 0.3
+"growth.stems" = 0.25
+"foliage.length" = 0.1
+"foliage.color" = 0.1
+"bark.color" = 0.08

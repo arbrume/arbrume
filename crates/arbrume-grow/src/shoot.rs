@@ -2,7 +2,7 @@
 //!
 //! This is the part of the cycle that does not change with the growth mode. For each
 //! [`Flush`] it appends the metamers of the shoot, asking the orientation stage for each
-//! heading. On every new node it places the leaves and the axillary buds given by the
+//! heading; the stage may end the shoot early. On every new node it places the leaves and the axillary buds given by the
 //! phyllotaxis of the species, offering each bud to the fate stage. At the end of the
 //! shoot it closes the apex, starts the relay of a sympodial axis, or forks.
 //!
@@ -30,7 +30,7 @@ use crate::stage::{BudFate, BudSite, Context, Flush, HeadingInput, ShootOrientat
 use arbrume_core::graph::{BudId, BudKind, BudState, ChainId, ChainKind, Metamer, NodeFlags};
 use arbrume_core::graph::{NodeId, OrganKind, OrganSite};
 use arbrume_core::rng::{Rng, Stream};
-use arbrume_core::species::{AxisOrientation, Branching, GrowthRhythm};
+use arbrume_core::species::{AxisOrientation, Branching, GrowthMode, GrowthRhythm};
 use glam::Vec3;
 use std::f32::consts::TAU;
 
@@ -133,6 +133,7 @@ pub(crate) fn plant_seeds<F: BudFate>(plant: &mut Plant, cx: &Context, fate: &mu
         plant.meristems.push(Meristem {
             key,
             kind: SiteKind::Seed,
+            parent: None,
             state: MeristemState::Resting,
             order: 0,
             born: 0,
@@ -171,8 +172,12 @@ pub(crate) fn grow_shoot<F: BudFate, O: ShootOrientation>(
         metamers: flush.metamers,
         internode: flush.length / f32::from(flush.metamers.max(1)),
     };
+    let mut built = 0;
     for index in 0..flush.metamers {
-        let node = add_metamer(plant, cx, orientation, &mut meristem, &unit, index);
+        let Some(node) = add_metamer(plant, cx, orientation, &mut meristem, &unit, index) else {
+            break;
+        };
+        built += 1;
         plant.meristems[id.index()] = meristem;
         let frame = node_frame(cx, &meristem);
         if cx.species.foliage.enabled {
@@ -188,15 +193,21 @@ pub(crate) fn grow_shoot<F: BudFate, O: ShootOrientation>(
         }
         add_lateral_buds(plant, cx, fate, &unit, &frame, (index, node));
     }
-    meristem.shoots += u16::from(flush.metamers > 0);
-    end_shoot(plant, cx, fate, &mut meristem, flush, cycle);
+    meristem.shoots += u16::from(built > 0);
+    let grown = Flush {
+        metamers: built,
+        last: flush.last && built == flush.metamers,
+        ..*flush
+    };
+    end_shoot(plant, cx, fate, &mut meristem, &grown, cycle);
     if meristem.bud.is_some() {
         plant.graph.buds_mut().directions[meristem.bud.index()] = meristem.heading;
     }
     plant.meristems[id.index()] = meristem;
 }
 
-/// Appends metamer `index` of the shoot and advances the meristem.
+/// Appends metamer `index` of the shoot and advances the meristem. `None` when the
+/// orientation stage ends the shoot before this metamer.
 fn add_metamer<O: ShootOrientation>(
     plant: &mut Plant,
     cx: &Context,
@@ -204,7 +215,7 @@ fn add_metamer<O: ShootOrientation>(
     meristem: &mut Meristem,
     unit: &Unit,
     index: u16,
-) -> NodeId {
+) -> Option<NodeId> {
     let preferred = if meristem.bud.is_some() {
         plant.graph.bud_preferred()[meristem.bud.index()]
     } else {
@@ -216,6 +227,7 @@ fn add_metamer<O: ShootOrientation>(
         order: meristem.order,
         heading: meristem.heading,
         side: meristem.side,
+        tip: meristem.tip,
         preferred,
         position: meristem.position(),
         internode: unit.internode,
@@ -224,6 +236,9 @@ fn add_metamer<O: ShootOrientation>(
         unit_metamers: unit.metamers,
         cycle: unit.cycle,
     });
+    if heading == Vec3::ZERO {
+        return None;
+    }
     meristem.side = perpendicular(heading, meristem.side);
     meristem.heading = heading;
     let rhythmic = cx.species.architecture.growth_rhythm == GrowthRhythm::Rhythmic;
@@ -245,7 +260,7 @@ fn add_metamer<O: ShootOrientation>(
     meristem.tip = metamer.position;
     meristem.length += unit.internode;
     meristem.nodes += 1;
-    node
+    Some(node)
 }
 
 /// Starts the chain of a resting meristem with its first metamer.
@@ -279,19 +294,50 @@ fn start_chain(
 /// With `r` the `retention_cycles` of the species, a node keeps its leaves when it was
 /// born in the last `r` cycles of the plant, or when it belongs to the last `r` shoots
 /// of a meristem whose axis is finished: the tip of a full-grown axis stays leafy, as
-/// if it kept producing short shoots.
-pub(crate) fn retain_leaves(plant: &mut Plant, cx: &Context, remap: Option<&[NodeId]>) {
+/// if it kept producing short shoots. In the self-organizing mode the same holds for
+/// an axis whose apex is alive but received too little to extend.
+///
+/// With `lasting`, every node of the leaf-bearing orders keeps its leaves, for a plant
+/// that is to be shown at earlier ages, and `lasting` receives one cycle per leaf site
+/// added: the cycle from which the site stays leafy for good (that of the last shoot of
+/// its axis, for the tip of a stopped axis), or `u16::MAX` for a site that drops its
+/// leaves after `r` cycles.
+pub(crate) fn retain_leaves(
+    plant: &mut Plant,
+    cx: &Context,
+    remap: Option<&[NodeId]>,
+    mut lasting: Option<&mut Vec<u16>>,
+) {
     let retention = u32::from(cx.species.foliage.retention_cycles);
+    let stalls = cx.species.growth.mode == GrowthMode::SelfOrganizing;
     let leafy = std::mem::take(&mut plant.leafy);
+    let mut last_shoot = vec![0_u16; plant.meristems.len()];
+    for leaf in &leafy {
+        let latest = &mut last_shoot[leaf.meristem.index()];
+        *latest = (*latest).max(leaf.birth);
+    }
     for leaf in &leafy {
         let meristem = plant.meristem(leaf.meristem);
         let recent = u32::from(leaf.birth) + retention >= u32::from(cx.age);
-        let terminal = meristem.state == MeristemState::Done
-            && u32::from(leaf.shoot) + retention >= u32::from(meristem.shoots);
+        let stopped = match meristem.state {
+            MeristemState::Done => true,
+            MeristemState::Growing => stalls,
+            _ => false,
+        };
+        let terminal = stopped && u32::from(leaf.shoot) + retention >= u32::from(meristem.shoots);
         let bears = meristem.order >= cx.species.foliage.min_order;
-        if bears && (recent || terminal) {
+        if bears && (recent || terminal || lasting.is_some()) {
             let node = remap.map_or(leaf.node, |remap| remap[leaf.node.index()]);
+            let before = plant.graph.organs().len();
             add_leaves(plant, cx, leaf, (node, meristem.order));
+            if let Some(lasting) = lasting.as_deref_mut() {
+                let from = if terminal {
+                    last_shoot[leaf.meristem.index()]
+                } else {
+                    u16::MAX
+                };
+                lasting.resize(lasting.len() + plant.graph.organs().len() - before, from);
+            }
         }
     }
 }
@@ -427,6 +473,7 @@ fn add_lateral(
     plant.meristems.push(Meristem {
         key: site.key,
         kind: SiteKind::Lateral,
+        parent: site.parent,
         state: MeristemState::Resting,
         order: site.order,
         born: site.cycle,
@@ -541,6 +588,7 @@ fn add_relay<F: BudFate>(
     plant.meristems.push(Meristem {
         key: site.key,
         kind: SiteKind::Relay,
+        parent: Some(id),
         state: MeristemState::Resting,
         order: meristem.order,
         born: cycle,

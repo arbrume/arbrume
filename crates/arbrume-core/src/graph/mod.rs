@@ -270,6 +270,7 @@ pub struct PlantGraph {
     order: Vec<u8>,
     birth: Vec<u16>,
     flags: Vec<NodeFlags>,
+    shed_cycle: Vec<u16>,
     chains: Vec<Chain>,
     bud_node: Vec<NodeId>,
     bud_kind: Vec<BudKind>,
@@ -302,6 +303,7 @@ impl PlantGraph {
             order: Vec::new(),
             birth: Vec::new(),
             flags: Vec::new(),
+            shed_cycle: Vec::new(),
             chains: Vec::new(),
             bud_node: Vec::new(),
             bud_kind: Vec::new(),
@@ -333,6 +335,7 @@ impl PlantGraph {
         self.order.reserve(nodes);
         self.birth.reserve(nodes);
         self.flags.reserve(nodes);
+        self.shed_cycle.reserve(nodes);
         self.chains.reserve(chains);
         self.bud_node.reserve(buds);
         self.bud_kind.reserve(buds);
@@ -354,6 +357,7 @@ impl PlantGraph {
         self.order.push(order);
         self.birth.push(metamer.birth);
         self.flags.push(metamer.flags);
+        self.shed_cycle.push(0);
         id
     }
 
@@ -452,19 +456,52 @@ impl PlantGraph {
     }
 
     /// Marks `node` and all its descendants as shed and kills the buds they bear.
-    /// Linear in the number of nodes stored after `node`.
+    /// Linear in the number of nodes stored after `node`. The shedding cycle recorded is
+    /// 0: the branch counts as absent at every earlier age of the plant.
     pub fn shed_subtree(&mut self, node: NodeId) {
-        let start = node.index();
-        self.flags[start] = self.flags[start].with(NodeFlags::SHED);
+        self.shed_subtrees(&[node], 0);
+    }
+
+    /// Marks every node of `roots` and all their descendants as shed during growth cycle
+    /// `cycle`, and kills the buds they bear. One linear pass whatever the number of
+    /// roots. Nodes that are already shed keep the cycle recorded for them.
+    ///
+    /// The cycle is what [`PlantGraph::shed_cycles`] returns: the branch was part of the
+    /// plant as it stood at the end of every cycle before `cycle`.
+    pub fn shed_subtrees(&mut self, roots: &[NodeId], cycle: u16) {
+        let Some(start) = roots.iter().map(|node| node.index()).min() else {
+            return;
+        };
+        for root in roots {
+            self.mark_shed(root.index(), cycle);
+        }
         for id in start + 1..self.parent.len() {
             let parent = self.parent[id];
             if parent.is_some() && self.flags[parent.index()].is_shed() {
-                self.flags[id] = self.flags[id].with(NodeFlags::SHED);
+                self.mark_shed(id, cycle);
             }
         }
         for (bud, state) in self.bud_state.iter_mut().enumerate() {
             if self.flags[self.bud_node[bud].index()].is_shed() {
                 *state = BudState::Dead;
+            }
+        }
+    }
+
+    /// Flags node `id` as shed in `cycle` unless it already is.
+    fn mark_shed(&mut self, id: usize, cycle: u16) {
+        if !self.flags[id].is_shed() {
+            self.flags[id] = self.flags[id].with(NodeFlags::SHED);
+            self.shed_cycle[id] = cycle;
+        }
+    }
+
+    /// Clears the shed flag of the nodes shed after growth cycle `cycle`, which gives
+    /// back the branches the plant still bore at the end of that cycle. Buds stay dead.
+    pub fn restore_shed_after(&mut self, cycle: u16) {
+        for (flags, &shed) in self.flags.iter_mut().zip(&self.shed_cycle) {
+            if flags.is_shed() && shed > cycle {
+                *flags = NodeFlags(flags.0 & !NodeFlags::SHED.0);
             }
         }
     }
@@ -553,6 +590,14 @@ impl PlantGraph {
     #[must_use]
     pub fn flags_mut(&mut self) -> &mut [NodeFlags] {
         &mut self.flags
+    }
+
+    /// Growth cycle in which each shed node was shed; meaningful only for nodes flagged
+    /// [`NodeFlags::SHED`].
+    #[inline]
+    #[must_use]
+    pub fn shed_cycles(&self) -> &[u16] {
+        &self.shed_cycle
     }
 
     /// Parent of `node`, `None` for the first node of a root chain.

@@ -71,6 +71,12 @@ pub struct GenArgs {
     /// Levels of detail per plant; level k is meshed at quality * 0.5^k [default: 1].
     #[arg(long, conflicts_with = "config")]
     lods: Option<u32>,
+    /// Surroundings file: envelope, obstacles and neighbours around each plant.
+    #[arg(long, value_name = "FILE", conflicts_with = "config")]
+    surroundings: Option<PathBuf>,
+    /// Write each plant as a growth sequence of K frames instead of one file.
+    #[arg(long, value_name = "K")]
+    growth_frames: Option<u16>,
     /// Batch config file listing species, counts and distributions.
     #[arg(long)]
     config: Option<PathBuf>,
@@ -178,6 +184,7 @@ fn random_batch(args: &GenArgs) -> Result<Batch, CliError> {
         lods,
         manifest: false,
         thumb: None,
+        growth_frames: 0,
         entries: Vec::new(),
         random: Some((sampler, args.count)),
     })
@@ -205,7 +212,10 @@ fn batch_from_flags(args: &GenArgs) -> Result<Batch, CliError> {
         scale: args.scale.unwrap_or(defaults.scale),
         quality: args.quality.unwrap_or(defaults.quality),
     };
-    let entry = config::entry(&source, &toml::Table::new(), args.count, sampler)?;
+    let mut entry = config::entry(&source, &toml::Table::new(), args.count, sampler)?;
+    if let Some(path) = &args.surroundings {
+        entry.surroundings = Some(config::load_surroundings(path)?);
+    }
     let lods = args.lods.unwrap_or(1);
     config::check_batch(std::slice::from_ref(&entry), lods)?;
     Ok(Batch {
@@ -213,6 +223,7 @@ fn batch_from_flags(args: &GenArgs) -> Result<Batch, CliError> {
         lods,
         manifest: false,
         thumb: None,
+        growth_frames: 0,
         entries: vec![entry],
         random: None,
     })
@@ -232,6 +243,14 @@ pub fn run(args: &GenArgs) -> Result<(), CliError> {
     }
     if batch.thumb.is_some_and(|thumb| thumb.size == 0) {
         return Err(CliError::usage("the thumbnail size must be at least 1"));
+    }
+    if let Some(frames) = args.growth_frames {
+        batch.growth_frames = frames;
+    }
+    if batch.growth_frames > 0 && (batch.lods > 1 || batch.random.is_some()) {
+        return Err(CliError::usage(
+            "a growth sequence cannot be combined with --lods or --random",
+        ));
     }
     let out = args
         .out
@@ -302,10 +321,12 @@ impl Batch {
         let index = task.index;
         if let Some(slot) = task.slot {
             let entry: &Entry = &self.entries[slot];
+            let mut params = entry.sampler.params(index);
+            params.surroundings.clone_from(&entry.surroundings);
             return Ok(Job {
                 label: Cow::Borrowed(&entry.label),
                 species: Cow::Borrowed(&entry.species),
-                params: entry.sampler.params(index),
+                params,
                 base_seed: entry.sampler.seed,
                 index,
                 budget: Budget::NONE,
@@ -336,6 +357,8 @@ impl Batch {
 struct Context<'a> {
     out: &'a Path,
     lods: u32,
+    /// Frames of the growth sequence of each plant; 0 writes the plant only.
+    frames: u16,
     thumb: Option<Thumb>,
     manifest: Option<Mutex<File>>,
     progress: Progress,
@@ -359,7 +382,7 @@ fn execute(batch: &Batch, options: &RunOptions) -> Result<(), CliError> {
         for task in tasks {
             let job = batch.job(task).map_err(CliError::failed)?;
             let done = (!options.manifest || recorded.contains(&key(&job)))
-                && files_exist(out, &job, batch.lods, batch.thumb);
+                && files_exist(out, &job, batch);
             if !done {
                 pending.push(task);
             }
@@ -375,6 +398,7 @@ fn execute(batch: &Batch, options: &RunOptions) -> Result<(), CliError> {
     let context = Context {
         out,
         lods: batch.lods,
+        frames: batch.growth_frames,
         thumb: batch.thumb,
         manifest,
         progress: Progress::new(tasks.len(), skipped, options.quiet),
@@ -474,9 +498,20 @@ fn thumb_name(job: &Job, thumb: Thumb) -> String {
     format!("{}.{}", stem(job), thumb.format.extension())
 }
 
-fn files_exist(out: &Path, job: &Job, lods: u32, thumb: Option<Thumb>) -> bool {
-    let thumb = thumb.is_none_or(|thumb| out.join(thumb_name(job, thumb)).is_file());
-    thumb && (0..lods).all(|lod| out.join(file_name(job, lod, lods)).is_file())
+/// File name of frame `frame` of the growth sequence of the plant of `job`.
+fn frame_name(job: &Job, frame: usize) -> String {
+    format!("{}_frame{frame:03}.glb", stem(job))
+}
+
+fn files_exist(out: &Path, job: &Job, batch: &Batch) -> bool {
+    let thumb = batch
+        .thumb
+        .is_none_or(|thumb| out.join(thumb_name(job, thumb)).is_file());
+    if batch.growth_frames > 0 {
+        let frames = usize::from(batch.growth_frames.min(job.params.age));
+        return thumb && (0..frames).all(|frame| out.join(frame_name(job, frame)).is_file());
+    }
+    thumb && (0..batch.lods).all(|lod| out.join(file_name(job, lod, batch.lods)).is_file())
 }
 
 /// One written file, as recorded in the manifest.
@@ -484,6 +519,9 @@ fn files_exist(out: &Path, job: &Job, lods: u32, thumb: Option<Thumb>) -> bool {
 struct FileRecord {
     file: String,
     lod: u32,
+    /// Last growth cycle shown, for a frame of a growth sequence.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cycle: Option<u16>,
     quality: f32,
     vertices: usize,
     triangles: usize,
@@ -516,6 +554,16 @@ struct Record<'a> {
     timings_ms: TimingsMs,
 }
 
+/// What generating one plant produced, for its manifest line.
+#[derive(Debug)]
+struct Written {
+    files: Vec<FileRecord>,
+    thumbnail: Option<String>,
+    stats: Stats,
+    quality: f32,
+    timings: TimingsMs,
+}
+
 /// Generates the plant of `job`, writes its files, its thumbnail and its manifest line.
 fn make_plant(
     context: &Context,
@@ -524,11 +572,44 @@ fn make_plant(
     job: &Job,
 ) -> Result<(), String> {
     let index = job.index;
-    let fail = |e: &dyn std::fmt::Display| format!("{} plant {index}: {e}", job.label);
-    let params = job.params;
+    let fail = |e: String| format!("{} plant {index}: {e}", job.label);
+    let written = if context.frames > 0 {
+        write_sequence(context, generator, plant, job)
+    } else {
+        write_levels(context, generator, plant, job)
+    }
+    .map_err(fail)?;
+    let Some(manifest) = &context.manifest else {
+        return Ok(());
+    };
+    let record = Record {
+        species: &job.label,
+        species_name: &job.species.name,
+        index,
+        seed: job.base_seed,
+        plant_seed: job.params.seed,
+        age: job.params.age,
+        scale: job.params.scale,
+        quality: written.quality,
+        files: written.files,
+        thumbnail: written.thumbnail,
+        stats: written.stats,
+        timings_ms: written.timings,
+    };
+    append_line(manifest, &record).map_err(fail)
+}
+
+/// Generates the plant of `job` and writes one file per level of detail, with the
+/// thumbnail of the first.
+fn write_levels(
+    context: &Context,
+    generator: &mut Generator,
+    plant: &mut Plant,
+    job: &Job,
+) -> Result<Written, String> {
     let timings = generator
-        .generate_within(&job.species, &params, &job.budget, plant)
-        .map_err(|e| fail(&e))?;
+        .generate_within(&job.species, &job.params, &job.budget, plant)
+        .map_err(|e| e.to_string())?;
     let stats = plant.stats;
     let base_quality = quality_of(&plant.params);
     let mut mesh = timings.mesh;
@@ -538,52 +619,98 @@ fn make_plant(
     for lod in 0..context.lods {
         let quality = lod_quality(base_quality, lod);
         if lod > 0 {
-            let options = params.with_quality(quality).mesh;
+            let options = job.params.clone().with_quality(quality).mesh;
             mesh += generator
                 .remesh(plant, &job.species, &options)
-                .map_err(|e| fail(&e))?;
+                .map_err(|e| e.to_string())?;
         }
         let name = file_name(job, lod, context.lods);
         let start = Instant::now();
-        let bytes =
-            write_file(context.out, &name, job, plant, (lod, quality)).map_err(|e| fail(&e))?;
+        let bytes = write_file(context.out, &name, job, plant, (lod, quality))?;
         if let (0, Some(thumb)) = (lod, context.thumb) {
             let name = thumb_name(job, thumb);
-            write_thumb(context.out, &name, plant, thumb).map_err(|e| fail(&e))?;
+            write_thumb(context.out, &name, plant, thumb)?;
             thumbnail = Some(name);
         }
         export += start.elapsed();
         files.push(FileRecord {
             file: name,
             lod,
+            cycle: None,
             quality,
             vertices: plant.stats.vertices,
             triangles: plant.stats.triangles,
             bytes,
         });
     }
-    let Some(manifest) = &context.manifest else {
-        return Ok(());
-    };
-    let record = Record {
-        species: &job.label,
-        species_name: &job.species.name,
-        index,
-        seed: job.base_seed,
-        plant_seed: params.seed,
-        age: params.age,
-        scale: params.scale,
-        quality: base_quality,
+    Ok(Written {
         files,
         thumbnail,
         stats,
-        timings_ms: TimingsMs {
+        quality: base_quality,
+        timings: TimingsMs {
             grow: ms(timings.grow),
             mesh: ms(mesh),
             export: ms(export),
         },
-    };
-    append_line(manifest, &record).map_err(|e| fail(&e))
+    })
+}
+
+/// Grows the plant of `job` once and writes one file per frame of its growth sequence,
+/// with the thumbnail of the last, which is the full-grown plant.
+fn write_sequence(
+    context: &Context,
+    generator: &mut Generator,
+    plant: &mut Plant,
+    job: &Job,
+) -> Result<Written, String> {
+    let timeline = generator
+        .timeline(&job.species, &job.params)
+        .map_err(|e| e.to_string())?;
+    let quality = quality_of(&job.params);
+    let (mut mesh, mut export) = (Duration::ZERO, Duration::ZERO);
+    let mut files = Vec::new();
+    for (frame, cycle) in timeline
+        .frame_cycles(context.frames)
+        .into_iter()
+        .enumerate()
+    {
+        mesh += generator
+            .frame(&job.species, &timeline, cycle, plant)
+            .map_err(|e| e.to_string())?;
+        let name = frame_name(job, frame);
+        let start = Instant::now();
+        let bytes = write_file(context.out, &name, job, plant, (0, quality))?;
+        export += start.elapsed();
+        files.push(FileRecord {
+            file: name,
+            lod: 0,
+            cycle: Some(cycle),
+            quality,
+            vertices: plant.stats.vertices,
+            triangles: plant.stats.triangles,
+            bytes,
+        });
+    }
+    let mut thumbnail = None;
+    if let (Some(thumb), false) = (context.thumb, files.is_empty()) {
+        let name = thumb_name(job, thumb);
+        let start = Instant::now();
+        write_thumb(context.out, &name, plant, thumb)?;
+        export += start.elapsed();
+        thumbnail = Some(name);
+    }
+    Ok(Written {
+        files,
+        thumbnail,
+        stats: plant.stats,
+        quality,
+        timings: TimingsMs {
+            grow: ms(timeline.grow),
+            mesh: ms(mesh),
+            export: ms(export),
+        },
+    })
 }
 
 fn ms(duration: Duration) -> f64 {
