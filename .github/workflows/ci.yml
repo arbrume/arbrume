@@ -85,3 +85,22 @@ jobs:
             "$venv/bin/python" --version
             "$venv/bin/python" -m pytest -v tests
           done
+
+  blender:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: astral-sh/setup-uv@v6
+      - name: Lint the Blender extension
+        run: |
+          uvx ruff format --check blender
+          uvx ruff check blender
+      - name: Build the abi3 wheel
+        working-directory: crates/arbrume-py
+        run: uvx maturin build --release --out "$RUNNER_TEMP/wheels"
+      - name: Test the bpy-free logic of the extension on Python 3.11
+        run: |
+          uv run --no-project --python 3.11 --with pytest --with "$(ls "$RUNNER_TEMP"/wheels/*.whl)" \
+            pytest -v blender/tests

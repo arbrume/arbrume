@@ -1,0 +1,21 @@
+schema_version = "1.0.0"
+
+id = "arbrume"
+version = "0.1.0"
+name = "Arbrume"
+tagline = "Procedural trees and plants with live growth and curve editing"
+maintainer = "Arbrume contributors"
+type = "add-on"
+website = "https://github.com/arbrume/arbrume"
+tags = ["Add Mesh", "Object"]
+
+blender_version_min = "4.2.0"
+license = ["SPDX:GPL-3.0-or-later"]
+copyright = ["2026 Arbrume contributors"]
+
+# Filled by build_extension.py with the wheels it collects, one platform per zip.
+platforms = ["windows-x64", "windows-arm64", "linux-x64", "linux-arm64", "macos-x64", "macos-arm64"]
+wheels = []
+
+[build]
+paths_exclude_pattern = ["__pycache__/", "/.git/", "*.pyc"]

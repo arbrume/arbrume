@@ -10,3 +10,6 @@ tools/node_modules/
 crates/arbrume-py/python/arbrume/_arbrume*.pyd
 crates/arbrume-py/python/arbrume/_arbrume*.so
 crates/arbrume-py/python/arbrume/_arbrume*.pdb
+# Blender extension: collected wheels and built zips
+blender/arbrume/wheels/
+blender/dist/
