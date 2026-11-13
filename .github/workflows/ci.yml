@@ -55,3 +55,33 @@ jobs:
               --age-range 8..20 --lods 2 --out "$RUNNER_TEMP/presets" --quiet
           done
       - run: node tools/validate_glb.mjs "$RUNNER_TEMP/presets"
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: |
+            3.11
+            3.x
+      - name: Build the abi3 wheel
+        working-directory: crates/arbrume-py
+        run: uvx maturin build --release --out "$RUNNER_TEMP/wheels"
+      - name: Build the command line, for the glb comparison test
+        run: cargo build --release -p arbrume
+      - name: Test the same wheel on Python 3.11 and the newest 3.x
+        working-directory: crates/arbrume-py
+        env:
+          ARBRUME_CLI: ${{ github.workspace }}/target/release/arbrume
+        run: |
+          for python in python3.11 python; do
+            venv="$RUNNER_TEMP/venv-$python"
+            uv venv --python "$(command -v "$python")" "$venv"
+            uv pip install --python "$venv/bin/python" "$RUNNER_TEMP"/wheels/*.whl pytest
+            "$venv/bin/python" --version
+            "$venv/bin/python" -m pytest -v tests
+          done

@@ -6,3 +6,7 @@ __pycache__/
 /out/
 .ruff_cache/
 tools/node_modules/
+# Extension module copied next to the Python sources by `maturin develop`
+crates/arbrume-py/python/arbrume/_arbrume*.pyd
+crates/arbrume-py/python/arbrume/_arbrume*.so
+crates/arbrume-py/python/arbrume/_arbrume*.pdb

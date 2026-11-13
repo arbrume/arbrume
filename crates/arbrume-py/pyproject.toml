@@ -1,0 +1,31 @@
+[build-system]
+requires = ["maturin>=1.9.4,<2"]
+build-backend = "maturin"
+
+[project]
+name = "arbrume"
+description = "Procedural tree and plant generator (Python bindings)"
+requires-python = ">=3.11"
+license = "GPL-3.0-or-later"
+dependencies = ["numpy>=1.23"]
+dynamic = ["version"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Topic :: Multimedia :: Graphics :: 3D Modeling",
+]
+
+[project.urls]
+Repository = "https://github.com/arbrume/arbrume"
+
+[dependency-groups]
+test = ["pytest>=8"]
+
+[tool.maturin]
+# Mixed layout: the extension is arbrume._arbrume, the package and its stubs are in
+# python/arbrume. maturin >= 1.9.4 sets PYO3_BUILD_EXTENSION_MODULE itself.
+python-source = "python"
+module-name = "arbrume._arbrume"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
