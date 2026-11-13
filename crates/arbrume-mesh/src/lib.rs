@@ -1,1 +1,281 @@
-//! Geometry: branch sweep, junctions, twigs, leaves, UVs and LOD.
+//! Geometry: turns a grown plant graph and its species into triangle buffers.
+//!
+//! [`mesh_tree`] produces a [`TreeMesh`] with a bark part (trunk and branches) and a
+//! leaf part. The steps, each documented in its module:
+//!
+//! * `ring`: where the cross-sections of an axis go. The node polyline is smoothed into
+//!   a curve, rings follow its curvature, straight runs of nodes are merged, and the base
+//!   of the axis is widened (trunk flare, branch collar).
+//! * `tube`: the surface over those rings, oriented by a twist-free parallel-transport
+//!   frame, with smooth normals, texture coordinates by circumference and arc length,
+//!   rings of different side counts zipped together, and a cap on the tip.
+//! * `bark`: all axes of the plant, counted first and then filled, in parallel over
+//!   chains when asked.
+//! * `leaf` and `leaves`: the leaf template of the species and its instances at the
+//!   organ sites, in a random order that makes any prefix a lower level of detail.
+//!
+//! Level of detail comes from the graph, not from decimating a mesh: [`MeshOptions`]
+//! sets a tolerance that drives ring and side counts, a radius below which axes are
+//! dropped and the fraction of leaves kept.
+//!
+//! The output depends on the graph, the species and the options only. In particular it
+//! is bit-identical with and without [`MeshOptions::parallel`] and for any number of
+//! threads.
+//!
+//! [`mesh_tree`] is the one-call entry point. A [`Mesher`] does the same while keeping
+//! its working memory, and the output buffers if asked, from one plant to the next.
+//!
+//! ```
+//! use arbrume_core::species::Species;
+//! use arbrume_mesh::synthetic::{SkeletonParams, skeleton};
+//! use arbrume_mesh::{MeshOptions, mesh_tree};
+//!
+//! let graph = skeleton(&SkeletonParams::small(7));
+//! let mesh = mesh_tree(&graph, &Species::default(), &MeshOptions::default()).unwrap();
+//! assert_eq!(mesh.parts.len(), 2);
+//! let coarse = mesh_tree(&graph, &Species::default(), &MeshOptions::with_quality(0.5)).unwrap();
+//! assert!(coarse.triangle_count() < mesh.triangle_count());
+//! ```
+
+#![forbid(unsafe_code)]
+
+mod bark;
+mod leaf;
+mod leaves;
+mod options;
+mod ring;
+pub mod synthetic;
+mod tube;
+
+pub use options::{DEFAULT_TOLERANCE, MeshError, MeshOptions};
+
+use arbrume_core::graph::PlantGraph;
+use arbrume_core::mesh::{Material, MeshBuffers, MeshPart, PartKind, TreeMesh};
+use arbrume_core::species::Species;
+use leaf::LeafTemplate;
+
+/// Sizes of the mesh [`mesh_tree`] would build, known before any buffer is filled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct MeshCounts {
+    /// Vertices of the bark part.
+    pub bark_vertices: usize,
+    /// Triangles of the bark part.
+    pub bark_triangles: usize,
+    /// Leaves in the leaf part.
+    pub leaves: usize,
+    /// Vertices of the leaf part.
+    pub leaf_vertices: usize,
+    /// Triangles of the leaf part.
+    pub leaf_triangles: usize,
+}
+
+impl MeshCounts {
+    /// Total number of triangles.
+    #[must_use]
+    pub const fn triangles(&self) -> usize {
+        self.bark_triangles + self.leaf_triangles
+    }
+}
+
+fn check(graph: &PlantGraph, options: &MeshOptions) -> Result<(), MeshError> {
+    options.validate()?;
+    if graph.is_contiguous() {
+        Ok(())
+    } else {
+        Err(MeshError::NotContiguous)
+    }
+}
+
+fn opaque(name: &str, color: [f32; 3], roughness: f32, double_sided: bool) -> Material {
+    Material {
+        name: name.to_owned(),
+        base_color: [color[0], color[1], color[2], 1.0],
+        roughness,
+        double_sided,
+        alpha_cutoff: None,
+        base_color_texture: None,
+    }
+}
+
+/// Removes the part of `kind` from `mesh`, or makes an empty one.
+fn take_part(mesh: &mut TreeMesh, kind: PartKind) -> MeshPart {
+    let found = mesh.parts.iter().position(|part| part.kind == kind);
+    found.map_or_else(
+        || MeshPart {
+            kind,
+            material: opaque("", [0.0; 3], 0.0, false),
+            buffers: MeshBuffers::default(),
+        },
+        |index| mesh.parts.swap_remove(index),
+    )
+}
+
+/// A reusable mesher: keeps its working memory, and optionally the output buffers,
+/// from one plant to the next.
+///
+/// [`mesh_tree`] allocates its working memory and its output on every call. For a large
+/// plant that memory is several megabytes, and obtaining fresh pages from the operating
+/// system can cost as much as filling them. A batch that meshes many plants should keep
+/// one `Mesher` per thread and, when it consumes each mesh before building the next,
+/// one [`TreeMesh`] passed to [`Mesher::mesh_into`].
+///
+/// The result never depends on what the mesher was used for before.
+#[derive(Debug, Clone, Default)]
+pub struct Mesher {
+    bark: bark::BarkPlan,
+    leaves: leaves::LeafSet,
+    circles: tube::Circles,
+}
+
+impl Mesher {
+    /// A mesher with no memory reserved yet.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Runs the planning passes and returns the leaf template.
+    fn plan(
+        &mut self,
+        graph: &PlantGraph,
+        species: &Species,
+        options: &MeshOptions,
+    ) -> Result<LeafTemplate, MeshError> {
+        check(graph, options)?;
+        bark::plan_bark(&mut self.bark, graph, species, options)?;
+        leaves::select_leaves(&mut self.leaves, graph, &species.foliage, options);
+        let template = LeafTemplate::new(&species.foliage, options.tolerance);
+        let (vertices, _) = leaves::leaf_counts(&template, self.leaves.organs.len());
+        if u32::try_from(vertices).is_err() {
+            return Err(MeshError::TooLarge { vertices });
+        }
+        Ok(template)
+    }
+
+    /// Same as [`mesh_counts`], reusing the working memory of the mesher.
+    ///
+    /// # Errors
+    ///
+    /// The same as [`mesh_tree`].
+    pub fn counts(
+        &mut self,
+        graph: &PlantGraph,
+        species: &Species,
+        options: &MeshOptions,
+    ) -> Result<MeshCounts, MeshError> {
+        let template = self.plan(graph, species, options)?;
+        let leaves = self.leaves.organs.len();
+        let (leaf_vertices, leaf_indices) = leaves::leaf_counts(&template, leaves);
+        Ok(MeshCounts {
+            bark_vertices: self.bark.vertices,
+            bark_triangles: self.bark.indices / 3,
+            leaves,
+            leaf_vertices,
+            leaf_triangles: leaf_indices / 3,
+        })
+    }
+
+    /// Same as [`mesh_tree`], reusing the working memory of the mesher.
+    ///
+    /// # Errors
+    ///
+    /// The same as [`mesh_tree`].
+    pub fn mesh(
+        &mut self,
+        graph: &PlantGraph,
+        species: &Species,
+        options: &MeshOptions,
+    ) -> Result<TreeMesh, MeshError> {
+        let mut mesh = TreeMesh::default();
+        self.mesh_into(graph, species, options, &mut mesh)?;
+        Ok(mesh)
+    }
+
+    /// Same as [`mesh_tree`], writing into `mesh` and reusing the allocations of its
+    /// bark and leaf parts. Whatever `mesh` held is replaced; the result equals that of
+    /// [`mesh_tree`].
+    ///
+    /// # Errors
+    ///
+    /// The same as [`mesh_tree`]. On error `mesh` is left untouched.
+    pub fn mesh_into(
+        &mut self,
+        graph: &PlantGraph,
+        species: &Species,
+        options: &MeshOptions,
+        mesh: &mut TreeMesh,
+    ) -> Result<(), MeshError> {
+        let template = self.plan(graph, species, options)?;
+        let mut bark = take_part(mesh, PartKind::Bark);
+        let mut leaf = take_part(mesh, PartKind::Leaf);
+        mesh.parts.clear();
+        if self.bark.indices > 0 {
+            bark.material = opaque("bark", species.bark.color, species.bark.roughness, false);
+            let circles = &mut self.circles;
+            bark::fill_bark(&self.bark, circles, options.parallel, &mut bark.buffers);
+            mesh.parts.push(bark);
+        }
+        let foliage = &species.foliage;
+        if !self.leaves.organs.is_empty() {
+            leaf.material = opaque("leaf", foliage.color, foliage.roughness, true);
+            leaf.material.alpha_cutoff = foliage.uses_cards().then_some(0.5);
+            let source = leaves::LeafSource {
+                graph,
+                foliage,
+                set: &self.leaves,
+                template: &template,
+            };
+            leaves::mesh_leaves(&source, options, &mut leaf.buffers);
+            mesh.parts.push(leaf);
+        }
+        Ok(())
+    }
+}
+
+/// Counts the vertices, triangles and leaves of the mesh of `graph` without building it.
+///
+/// This runs the planning pass of [`mesh_tree`] only, a fraction of its cost. Use it to
+/// budget a level of detail or to size buffers in advance.
+///
+/// # Errors
+///
+/// The same as [`mesh_tree`].
+pub fn mesh_counts(
+    graph: &PlantGraph,
+    species: &Species,
+    options: &MeshOptions,
+) -> Result<MeshCounts, MeshError> {
+    Mesher::new().counts(graph, species, options)
+}
+
+/// Builds the mesh of a plant.
+///
+/// The result has a [`PartKind::Bark`] part, with normals and texture coordinates,
+/// followed by a [`PartKind::Leaf`] part, with normals, texture coordinates and vertex
+/// colours; a part that would be empty is left out. Materials take their colour and
+/// roughness from `species.bark` and `species.foliage`, carry no texture, and the leaf
+/// material is double-sided. For card leaves (`foliage.geometry = "card"`) the leaf
+/// material is alpha-masked; the caller attaches the texture.
+///
+/// Organ sites of a kind other than `Leaf` are ignored.
+///
+/// The graph must be contiguous: every chain must be one slice of the node arrays. A
+/// generator that completes each axis before starting the next produces such a graph;
+/// otherwise call `PlantGraph::ensure_contiguous` first. Organ sites must hold unit,
+/// orthogonal `direction` and `normal` vectors.
+///
+/// To mesh many plants, use a [`Mesher`], which does not allocate anew for each.
+///
+/// # Errors
+///
+/// Returns [`MeshError::NotContiguous`] for a graph that is not contiguous,
+/// [`MeshError::InvalidOption`] for an option outside its domain and
+/// [`MeshError::TooLarge`] when a part would need more vertices than `u32` indices can
+/// address.
+pub fn mesh_tree(
+    graph: &PlantGraph,
+    species: &Species,
+    options: &MeshOptions,
+) -> Result<TreeMesh, MeshError> {
+    Mesher::new().mesh(graph, species, options)
+}

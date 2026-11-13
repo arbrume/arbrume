@@ -47,7 +47,7 @@ pub use architecture::{
     GrowthRhythm, Phyllotaxis,
 };
 pub use bark::Bark;
-pub use foliage::Foliage;
+pub use foliage::{BladeShape, Foliage, LeafGeometry};
 pub use geometry::{Geometry, RadiusModel};
 pub use growth::{Growth, SelfOrganization};
 

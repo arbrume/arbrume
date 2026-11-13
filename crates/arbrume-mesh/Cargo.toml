@@ -12,3 +12,13 @@ workspace = true
 [dependencies]
 arbrume-core.workspace = true
 glam = "0.34.3"
+rayon = "1.10"
+thiserror = "2.0.21"
+
+[dev-dependencies]
+arbrume-export.workspace = true
+criterion = { version = "0.5", default-features = false }
+
+[[bench]]
+name = "mesh"
+harness = false

@@ -7,11 +7,25 @@
 //! [`RadiusModel::Tapered`] is the parametric model of Weber and Penn (1995): the base
 //! radius of an axis is derived from its length, and `taper` shapes it along the axis.
 //!
+//! The layer also shapes the swept surface: the widening of the trunk base
+//! ([`Geometry::flare`], with optional buttress lobes), the collar of a lateral axis
+//! where it leaves its parent, and the bounds of the number of sides of a cross-section.
+//!
 //! All defaults are starting points for tuning, not measured values.
 
 use super::{SpeciesError, check_curve, check_range};
 use crate::curve::{Curve, OrderCurve};
 use serde::{Deserialize, Serialize};
+
+/// Fewest sides a cross-section can have and still enclose a volume.
+pub const MIN_RADIAL_SEGMENTS: u32 = 3;
+
+/// Upper limit of [`Geometry::radial_segments`].
+pub const MAX_RADIAL_SEGMENTS: u32 = 64;
+
+/// Upper limit of [`Geometry::buttress_lobes`]: a cross-section of
+/// [`MAX_RADIAL_SEGMENTS`] sides gives each lobe four sides.
+pub const MAX_BUTTRESS_LOBES: u32 = MAX_RADIAL_SEGMENTS / 4;
 
 /// How internode radii are computed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
@@ -45,6 +59,24 @@ pub struct Geometry {
     /// Widening of the trunk near the ground, 0 for none. See
     /// [`Geometry::flare_factor`].
     pub flare: f32,
+    /// Number of buttress lobes around the flared base of the trunk, 0 for a round base.
+    /// Lobes modulate only the widening due to `flare`, so they fade out with it
+    /// (`Lobes` of Weber and Penn, restricted to the flare).
+    pub buttress_lobes: u32,
+    /// Depth of the buttress lobes in `[0, 1]`, as a fraction of the flare widening: the
+    /// widening varies around the trunk between `1 - depth` and `1 + depth` times its
+    /// mean.
+    pub buttress_depth: f32,
+    /// Widening of a lateral axis where it emerges from its parent, as a fraction of its
+    /// own radius; 0 for no collar. The mesher never widens a collar beyond the radius of
+    /// the parent.
+    pub collar_flare: f32,
+    /// Length over which the collar narrows back to the radius of the axis, in radii of
+    /// the axis, measured from the surface of the parent.
+    pub collar_length: f32,
+    /// Smallest and largest number of sides of a branch cross-section. Between the two,
+    /// the mesher picks the count from the radius and its tolerance.
+    pub radial_segments: [u32; 2],
     /// Radius along an axis as a fraction of its base radius, in `[0, 1]`, along the
     /// axis (tapered model).
     pub taper: OrderCurve,
@@ -60,6 +92,11 @@ impl Default for Geometry {
             radius_ratio: 0.02,
             child_radius_exponent: 1.2,
             flare: 0.5,
+            buttress_lobes: 0,
+            buttress_depth: 0.3,
+            collar_flare: 0.35,
+            collar_length: 3.0,
+            radial_segments: [3, 16],
             taper: OrderCurve::uniform(cone),
         }
     }
@@ -88,13 +125,73 @@ impl Geometry {
             max,
         )?;
         check_curve("geometry.taper", &self.taper, 0.0, 1.0)?;
-        check_range("geometry.flare", self.flare, 0.0, max)
+        check_range("geometry.flare", self.flare, 0.0, max)?;
+        check_range(
+            "geometry.buttress_lobes",
+            self.buttress_lobes as f32,
+            0.0,
+            MAX_BUTTRESS_LOBES as f32,
+        )?;
+        check_range("geometry.buttress_depth", self.buttress_depth, 0.0, 1.0)?;
+        check_range("geometry.collar_flare", self.collar_flare, 0.0, max)?;
+        check_range("geometry.collar_length", self.collar_length, tiny, max)?;
+        let [fewest, most] = self.radial_segments;
+        check_range(
+            "geometry.radial_segments",
+            fewest as f32,
+            MIN_RADIAL_SEGMENTS as f32,
+            most as f32,
+        )?;
+        check_range(
+            "geometry.radial_segments",
+            most as f32,
+            fewest as f32,
+            MAX_RADIAL_SEGMENTS as f32,
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::Geometry;
+
+    #[test]
+    fn surface_parameters_are_validated() {
+        let invalid = [
+            Geometry {
+                radial_segments: [2, 16],
+                ..Default::default()
+            },
+            Geometry {
+                radial_segments: [8, 4],
+                ..Default::default()
+            },
+            Geometry {
+                radial_segments: [3, 65],
+                ..Default::default()
+            },
+            Geometry {
+                buttress_lobes: 17,
+                ..Default::default()
+            },
+            Geometry {
+                buttress_depth: 1.5,
+                ..Default::default()
+            },
+            Geometry {
+                collar_flare: -0.1,
+                ..Default::default()
+            },
+            Geometry {
+                collar_length: 0.0,
+                ..Default::default()
+            },
+        ];
+        Geometry::default().validate().unwrap();
+        for geometry in invalid {
+            assert!(geometry.validate().is_err(), "{geometry:?}");
+        }
+    }
 
     #[test]
     fn flare_widens_only_the_base() {

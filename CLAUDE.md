@@ -34,4 +34,4 @@ Cargo workspace under `crates/`: `arbrume-core` (plant graph, RNG, curves, speci
 mesh buffers), `arbrume-grow` (growth cycle), `arbrume-mesh` (geometry), `arbrume-export`
 (`.glb` and sidecars), `arbrume-cli` (batch generation), `arbrume-py` (PyO3 bindings).
 Output depends only on (species, parameters, seed, version), never on thread count: random
-numbers come from the counter-based generator in `arbrume-core`, keyed by node id.
+numbers come from the counter-based generator in `arbrume-core`, keyed by stable ids.
