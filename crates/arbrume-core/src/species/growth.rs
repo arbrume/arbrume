@@ -10,14 +10,18 @@
 //!   its tip.
 //!
 //! Coverage follows the parameter sets of Weber and Penn (1995) and Stava et al. (2014):
-//! axis and internode lengths, insertion angle and its variation, branching density,
-//! direction noise and tropism. [`SelfOrganization`] holds the parameters of the
-//! self-organizing mode of Palubicki et al. (2009).
+//! axis and internode lengths, extension per cycle, insertion angle and its variation,
+//! branching density, tiers and whorls, direction noise, curvature and tropism, forks,
+//! relay axes, basal stems and bending under weight. [`SelfOrganization`] holds the
+//! parameters of the self-organizing mode of Palubicki et al. (2009).
+//!
+//! A *growth cycle* is one step of the growth engine: every growing axis extends once.
+//! With rhythmic growth the metamers an axis gains in one cycle form a growth unit.
 //!
 //! All defaults are starting points for tuning, not measured values.
 
 use super::{SpeciesError, check_curve, check_range};
-use crate::curve::OrderCurve;
+use crate::curve::{Curve, OrderCurve};
 use serde::{Deserialize, Serialize};
 
 /// Parameters of self-organizing growth (Palubicki et al. 2009), in which buds compete
@@ -95,6 +99,70 @@ pub struct Growth {
     /// `H' = alpha * H + beta * T + gamma * E` with `alpha + beta + gamma = 1`
     /// (Longay et al. 2012, eq. 2). Along the axis.
     pub tropism_weight: OrderCurve,
+    /// Extension of an axis in one growth cycle, in meters, along the axis. An axis
+    /// grows by this much per cycle until it reaches its `axis_length`, so the number of
+    /// cycles an axis takes to mature follows from both. A curve that decreases along
+    /// the axis gives vigorous early growth that slows down.
+    pub shoot_length: OrderCurve,
+    /// Half-width of the uniform random variation of `axis_length`, as a fraction of
+    /// it, over the attachment position along the parent.
+    pub length_variation: OrderCurve,
+    /// Shortening of lateral axes towards the tip of their parent, in `[0, 1]`: the
+    /// length of a lateral attached at relative position `x` is multiplied by
+    /// `1 - apical_dominance * x`. 1 gives the conical crown of Weber and Penn (1995).
+    pub apical_dominance: f32,
+    /// Exponent `e` of the dependence of a lateral on the length of its parent: its
+    /// length is multiplied by `(parent length / longest axis_length of the parent's
+    /// order)^e`. 0 makes `axis_length` absolute, 1 makes laterals proportional to their
+    /// parent as in Weber and Penn (1995).
+    pub parent_length_exponent: f32,
+    /// Fraction of an axis, from its base, that bears no lateral axis, over the
+    /// attachment position of that axis along its own parent; the order is that of the
+    /// bearing axis. The fraction is of the length the axis has at the age of the plant.
+    pub bare_base: OrderCurve,
+    /// Factor in `[0, 1]` applied to `branch_probability` over the position of a node in
+    /// its growth unit (towards 0 for the first node, 1 for the last). Used when both
+    /// growth and branching pattern are rhythmic; it shapes the tiers of branches.
+    pub unit_branching: Curve,
+    /// Number of lateral buds on the last node of a growth unit, evenly spread around
+    /// the axis (a pseudo-whorl), along the axis; the order is that of the bearing
+    /// axis. Rounded to an integer; below 0.5 the buds of that node follow the
+    /// phyllotaxis like any other. Needs rhythmic growth.
+    pub whorl: OrderCurve,
+    /// Half-width in degrees of the uniform random variation of the divergence angle
+    /// between successive nodes.
+    pub phyllotaxis_variation: f32,
+    /// Systematic bend of an axis in degrees, counted over its whole length and
+    /// distributed along the axis by this curve: a metamer of length `l` on an axis of
+    /// length `L` turns by `curvature * l / L`. Positive bends downwards, negative
+    /// upwards; a curve changing sign gives an S shape (`Curve` and `CurveBack` of
+    /// Weber and Penn).
+    pub curvature: OrderCurve,
+    /// Half-width in degrees of a random bend drawn once per growth cycle and spread
+    /// over the metamers of that cycle, along the axis. Unlike `direction_variation`
+    /// it persists over several metamers, which makes axes crooked.
+    pub gnarl: OrderCurve,
+    /// Probability in `[0, 1]` that a monopodial axis forks at the end of a growth
+    /// cycle, along the axis: a second axis of the same order starts at the tip and
+    /// both continue to the same `axis_length` (the stem splits of Weber and Penn).
+    pub fork_probability: OrderCurve,
+    /// Angle in degrees by which each of the two axes of a fork turns away from the
+    /// previous direction, along the axis.
+    pub fork_angle: OrderCurve,
+    /// Angle in degrees between a relay axis of a sympodial plant and the axis it
+    /// continues, along the axis.
+    pub relay_angle: OrderCurve,
+    /// Number of stems rising from the ground (order 0 axes); more than one gives a
+    /// shrub.
+    pub stems: u8,
+    /// Radius in meters of the circle on the ground from which several stems rise.
+    pub stem_spread: f32,
+    /// Outward lean of each of several stems, in degrees from the vertical. Its random
+    /// variation is `branching_angle_variation` of order 0.
+    pub stem_angle: f32,
+    /// Compliance of the wood under its own weight, in 1/m: specific weight divided by
+    /// Young's modulus (`rho * g / E`). 0 disables the bending pass.
+    pub weight_bending: f32,
     /// Self-organizing mode parameters.
     pub self_organization: SelfOrganization,
 }
@@ -111,6 +179,23 @@ impl Default for Growth {
             direction_variation: curve(&[2.0, 6.0]),
             gravitropic_setpoint: curve(&[0.0, 60.0]),
             tropism_weight: OrderCurve::constant(0.1),
+            shoot_length: curve(&[0.5, 0.4, 0.25, 0.15]),
+            length_variation: OrderCurve::constant(0.1),
+            apical_dominance: 0.0,
+            parent_length_exponent: 0.0,
+            bare_base: OrderCurve::constant(0.0),
+            unit_branching: Curve::linear(&[[0.0, 0.0], [1.0, 1.0]]).unwrap_or_default(),
+            whorl: OrderCurve::constant(0.0),
+            phyllotaxis_variation: 0.0,
+            curvature: OrderCurve::constant(0.0),
+            gnarl: OrderCurve::constant(0.0),
+            fork_probability: OrderCurve::constant(0.0),
+            fork_angle: OrderCurve::constant(20.0),
+            relay_angle: OrderCurve::constant(20.0),
+            stems: 1,
+            stem_spread: 0.0,
+            stem_angle: 0.0,
+            weight_bending: 0.0,
             self_organization: SelfOrganization::default(),
         }
     }
@@ -160,7 +245,42 @@ impl Growth {
         )?;
         let free = 1.0 - self.environment_weight;
         check_curve("growth.tropism_weight", &self.tropism_weight, 0.0, free)?;
+        self.validate_lengths()?;
+        self.validate_shape()?;
         self.self_organization.validate()
+    }
+
+    /// Checks the parameters of axis extension, branch length and branch placement.
+    fn validate_lengths(&self) -> Result<(), SpeciesError> {
+        let (tiny, max) = (f32::MIN_POSITIVE, f32::MAX);
+        check_curve("growth.shoot_length", &self.shoot_length, tiny, max)?;
+        let variation = &self.length_variation;
+        check_curve("growth.length_variation", variation, 0.0, 1.0)?;
+        check_range("growth.apical_dominance", self.apical_dominance, 0.0, 1.0)?;
+        let exponent = self.parent_length_exponent;
+        check_range("growth.parent_length_exponent", exponent, 0.0, max)?;
+        check_curve("growth.bare_base", &self.bare_base, 0.0, 1.0)?;
+        let (unit_lo, unit_hi) = self.unit_branching.bounds();
+        check_range("growth.unit_branching", unit_lo, 0.0, 1.0)?;
+        check_range("growth.unit_branching", unit_hi, 0.0, 1.0)?;
+        check_curve("growth.whorl", &self.whorl, 0.0, 255.0)
+    }
+
+    /// Checks the parameters of axis shape, forks, relays, stems and bending.
+    fn validate_shape(&self) -> Result<(), SpeciesError> {
+        let max = f32::MAX;
+        let jitter = self.phyllotaxis_variation;
+        check_range("growth.phyllotaxis_variation", jitter, 0.0, 180.0)?;
+        check_curve("growth.curvature", &self.curvature, -max, max)?;
+        check_curve("growth.gnarl", &self.gnarl, 0.0, 180.0)?;
+        let forks = &self.fork_probability;
+        check_curve("growth.fork_probability", forks, 0.0, 1.0)?;
+        check_curve("growth.fork_angle", &self.fork_angle, 0.0, 180.0)?;
+        check_curve("growth.relay_angle", &self.relay_angle, 0.0, 180.0)?;
+        check_range("growth.stems", f32::from(self.stems), 1.0, 255.0)?;
+        check_range("growth.stem_spread", self.stem_spread, 0.0, max)?;
+        check_range("growth.stem_angle", self.stem_angle, 0.0, 180.0)?;
+        check_range("growth.weight_bending", self.weight_bending, 0.0, max)
     }
 }
 

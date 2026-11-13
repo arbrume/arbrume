@@ -1,0 +1,43 @@
+# Starter shrub for the parametric mode of arbrume-grow.
+#
+# An illustrative sympodial shrub with several stems from the ground, not a measured
+# species: every value is a starting point for tuning.
+
+schema_version = 0
+name = "Starter shrub"
+
+[architecture]
+branching = "sympodial"
+growth_rhythm = "rhythmic"
+branching_pattern = "diffuse"
+branch_timing = "sylleptic"
+max_order = 2
+phyllotaxis = { leaves_per_node = 2, divergence_deg = 90.0 }
+
+[growth]
+stems = 6
+stem_spread = 0.12
+stem_angle = 18.0
+axis_length = { by_order = [2.2, [[0.0, 0.5], [0.5, 1.1], [1.0, 0.6]], 0.35] }
+shoot_length = { by_order = [0.35, 0.3, 0.2] }
+length_variation = 0.25
+internode_length = { by_order = [0.07, 0.05, 0.035] }
+branch_probability = { by_order = [[[0.0, 0.0], [0.15, 0.0], [0.3, 0.3], [1.0, 0.4]], 0.3] }
+branching_angle = 45.0
+branching_angle_variation = 12.0
+relay_angle = { by_order = [12.0, 18.0] }
+direction_variation = { by_order = [3.0, 6.0] }
+gnarl = 15.0
+gravitropic_setpoint = { by_order = [10.0, 50.0] }
+tropism_weight = 0.03
+
+[geometry]
+radius_model = "pipe"
+pipe_exponent = 2.2
+tip_radius = 0.0015
+
+[foliage]
+length = 0.05
+width_ratio = 0.5
+inclination_deg = 55.0
+retention_cycles = 2

@@ -1,0 +1,55 @@
+# Starter conifer for the parametric mode of arbrume-grow.
+#
+# An illustrative excurrent conifer (erect trunk, tiers of horizontal branches), not a
+# measured species: every value is a starting point for tuning. A leaf site stands for
+# the needles of one node.
+
+schema_version = 0
+name = "Starter conifer"
+
+[architecture]
+branching = "monopodial"
+growth_rhythm = "rhythmic"
+branching_pattern = "rhythmic"
+branch_timing = "proleptic"
+max_order = 3
+phyllotaxis = { leaves_per_node = 1, divergence_deg = 137.5 }
+
+[[architecture.axes]]
+orientation = "orthotropic"
+
+[[architecture.axes]]
+orientation = "plagiotropic"
+
+[growth]
+# Branch length falls linearly to the top of the trunk: a conical crown.
+axis_length = { by_order = [14.0, 4.0, 1.4, 0.4] }
+apical_dominance = 0.9
+parent_length_exponent = 1.0
+shoot_length = { by_order = [0.6, 0.35, 0.25, 0.2] }
+length_variation = 0.08
+internode_length = { by_order = [0.3, 0.12, 0.08, 0.05] }
+branch_probability = { by_order = [0.9, 0.8, 0.7] }
+# Laterals only in the tier that ends each growth unit.
+unit_branching = [[0.0, 0.0], [0.99, 0.0], [1.0, 1.0]]
+whorl = { by_order = [5.0, 2.0, 2.0] }
+bare_base = { by_order = [0.12, 0.15, 0.0] }
+branching_angle = { by_order = [50.0, [[0.0, 95.0], [1.0, 60.0]], 55.0] }
+branching_angle_variation = 5.0
+direction_variation = { by_order = [0.5, 2.0, 4.0] }
+gravitropic_setpoint = { by_order = [0.0, 95.0, 90.0] }
+tropism_weight = { by_order = [0.1, 0.04] }
+curvature = { by_order = [0.0, [[0.0, 15.0], [1.0, -30.0]], 0.0] }
+
+[geometry]
+radius_model = "tapered"
+radius_ratio = 0.015
+child_radius_exponent = 1.2
+taper = [[0.0, 1.0], [1.0, 0.08]]
+
+[foliage]
+length = 0.03
+width_ratio = 0.05
+inclination_deg = 60.0
+retention_cycles = 4
+color = [0.06, 0.2, 0.08]
