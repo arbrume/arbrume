@@ -1,0 +1,10 @@
+{
+  "name": "arbrume-tools",
+  "private": true,
+  "type": "module",
+  "description": "Node tooling for Arbrume: Khronos glTF validation of exported .glb files.",
+  "license": "GPL-3.0-or-later",
+  "dependencies": {
+    "gltf-validator": "2.0.0-dev.3.10"
+  }
+}

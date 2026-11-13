@@ -5,3 +5,4 @@ __pycache__/
 *.glb
 /out/
 .ruff_cache/
+tools/node_modules/
