@@ -8,6 +8,8 @@
 //! quality = 1.0                   # mesh quality of every entry that sets none
 //! lods = 1                        # levels of detail per plant
 //! manifest = true                 # write manifest.jsonl, like `--manifest`
+//! thumb = 256                     # write a thumbnail of this size next to each plant
+//! thumb_format = "jpg"            # or "png"
 //! age = { uniform = [10, 30] }    # default age distribution
 //! scale = 1.0                     # default scale distribution
 //!
@@ -28,9 +30,10 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use arbrume_core::species::Species;
-use arbrume_gen::{Distribution, GenParams, Sampler, species_with_overrides};
+use arbrume_gen::{Distribution, GenParams, RandomSampler, Sampler, species_with_overrides};
 use serde::Deserialize;
 
+use crate::batch::ThumbFormat;
 use crate::error::CliError;
 use crate::source::{SpeciesSource, resolve, sanitize};
 
@@ -47,6 +50,15 @@ pub struct Entry {
     pub sampler: Sampler,
 }
 
+/// Thumbnails to write next to the plants.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Thumb {
+    /// Width and height in pixels.
+    pub size: u32,
+    /// File format.
+    pub format: ThumbFormat,
+}
+
 /// Everything to generate.
 #[derive(Debug, Clone)]
 pub struct Batch {
@@ -56,8 +68,12 @@ pub struct Batch {
     pub lods: u32,
     /// Whether the config asks for a manifest.
     pub manifest: bool,
+    /// Thumbnails, if any.
+    pub thumb: Option<Thumb>,
     /// The species to generate.
     pub entries: Vec<Entry>,
+    /// Random plants to generate: their sampler and their number.
+    pub random: Option<(RandomSampler, u32)>,
 }
 
 /// Top level of a batch config file.
@@ -70,6 +86,8 @@ struct ConfigFile {
     lods: Option<u32>,
     #[serde(default)]
     manifest: bool,
+    thumb: Option<u32>,
+    thumb_format: Option<ThumbFormat>,
     age: Option<Distribution>,
     scale: Option<Distribution>,
     species: Vec<EntryFile>,
@@ -161,7 +179,12 @@ pub fn load(path: &Path) -> Result<Batch, CliError> {
         out: file.out.map(|out| base.join(out)),
         lods,
         manifest: file.manifest,
+        thumb: file.thumb.map(|size| Thumb {
+            size,
+            format: file.thumb_format.unwrap_or(ThumbFormat::Jpg),
+        }),
         entries,
+        random: None,
     })
 }
 

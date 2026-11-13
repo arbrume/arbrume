@@ -1,0 +1,83 @@
+# Larch-like deciduous conifer: a straight trunk, level limbs with thin hanging
+# branchlets, and soft light-green needles in small tufts, in an airy cone.
+#
+# Typical size at age 40: about 18 m tall, crown 8 m wide, trunk 0.4 m across at the
+# base. Every value is a starting point chosen by eye, not a measurement. A twig is one
+# hanging branchlet set with tufts of needles.
+
+schema_version = 0
+name = "Larch-like conifer"
+
+[architecture]
+branching = "monopodial"
+growth_rhythm = "rhythmic"
+branching_pattern = "rhythmic"
+branch_timing = "proleptic"
+max_order = 1
+phyllotaxis = { leaves_per_node = 1, divergence_deg = 137.5 }
+
+[growth]
+axis_length = { by_order = [20.0, 4.2] }
+apical_dominance = 0.88
+shoot_length = { by_order = [[[0.0, 0.6], [1.0, 0.3]], [[0.0, 0.4], [1.0, 0.2]]] }
+length_variation = { by_order = [0.05, 0.15] }
+internode_length = { by_order = [0.3, 0.18] }
+branch_probability = 0.9
+unit_branching = [[0.0, 0.0], [0.99, 0.0], [1.0, 1.0]]
+whorl = { by_order = [5.0, 0.0] }
+bare_base = { by_order = [0.08, 0.0] }
+branching_angle = { by_order = [0.0, [[0.0, 95.0], [0.6, 80.0], [1.0, 50.0]]] }
+branching_angle_variation = 8.0
+direction_variation = { by_order = [0.5, 3.0] }
+gnarl = { by_order = [1.0, 8.0] }
+gravitropic_setpoint = { by_order = [0.0, 95.0] }
+tropism_weight = { by_order = [0.1, 0.03] }
+curvature = { by_order = [0.0, [[0.0, 20.0], [0.6, 0.0], [1.0, -45.0]]] }
+
+[geometry]
+radius_model = "tapered"
+radius_ratio = 0.011
+child_radius_exponent = 1.3
+taper = [[0.0, 1.0], [1.0, 0.06]]
+flare = 0.45
+
+[foliage]
+length = 0.1
+width_ratio = 0.3
+shape = "needle"
+segments = 1
+petiole_length = 0.0
+inclination_deg = 65.0
+size_along_axis = [[0.0, 0.5], [0.3, 1.0], [0.7, 0.8], [1.0, 0.35]]
+retention_cycles = 14
+density = 1.0
+per_node = 2
+min_order = 1
+color = [0.14, 0.31, 0.06]
+hue_variation = 0.12
+brightness_variation = 0.3
+size_variation = 0.25
+orientation_variation_deg = 20.0
+twig = { leaves = 20, length = 0.5, leaves_per_node = 4, divergence_deg = 45.0, inclination_deg = 55.0, bend_deg = 45.0, stem_radius = 0.003, terminal_leaf = false, radial = true, variants = 5 }
+
+[bark]
+color = [0.16, 0.12, 0.1]
+young_color = [0.3, 0.22, 0.1]
+young_radius = 0.02
+color_variation = 0.15
+
+[variation]
+age = [15, 50]
+scale = [0.85, 1.15]
+
+[variation.jitter]
+"growth.axis_length" = 0.15
+"growth.internode_length" = 0.08
+"growth.branching_angle" = 0.1
+"growth.gravitropic_setpoint" = 0.08
+"growth.gnarl" = 0.3
+"growth.curvature" = 0.25
+"geometry.radius_ratio" = 0.15
+"foliage.length" = 0.1
+"foliage.color" = 0.1
+"bark.color" = 0.08

@@ -7,7 +7,8 @@
 //!   node along the bearing axis), multiplied inside a growth unit by `unit_branching`
 //!   when growth and branching pattern are both rhythmic. With a continuous branching
 //!   pattern every bud with a positive probability forms. No bud forms on the
-//!   `bare_base` of an axis.
+//!   `bare_base` of an axis, and a bud older than the `branch_lifespan` of its position
+//!   is left out: its axis has been shed.
 //! * The axis of an admitted bud gets its full-grown length at once:
 //!   `axis_length(order, x) * (1 - apical_dominance * x) * (parent / reference)^e *
 //!   (1 + length_variation * u)` with `x` the attachment position, `e` the
@@ -22,9 +23,10 @@
 //! * A lateral bud flushes one cycle after it formed (proleptic) or in the same cycle
 //!   (sylleptic); a relay always flushes the cycle after.
 //!
-//! The only use of the age of the plant is the `bare_base`, a fraction of the length
-//! the bearing axis has at that age. With no `bare_base`, a plant grown to `n` cycles is
-//! exactly the nodes born before cycle `n` of the same plant grown longer.
+//! The age of the plant is used twice: by the `bare_base`, a fraction of the length the
+//! bearing axis has at that age, and by the `branch_lifespan`. With neither, a plant
+//! grown to `n` cycles is exactly the nodes born before cycle `n` of the same plant
+//! grown longer.
 //!
 //! [`TropismBlend`] is the orientation stage: `H' = alpha * H + beta * T + gamma * E`
 //! with `alpha + beta + gamma = 1` (Longay et al. 2012, equation 2), followed by the
@@ -125,6 +127,10 @@ impl<'a> GradientFate<'a> {
             return None;
         }
         let x = site.position;
+        let lifespan = growth.branch_lifespan.eval(bearing.order, x);
+        if lifespan >= 0.5 && f32::from(self.cx.age.saturating_sub(site.cycle)) > lifespan {
+            return None;
+        }
         let mut probability = growth.branch_probability.eval(bearing.order, x);
         let tiers = architecture.growth_rhythm == GrowthRhythm::Rhythmic
             && architecture.branching_pattern == BranchingPattern::Rhythmic;

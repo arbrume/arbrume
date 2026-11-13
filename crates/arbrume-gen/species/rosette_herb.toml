@@ -1,0 +1,72 @@
+# Rosette herb: a low clump of large stalked leaves spreading from one point on the
+# ground, hosta-like.
+#
+# Typical size at age 1: about 0.4 m tall and 1 m wide. Every value is a starting
+# point chosen by eye, not a measurement. Each stem is the stalk of one leaf.
+
+schema_version = 0
+name = "Rosette herb"
+
+[architecture]
+branching = "monopodial"
+growth_rhythm = "continuous"
+branching_pattern = "diffuse"
+branch_timing = "proleptic"
+max_order = 0
+
+[[architecture.axes]]
+orientation = "plagiotropic"
+phyllotaxis = { leaves_per_node = 1, divergence_deg = 0.0 }
+
+[growth]
+stems = 22
+stem_spread = 0.025
+stem_angle = 42.0
+axis_length = 0.17
+shoot_length = 0.3
+length_variation = 0.35
+internode_length = 0.2
+branch_probability = 0.0
+branching_angle_variation = 26.0
+direction_variation = 0.0
+curvature = 30.0
+tropism_weight = 0.0
+
+[geometry]
+radius_model = "tapered"
+radius_ratio = 0.016
+taper = [[0.0, 1.0], [1.0, 0.6]]
+flare = 0.0
+radial_segments = [3, 5]
+
+[foliage]
+length = 0.3
+width_ratio = 0.6
+shape = "ovate"
+segments = 6
+fold_deg = 14.0
+curvature_deg = 55.0
+petiole_length = 0.0
+inclination_deg = 0.0
+retention_cycles = 4
+color = [0.07, 0.24, 0.07]
+hue_variation = 0.1
+brightness_variation = 0.2
+size_variation = 0.25
+orientation_variation_deg = 10.0
+
+[bark]
+color = [0.1, 0.24, 0.07]
+
+[variation]
+age = [1, 2]
+scale = [0.6, 1.5]
+weight = 0.6
+
+[variation.jitter]
+"growth.axis_length" = 0.25
+"growth.stems" = 0.35
+"growth.stem_angle" = 0.2
+"foliage.length" = 0.15
+"foliage.width_ratio" = 0.2
+"foliage.color" = 0.12

@@ -178,6 +178,38 @@ impl Curve {
         }
     }
 
+    /// The curve with every value multiplied by `factor` and clamped to `[lo, hi]`.
+    /// Abscissas and interpolation are kept.
+    #[must_use]
+    pub fn scaled(&self, factor: f32, lo: f32, hi: f32) -> Self {
+        let scale = |y: f32| (y * factor).clamp(lo, hi);
+        match &self.shape {
+            Shape::Constant(value) => Self::constant(scale(*value)),
+            Shape::Knots {
+                knots,
+                interpolation,
+            } => {
+                let mut knots: Box<[Knot]> = knots
+                    .iter()
+                    .map(|knot| Knot {
+                        x: knot.x,
+                        y: scale(knot.y),
+                        slope: 0.0,
+                    })
+                    .collect();
+                if *interpolation == Interpolation::Smooth {
+                    set_monotone_slopes(&mut knots);
+                }
+                Self {
+                    shape: Shape::Knots {
+                        knots,
+                        interpolation: *interpolation,
+                    },
+                }
+            }
+        }
+    }
+
     /// The value when the curve is a constant.
     #[must_use]
     pub const fn as_constant(&self) -> Option<f32> {
@@ -400,6 +432,19 @@ impl OrderCurve {
     #[must_use]
     pub fn eval(&self, order: u8, x: f32) -> f32 {
         self.order(order).eval(x)
+    }
+
+    /// The curves with the values of order `o` multiplied by `factor(o)` and clamped to
+    /// `[lo, hi]` (see [`Curve::scaled`]). `factor` is called once per stored curve, in
+    /// order.
+    #[must_use]
+    pub fn scaled(&self, mut factor: impl FnMut(usize) -> f32, lo: f32, hi: f32) -> Self {
+        let curves = self.by_order.iter().enumerate();
+        Self {
+            by_order: curves
+                .map(|(order, curve)| curve.scaled(factor(order), lo, hi))
+                .collect(),
+        }
     }
 
     /// The stored curves, indexed by order.

@@ -19,6 +19,7 @@ mod bench;
 mod config;
 mod error;
 mod progress;
+mod sheet;
 mod source;
 mod species_cmd;
 
@@ -54,6 +55,9 @@ enum Command {
     Info(InfoArgs),
     /// Time the pipeline on the presets and print a Markdown table.
     Bench(bench::BenchArgs),
+    /// Render a contact sheet of thumbnails, for tuning species by eye.
+    #[command(hide = true)]
+    Sheet(sheet::SheetArgs),
 }
 
 /// Subcommands of `arbrume species`.
@@ -85,6 +89,7 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Command::Species(SpeciesCommand::Show { name }) => species_cmd::show(&name),
         Command::Info(args) => species_cmd::info(&args.file),
         Command::Bench(args) => bench::run(&args),
+        Command::Sheet(args) => sheet::run(&args),
     }
 }
 

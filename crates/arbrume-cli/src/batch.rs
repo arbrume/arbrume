@@ -4,7 +4,12 @@
 //! reuses its buffers for the next plant, so memory stays bounded by one plant per
 //! thread. A file is written under a temporary name and renamed when complete: a file
 //! with its final name is always whole, which is what `--resume` relies on.
+//!
+//! A batch is either a list of species entries, each with its own sampler of ages and
+//! scales, or (`--random`) plants drawn by a `RandomSampler`, each of a random preset.
+//! Both resolve a plant to a [`Job`]: a label, a species and its parameters.
 
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Write};
@@ -12,13 +17,17 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use arbrume_core::species::Species;
 use arbrume_export::{GlbOptions, write_glb};
-use arbrume_gen::{Distribution, GENERATOR, Generator, Plant, Sampler, Stats, metadata, run_batch};
-use clap::Args;
+use arbrume_gen::{Budget, Distribution, GENERATOR, GenParams, Generator, Plant};
+use arbrume_gen::{RandomSampler, Sampler};
+use arbrume_gen::{Stats, metadata, run_batch};
+use arbrume_raster::{Renderer, ThumbnailOptions};
+use clap::{Args, ValueEnum};
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::config::{self, Batch, Defaults, Entry};
+use crate::config::{self, Batch, Defaults, Entry, Thumb};
 use crate::error::CliError;
 use crate::progress::Progress;
 use crate::source::resolve;
@@ -30,8 +39,17 @@ pub const MANIFEST: &str = "manifest.jsonl";
 #[derive(Debug, Args)]
 pub struct GenArgs {
     /// Preset name or path to a species TOML file.
-    #[arg(long, required_unless_present = "config", conflicts_with = "config")]
+    #[arg(long, required_unless_present_any = ["config", "random"], conflicts_with = "config")]
     species: Option<String>,
+    /// Random plants.
+    #[command(flatten)]
+    random: RandomArgs,
+    /// Write a thumbnail next to each plant, SIZE pixels wide and high.
+    #[arg(long, value_name = "SIZE", num_args = 0..=1, default_missing_value = "256")]
+    thumb: Option<u32>,
+    /// File format of the thumbnails.
+    #[arg(long, value_enum, default_value_t = ThumbFormat::Jpg)]
+    thumb_format: ThumbFormat,
     /// Number of plants, indexed from 0.
     #[arg(long, default_value_t = 1, conflicts_with = "config")]
     count: u32,
@@ -47,7 +65,7 @@ pub struct GenArgs {
     /// Scale factor, or lo..hi for a uniform draw per plant [default: 1].
     #[arg(long, value_parser = parse_scale, conflicts_with = "config")]
     scale: Option<Distribution>,
-    /// Mesh quality, 1 being full detail [default: 1].
+    /// Mesh quality, 1 being full detail [default: 1, or 0.6 with --random].
     #[arg(long, conflicts_with = "config")]
     quality: Option<f32>,
     /// Levels of detail per plant; level k is meshed at quality * 0.5^k [default: 1].
@@ -71,6 +89,40 @@ pub struct GenArgs {
     /// Print nothing but errors.
     #[arg(long, short)]
     quiet: bool,
+}
+
+/// The `--random` options of `arbrume gen`.
+#[derive(Debug, Args)]
+struct RandomArgs {
+    /// Draw each plant from a random preset, with varied parameters and age.
+    #[arg(long, conflicts_with_all = ["config", "species", "age", "age_range", "scale"])]
+    random: bool,
+    /// Triangle budget of a random plant; 0 for none [default: 60000].
+    #[arg(long, requires = "random")]
+    max_triangles: Option<usize>,
+    /// Vertex budget of a random plant; 0 for none [default: 55000].
+    #[arg(long, requires = "random")]
+    max_vertices: Option<usize>,
+}
+
+/// File format of a thumbnail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ThumbFormat {
+    /// JPEG, quality 88.
+    Jpg,
+    /// PNG.
+    Png,
+}
+
+impl ThumbFormat {
+    /// File extension, without the dot.
+    const fn extension(self) -> &'static str {
+        match self {
+            Self::Jpg => "jpg",
+            Self::Png => "png",
+        }
+    }
 }
 
 /// Parses `lo..hi` into a uniform distribution over integers.
@@ -103,8 +155,39 @@ fn parse_scale(text: &str) -> Result<Distribution, String> {
     Ok(distribution)
 }
 
+/// The batch of `--random`.
+fn random_batch(args: &GenArgs) -> Result<Batch, CliError> {
+    let mut sampler = RandomSampler::new(args.seed);
+    if let Some(quality) = args.quality {
+        sampler.quality = quality;
+    }
+    let limit = |flag: Option<usize>, default: Option<usize>| match flag {
+        Some(0) => None,
+        Some(limit) => Some(limit),
+        None => default,
+    };
+    sampler.budget = Budget {
+        triangles: limit(args.random.max_triangles, sampler.budget.triangles),
+        vertices: limit(args.random.max_vertices, sampler.budget.vertices),
+    };
+    sampler.validate().map_err(CliError::usage)?;
+    let lods = args.lods.unwrap_or(1);
+    config::check_batch(&[], lods)?;
+    Ok(Batch {
+        out: None,
+        lods,
+        manifest: false,
+        thumb: None,
+        entries: Vec::new(),
+        random: Some((sampler, args.count)),
+    })
+}
+
 /// The batch of the `--species` flags.
 fn batch_from_flags(args: &GenArgs) -> Result<Batch, CliError> {
+    if args.random.random {
+        return random_batch(args);
+    }
     let spec = args
         .species
         .as_deref()
@@ -129,16 +212,27 @@ fn batch_from_flags(args: &GenArgs) -> Result<Batch, CliError> {
         out: None,
         lods,
         manifest: false,
+        thumb: None,
         entries: vec![entry],
+        random: None,
     })
 }
 
 /// Runs `arbrume gen`.
 pub fn run(args: &GenArgs) -> Result<(), CliError> {
-    let batch = match &args.config {
+    let mut batch = match &args.config {
         Some(path) => config::load(path)?,
         None => batch_from_flags(args)?,
     };
+    if let Some(size) = args.thumb {
+        batch.thumb = Some(Thumb {
+            size,
+            format: args.thumb_format,
+        });
+    }
+    if batch.thumb.is_some_and(|thumb| thumb.size == 0) {
+        return Err(CliError::usage("the thumbnail size must be at least 1"));
+    }
     let out = args
         .out
         .clone()
@@ -167,11 +261,82 @@ struct RunOptions {
     quiet: bool,
 }
 
+/// One plant to generate: where it comes from in the batch and its index.
+#[derive(Debug, Clone, Copy)]
+struct Task {
+    /// Entry of the batch; `None` for a plant of the random sampler.
+    slot: Option<usize>,
+    index: u32,
+}
+
+/// A plant resolved to what generating it needs.
+#[derive(Debug)]
+struct Job<'a> {
+    /// Label in file names and in the manifest.
+    label: Cow<'a, str>,
+    species: Cow<'a, Species>,
+    params: GenParams,
+    base_seed: u64,
+    index: u32,
+    budget: Budget,
+    /// Whether the plant comes from the random sampler.
+    random: bool,
+}
+
+impl Batch {
+    /// Every plant of the batch.
+    fn tasks(&self) -> Vec<Task> {
+        let mut tasks = Vec::new();
+        for (slot, entry) in self.entries.iter().enumerate() {
+            let slot = Some(slot);
+            tasks.extend((0..entry.count).map(|index| Task { slot, index }));
+        }
+        if let Some((_, count)) = &self.random {
+            tasks.extend((0..*count).map(|index| Task { slot: None, index }));
+        }
+        tasks
+    }
+
+    /// Resolves `task`.
+    fn job(&self, task: Task) -> Result<Job<'_>, String> {
+        let index = task.index;
+        if let Some(slot) = task.slot {
+            let entry: &Entry = &self.entries[slot];
+            return Ok(Job {
+                label: Cow::Borrowed(&entry.label),
+                species: Cow::Borrowed(&entry.species),
+                params: entry.sampler.params(index),
+                base_seed: entry.sampler.seed,
+                index,
+                budget: Budget::NONE,
+                random: false,
+            });
+        }
+        let (sampler, _) = self
+            .random
+            .as_ref()
+            .ok_or("the batch has no random plants")?;
+        let pick = sampler
+            .pick(index)
+            .map_err(|e| format!("random plant {index}: {e}"))?;
+        Ok(Job {
+            label: Cow::Owned(pick.preset),
+            species: Cow::Owned(pick.species),
+            params: pick.params,
+            base_seed: sampler.seed,
+            index,
+            budget: pick.budget,
+            random: true,
+        })
+    }
+}
+
 /// What the workers share.
 #[derive(Debug)]
 struct Context<'a> {
     out: &'a Path,
     lods: u32,
+    thumb: Option<Thumb>,
     manifest: Option<Mutex<File>>,
     progress: Progress,
 }
@@ -187,20 +352,21 @@ fn execute(batch: &Batch, options: &RunOptions) -> Result<(), CliError> {
     } else {
         BTreeSet::new()
     };
-    let mut tasks = Vec::new();
-    let mut skipped = 0;
-    for (slot, entry) in batch.entries.iter().enumerate() {
-        for index in 0..entry.count {
-            let done = options.resume
-                && (!options.manifest || recorded.contains(&key(entry, index)))
-                && files_exist(out, entry, index, batch.lods);
-            if done {
-                skipped += 1;
-            } else {
-                tasks.push((slot, index));
+    let mut tasks = batch.tasks();
+    let total = tasks.len();
+    if options.resume {
+        let mut pending = Vec::new();
+        for task in tasks {
+            let job = batch.job(task).map_err(CliError::failed)?;
+            let done = (!options.manifest || recorded.contains(&key(&job)))
+                && files_exist(out, &job, batch.lods, batch.thumb);
+            if !done {
+                pending.push(task);
             }
         }
+        tasks = pending;
     }
+    let skipped = total - tasks.len();
     let manifest = options
         .manifest
         .then(|| open_manifest(&manifest_path, options.resume))
@@ -209,14 +375,15 @@ fn execute(batch: &Batch, options: &RunOptions) -> Result<(), CliError> {
     let context = Context {
         out,
         lods: batch.lods,
+        thumb: batch.thumb,
         manifest,
         progress: Progress::new(tasks.len(), skipped, options.quiet),
     };
     let work = || {
         run_batch(tasks.len(), |generator, plant, task| {
-            let (slot, index) = tasks[task];
-            let entry = &batch.entries[slot];
-            let result = make_plant(&context, generator, plant, entry, index);
+            let result = batch
+                .job(tasks[task])
+                .and_then(|job| make_plant(&context, generator, plant, &job));
             context.progress.tick(result.is_ok());
             result
         })
@@ -268,8 +435,18 @@ fn thread_pool(jobs: usize) -> Result<rayon::ThreadPool, CliError> {
 /// Identifies a plant in the manifest: label, base seed, index.
 type Key = (String, u64, u32);
 
-fn key(entry: &Entry, index: u32) -> Key {
-    (entry.label.clone(), entry.sampler.seed, index)
+fn key(job: &Job) -> Key {
+    (job.label.to_string(), job.base_seed, job.index)
+}
+
+/// Quality of the mesh options `params` was meshed with.
+fn quality_of(params: &GenParams) -> f32 {
+    (arbrume_mesh_tolerance() / params.mesh.tolerance).sqrt()
+}
+
+/// Tolerance of full quality.
+fn arbrume_mesh_tolerance() -> f32 {
+    GenParams::default().mesh.tolerance
 }
 
 /// Quality of level of detail `lod`: each level halves the quality of the previous one.
@@ -277,9 +454,14 @@ fn lod_quality(quality: f32, lod: u32) -> f32 {
     quality * 0.5_f32.powi(lod.cast_signed())
 }
 
-/// File name of level `lod` of plant `index` of `entry`.
-fn file_name(entry: &Entry, index: u32, lod: u32, lods: u32) -> String {
-    let stem = format!("{}_{}_{index}", entry.label, entry.sampler.seed);
+/// File name of the plant of `job` without its extension.
+fn stem(job: &Job) -> String {
+    format!("{}_{}_{}", job.label, job.base_seed, job.index)
+}
+
+/// File name of level `lod` of the plant of `job`.
+fn file_name(job: &Job, lod: u32, lods: u32) -> String {
+    let stem = stem(job);
     if lods > 1 {
         format!("{stem}_lod{lod}.glb")
     } else {
@@ -287,8 +469,14 @@ fn file_name(entry: &Entry, index: u32, lod: u32, lods: u32) -> String {
     }
 }
 
-fn files_exist(out: &Path, entry: &Entry, index: u32, lods: u32) -> bool {
-    (0..lods).all(|lod| out.join(file_name(entry, index, lod, lods)).is_file())
+/// File name of the thumbnail of the plant of `job`.
+fn thumb_name(job: &Job, thumb: Thumb) -> String {
+    format!("{}.{}", stem(job), thumb.format.extension())
+}
+
+fn files_exist(out: &Path, job: &Job, lods: u32, thumb: Option<Thumb>) -> bool {
+    let thumb = thumb.is_none_or(|thumb| out.join(thumb_name(job, thumb)).is_file());
+    thumb && (0..lods).all(|lod| out.join(file_name(job, lod, lods)).is_file())
 }
 
 /// One written file, as recorded in the manifest.
@@ -322,39 +510,48 @@ struct Record<'a> {
     scale: f32,
     quality: f32,
     files: Vec<FileRecord>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thumbnail: Option<String>,
     stats: Stats,
     timings_ms: TimingsMs,
 }
 
-/// Generates plant `index` of `entry`, writes its files and its manifest line.
+/// Generates the plant of `job`, writes its files, its thumbnail and its manifest line.
 fn make_plant(
     context: &Context,
     generator: &mut Generator,
     plant: &mut Plant,
-    entry: &Entry,
-    index: u32,
+    job: &Job,
 ) -> Result<(), String> {
-    let fail = |e: &dyn std::fmt::Display| format!("{} plant {index}: {e}", entry.label);
-    let params = entry.sampler.params(index);
+    let index = job.index;
+    let fail = |e: &dyn std::fmt::Display| format!("{} plant {index}: {e}", job.label);
+    let params = job.params;
     let timings = generator
-        .generate_into(&entry.species, &params, plant)
+        .generate_within(&job.species, &params, &job.budget, plant)
         .map_err(|e| fail(&e))?;
     let stats = plant.stats;
+    let base_quality = quality_of(&plant.params);
     let mut mesh = timings.mesh;
     let mut export = Duration::ZERO;
     let mut files = Vec::new();
+    let mut thumbnail = None;
     for lod in 0..context.lods {
-        let quality = lod_quality(entry.sampler.quality, lod);
+        let quality = lod_quality(base_quality, lod);
         if lod > 0 {
             let options = params.with_quality(quality).mesh;
             mesh += generator
-                .remesh(plant, &entry.species, &options)
+                .remesh(plant, &job.species, &options)
                 .map_err(|e| fail(&e))?;
         }
-        let name = file_name(entry, index, lod, context.lods);
+        let name = file_name(job, lod, context.lods);
         let start = Instant::now();
-        let bytes = write_file(context.out, &name, entry, plant, (index, lod, quality))
-            .map_err(|e| fail(&e))?;
+        let bytes =
+            write_file(context.out, &name, job, plant, (lod, quality)).map_err(|e| fail(&e))?;
+        if let (0, Some(thumb)) = (lod, context.thumb) {
+            let name = thumb_name(job, thumb);
+            write_thumb(context.out, &name, plant, thumb).map_err(|e| fail(&e))?;
+            thumbnail = Some(name);
+        }
         export += start.elapsed();
         files.push(FileRecord {
             file: name,
@@ -369,15 +566,16 @@ fn make_plant(
         return Ok(());
     };
     let record = Record {
-        species: &entry.label,
-        species_name: &entry.species.name,
+        species: &job.label,
+        species_name: &job.species.name,
         index,
-        seed: entry.sampler.seed,
+        seed: job.base_seed,
         plant_seed: params.seed,
         age: params.age,
         scale: params.scale,
-        quality: entry.sampler.quality,
+        quality: base_quality,
         files,
+        thumbnail,
         stats,
         timings_ms: TimingsMs {
             grow: ms(timings.grow),
@@ -392,22 +590,47 @@ fn ms(duration: Duration) -> f64 {
     duration.as_secs_f64() * 1e3
 }
 
+/// Renders the thumbnail of `plant` and writes it to `out/name` through a temporary
+/// file.
+fn write_thumb(out: &Path, name: &str, plant: &Plant, thumb: Thumb) -> Result<(), String> {
+    let options = ThumbnailOptions {
+        width: thumb.size,
+        height: thumb.size,
+        azimuth: 20.0,
+        ..ThumbnailOptions::default()
+    };
+    let image = Renderer::new().thumbnail(&plant.mesh, &options);
+    let bytes = match thumb.format {
+        ThumbFormat::Jpg => image.to_jpeg(88, [255; 3]),
+        ThumbFormat::Png => image.to_png(),
+    }
+    .map_err(|e| e.to_string())?;
+    let path = out.join(name);
+    let temp = out.join(format!("{name}.tmp"));
+    fs::write(&temp, bytes).map_err(|e| format!("{}: {e}", temp.display()))?;
+    fs::rename(&temp, &path).map_err(|e| format!("{}: {e}", path.display()))
+}
+
 /// Writes `plant` to `out/name` through a temporary file; returns the file size.
-/// `(index, lod, quality)` go to the metadata.
+/// `(lod, quality)` go to the metadata, with the label, base seed and index of `job`
+/// and, for a random plant, the name of its preset.
 fn write_file(
     out: &Path,
     name: &str,
-    entry: &Entry,
+    job: &Job,
     plant: &Plant,
-    (index, lod, quality): (u32, u32, f32),
+    (lod, quality): (u32, f32),
 ) -> Result<u64, String> {
-    let mut extras = metadata(&entry.species, plant);
+    let mut extras = metadata(&job.species, plant);
     if let Value::Object(map) = &mut extras {
-        map.insert("label".to_owned(), entry.label.clone().into());
-        map.insert("base_seed".to_owned(), entry.sampler.seed.into());
-        map.insert("index".to_owned(), index.into());
+        map.insert("label".to_owned(), job.label.to_string().into());
+        map.insert("base_seed".to_owned(), job.base_seed.into());
+        map.insert("index".to_owned(), job.index.into());
         map.insert("lod".to_owned(), lod.into());
         map.insert("quality".to_owned(), quality.into());
+        if job.random {
+            map.insert("preset".to_owned(), job.label.to_string().into());
+        }
     }
     let options = GlbOptions {
         name: name.trim_end_matches(".glb").to_owned(),

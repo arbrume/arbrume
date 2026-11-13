@@ -295,9 +295,125 @@ fn species_commands_and_info() {
     let file = dir.path().join("conifer.toml");
     fs::write(&file, &shown).unwrap();
     let info = String::from_utf8(ok(&["info", path(&file)]).stdout).unwrap();
-    assert!(info.contains("valid species `Starter conifer`"));
+    assert!(info.contains("valid species `Generic conifer`"));
     fs::write(&file, "[growth]\nbranch_probability = 2.0\n").unwrap();
     let invalid = arbrume(&["info", path(&file)]);
     assert_eq!(invalid.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&invalid.stderr).contains("growth.branch_probability"));
+}
+
+/// File name to contents of every file of `dir` with the extension `extension`.
+fn files_with(dir: &Path, extension: &str) -> BTreeMap<String, Vec<u8>> {
+    fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|e| e == extension))
+        .map(|p| {
+            (
+                p.file_name().unwrap().to_string_lossy().into_owned(),
+                fs::read(&p).unwrap(),
+            )
+        })
+        .collect()
+}
+
+/// The JSON chunk of a `.glb` file.
+fn glb_json(bytes: &[u8]) -> Value {
+    let length = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
+    serde_json::from_slice(&bytes[20..20 + length]).unwrap()
+}
+
+#[test]
+fn random_plants_are_varied_recorded_and_independent_of_threads() {
+    let one = tempfile::tempdir().unwrap();
+    let many = tempfile::tempdir().unwrap();
+    let common = ["gen", "--random", "--count", "14", "--seed", "5", "--quiet"];
+    let run = |dir: &Path, jobs: &str| {
+        let mut args = common.to_vec();
+        args.extend([
+            "--thumb",
+            "48",
+            "--manifest",
+            "--jobs",
+            jobs,
+            "--out",
+            path(dir),
+        ]);
+        ok(&args);
+    };
+    run(one.path(), "1");
+    run(many.path(), "5");
+    let plants = glb_files(one.path());
+    assert_eq!(plants.len(), 14);
+    assert_eq!(plants, glb_files(many.path()));
+    let thumbs = files_with(one.path(), "jpg");
+    assert_eq!(thumbs.len(), 14);
+    assert_eq!(thumbs, files_with(many.path(), "jpg"));
+    assert!(
+        thumbs
+            .values()
+            .all(|bytes| bytes.starts_with(&[0xFF, 0xD8]))
+    );
+    let mut presets = std::collections::BTreeSet::new();
+    for (name, bytes) in &plants {
+        let json = glb_json(bytes);
+        let extras = &json["scenes"][0]["extras"];
+        let extras = if extras.is_null() {
+            &json["asset"]["extras"]
+        } else {
+            extras
+        };
+        let preset = extras["preset"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{name}: {json}"));
+        assert!(name.starts_with(preset));
+        assert!(arbrume_gen::preset(preset).is_some());
+        assert!(
+            extras["species"]["growth"]["axis_length"].is_object() || extras["species"].is_object()
+        );
+        assert!(extras["mesh"]["tolerance"].as_f64().unwrap() > 0.0);
+        assert!(extras["stats"]["triangles"].as_u64().unwrap() <= 60_000);
+        presets.insert(preset.to_owned());
+    }
+    assert!(presets.len() >= 5, "{presets:?}");
+    let lines = manifest(one.path());
+    assert_eq!(lines.len(), 14);
+    assert!(lines.iter().all(|line| line["thumbnail"].is_string()));
+}
+
+#[test]
+fn thumbnails_follow_the_format_and_resume() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = path(dir.path());
+    let args = [
+        "gen",
+        "--species",
+        "shrub",
+        "--count",
+        "2",
+        "--age",
+        "3",
+        "--thumb",
+        "--thumb-format",
+        "png",
+        "--quiet",
+        "--out",
+        out,
+    ];
+    ok(&args);
+    let thumbs = files_with(dir.path(), "png");
+    assert_eq!(thumbs.len(), 2);
+    assert!(thumbs.values().all(|bytes| bytes.starts_with(b"\x89PNG")));
+    let first = dir.path().join("shrub_0_0.png");
+    fs::remove_file(&first).unwrap();
+    let mut resumed = args.to_vec();
+    resumed.push("--resume");
+    resumed.retain(|arg| *arg != "--quiet");
+    let output = ok(&resumed);
+    assert!(first.is_file());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("1 already present"));
+    let bad = arbrume(&["gen", "--species", "shrub", "--thumb", "0", "--out", out]);
+    assert_eq!(bad.status.code(), Some(2));
+    let conflict = arbrume(&["gen", "--random", "--species", "shrub", "--out", out]);
+    assert_eq!(conflict.status.code(), Some(2));
 }

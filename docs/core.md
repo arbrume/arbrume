@@ -295,15 +295,43 @@ its own fields, so layers can be extended independently.
 | Table | File | Fields |
 |---|---|---|
 | `[architecture]` | `architecture.rs` | `branching` (monopodial, sympodial), `growth_rhythm` (rhythmic, continuous), `branching_pattern` (rhythmic, continuous, diffuse), `branch_timing` (sylleptic, proleptic), `max_order`, `phyllotaxis` (`leaves_per_node`, `divergence_deg`), `axes` (per order: `orientation`, `short`, optional `phyllotaxis`) |
-| `[growth]` | `growth.rs` | `axis_length`, `internode_length`, `branch_probability`, `branching_angle`, `branching_angle_variation`, `direction_variation`, `gravitropic_setpoint`, `tropism_weight`, `environment_weight`, `[growth.self_organization]` |
-| `[geometry]` | `geometry.rs` | `radius_model` (pipe, tapered), `pipe_exponent`, `tip_radius`, `radius_ratio`, `child_radius_exponent`, `taper`, `flare` |
-| `[foliage]` | `foliage.rs` | `enabled`, `length`, `width_ratio`, `size_along_axis`, `inclination_deg`, `retention_cycles`, `color`, `texture` |
-| `[bark]` | `bark.rs` | `color`, `roughness`, `texture_size`, `texture` |
+| `[growth]` | `growth.rs` | lengths and extension, branching, shape of an axis, forks, relays, stems, shedding, bending: every field is listed in [Growth](growth.md) |
+| `[geometry]` | `geometry.rs` | `radius_model` (pipe, tapered), `pipe_exponent`, `tip_radius`, `radius_ratio`, `child_radius_exponent`, `taper`; `flare`, buttress, collar and `radial_segments` are listed in [Meshing](mesh.md) |
+| `[foliage]` | `foliage.rs` | which nodes bear leaves (`enabled`, `retention_cycles`, `density`, `per_node`, `min_order`, see [Growth](growth.md)); the leaf, its variation and the `[foliage.twig]` instanced at each site (see [Meshing](mesh.md)) |
+| `[bark]` | `bark.rs` | `color`, `young_color`, `young_radius`, `color_variation`, `roughness`, `texture_size`, `texture` (see [Meshing](mesh.md)) |
+| `[variation]` | `variation.rs` | `age` and `scale` ranges, `weight`, and the `[variation.jitter]` table (below) |
 
 Growth curves take one of two positions, stated in the documentation of each field:
 *along the parent* (where the axis is attached, 0 at the parent's base) or *along the
 axis* (where the metamer lies on its own axis). Acrotony and basitony are shapes of these
 curves, not flags.
+
+### Variation
+
+`[variation]` says how individuals of a species differ, for generators that draw random
+plants: `age = [young, old]` is the range of ages worth generating, `scale = [small,
+large]` the range of overall scale, `weight` the relative frequency of the species in a
+random mix (0 leaves it out). `[variation.jitter]` maps parameter names to a relative
+half-width in `[0, 1)`:
+
+```toml
+[variation.jitter]
+"growth.axis_length" = 0.15
+"foliage.color" = 0.1
+```
+
+`species.varied(seed, index)` returns an individual: every jittered parameter is
+multiplied by a factor drawn uniformly in `[1 - a, 1 + a)` and clamped to its domain. A
+curve per order draws one factor per order (`OrderCurve::scaled`), a colour one per
+channel; `bark.color` also scales `young_color` by a common factor. The draws depend on
+the seed, the index and the name of the parameter only, so adding a parameter to the
+table does not change the others. The names accepted are those of
+`species::JITTERABLE`: `growth.axis_length`, `shoot_length`, `internode_length`,
+`branch_probability`, `branching_angle`, `gravitropic_setpoint`, `tropism_weight`,
+`curvature`, `gnarl`, `direction_variation`, `bare_base`, `fork_probability`,
+`apical_dominance`, `stems`, `stem_angle`, `stem_spread`; `geometry.radius_ratio`,
+`flare`; `foliage.length`, `width_ratio`, `density`, `inclination_deg`, `color`,
+`twig.length`, `twig.bend_deg`; `bark.color`. Any other name is an error.
 
 To add a parameter: add the field with its doc comment to the struct of its layer, give
 it a value in `Default`, and check its domain in that layer's `validate`. Because of

@@ -144,6 +144,7 @@ pub(crate) fn plant_seeds<F: BudFate>(plant: &mut Plant, cx: &Context, fate: &mu
             phase: rng.angle(),
             nodes: 0,
             shoots: 0,
+            forks: 0,
             start: 0.0,
             length: 0.0,
             target,
@@ -180,6 +181,7 @@ pub(crate) fn grow_shoot<F: BudFate, O: ShootOrientation>(
                 meristem: id,
                 shoot: meristem.shoots,
                 birth: cycle,
+                index: meristem.nodes.saturating_sub(1),
                 position: meristem.position(),
                 frame,
             });
@@ -286,7 +288,8 @@ pub(crate) fn retain_leaves(plant: &mut Plant, cx: &Context, remap: Option<&[Nod
         let recent = u32::from(leaf.birth) + retention >= u32::from(cx.age);
         let terminal = meristem.state == MeristemState::Done
             && u32::from(leaf.shoot) + retention >= u32::from(meristem.shoots);
-        if recent || terminal {
+        let bears = meristem.order >= cx.species.foliage.min_order;
+        if bears && (recent || terminal) {
             let node = remap.map_or(leaf.node, |remap| remap[leaf.node.index()]);
             add_leaves(plant, cx, leaf, (node, meristem.order));
         }
@@ -297,15 +300,28 @@ pub(crate) fn retain_leaves(plant: &mut Plant, cx: &Context, remap: Option<&[Nod
 ///
 /// A leaf points away from the axis at the inclination of the species. Its normal lies
 /// in the plane of the axis and the leaf and faces the tip of the axis; on a
-/// plagiotropic axis it faces up instead.
+/// plagiotropic axis it faces up instead. Each leaf position is kept with the
+/// probability `foliage.density`, drawn from the key of its meristem, the index of its
+/// node and its slot.
 fn add_leaves(plant: &mut Plant, cx: &Context, leaf: &LeafyNode, (node, order): (NodeId, u8)) {
     let foliage = &cx.species.foliage;
     let frame = &leaf.frame;
     let phyllotaxis = cx.species.architecture.phyllotaxis_of(order);
-    let count = u32::from(phyllotaxis.leaves_per_node);
+    let count = if foliage.per_node > 0 {
+        u32::from(foliage.per_node)
+    } else {
+        u32::from(phyllotaxis.leaves_per_node)
+    };
     let scale = foliage.size_along_axis.eval(leaf.position);
     let (sin, cos) = foliage.inclination_deg.to_radians().sin_cos();
+    let key = plant.meristem(leaf.meristem).key;
     for slot in 0..count {
+        if foliage.density < 1.0 {
+            let draw = (u64::from(leaf.index) << 8) | u64::from(slot);
+            if !Rng::at(key, 0, Stream::FOLIAGE, draw).chance(foliage.density) {
+                continue;
+            }
+        }
         let outward = frame.radial(slot, count);
         let direction = (frame.heading * cos + outward * sin).normalize();
         let adaxial = frame.heading * sin - outward * cos;
@@ -392,7 +408,14 @@ fn add_lateral(
     let variation = growth
         .branching_angle_variation
         .eval(site.order, site.position);
-    let angle = growth.branching_angle.eval(site.order, site.position) + variation * rng.signed();
+    let mut angle =
+        growth.branching_angle.eval(site.order, site.position) + variation * rng.signed();
+    let lifespan = growth.branch_lifespan.eval(bearing.order, site.position);
+    if lifespan >= 0.5 {
+        let age = f32::from(cx.age.saturating_sub(site.cycle + 1));
+        let relative = (age / (lifespan - 1.0).max(1.0)).min(1.0);
+        angle = (angle + growth.aging_angle.eval(relative)).clamp(0.0, 180.0);
+    }
     let heading = tilt(bearing.heading, outward, angle.to_radians()).normalize();
     let orientation = cx.species.architecture.axis(site.order).orientation;
     let phase = if orientation == AxisOrientation::Orthotropic {
@@ -415,6 +438,7 @@ fn add_lateral(
         phase,
         nodes: 0,
         shoots: 0,
+        forks: 0,
         start: 0.0,
         length: 0.0,
         target,
@@ -423,7 +447,8 @@ fn add_lateral(
 }
 
 /// Ends the shoot of `flush`: closes the apex after its last shoot, starts the relay of
-/// a sympodial axis, or tests for a fork.
+/// a sympodial axis, or tests for a fork. Both axes of a fork count one fork more than
+/// the axis that forked, and an axis that has reached `fork_limit` forks no more.
 fn end_shoot<F: BudFate>(
     plant: &mut Plant,
     cx: &Context,
@@ -456,7 +481,7 @@ fn end_shoot<F: BudFate>(
         return;
     }
     let probability = growth.fork_probability.eval(order, position);
-    if probability <= 0.0 {
+    if probability <= 0.0 || meristem.forks >= growth.fork_limit {
         return;
     }
     let mut rng = meristem.rng(FORK, u64::from(meristem.nodes) << 8);
@@ -465,6 +490,7 @@ fn end_shoot<F: BudFate>(
         let outward = frame.radial_at(rng.angle());
         let heading = tilt(meristem.heading, outward, angle).normalize();
         let phase = rng.angle();
+        meristem.forks += 1;
         if add_relay(plant, fate, (id, meristem), (heading, phase), cycle) {
             meristem.heading = tilt(meristem.heading, -outward, angle).normalize();
             meristem.side = perpendicular(meristem.heading, meristem.side);
@@ -526,6 +552,7 @@ fn add_relay<F: BudFate>(
         phase,
         nodes: 0,
         shoots: 0,
+        forks: meristem.forks,
         start: meristem.length,
         length: meristem.length,
         target,

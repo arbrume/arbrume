@@ -1,0 +1,79 @@
+# Bamboo-like plant: a clump of thin green canes, bare below, with whorls of slender
+# twigs and narrow leaves above, the tips nodding outwards.
+#
+# Typical size at age 6: about 8 m tall and 4 m wide, canes 5 cm across. Every value is
+# a starting point chosen by eye, not a measurement.
+
+schema_version = 0
+name = "Bamboo-like plant"
+
+[architecture]
+branching = "monopodial"
+growth_rhythm = "rhythmic"
+branching_pattern = "rhythmic"
+branch_timing = "proleptic"
+max_order = 1
+phyllotaxis = { leaves_per_node = 1, divergence_deg = 180.0 }
+
+[growth]
+stems = 9
+stem_spread = 0.3
+stem_angle = 5.0
+axis_length = { by_order = [7.0, [[0.0, 0.5], [0.5, 1.0], [1.0, 0.5]]] }
+shoot_length = { by_order = [[[0.0, 1.8], [1.0, 0.8]], 0.5] }
+length_variation = { by_order = [0.25, 0.25] }
+internode_length = { by_order = [0.3, 0.12] }
+branch_probability = { by_order = [[[0.0, 0.0], [0.3, 0.0], [0.4, 1.0], [1.0, 1.0]]] }
+unit_branching = 1.0
+whorl = { by_order = [[[0.0, 0.0], [0.3, 0.0], [0.4, 3.0], [1.0, 3.0]]] }
+branching_angle = { by_order = [5.0, 50.0] }
+branching_angle_variation = 10.0
+direction_variation = { by_order = [0.8, 4.0] }
+gnarl = { by_order = [2.0, 8.0] }
+gravitropic_setpoint = { by_order = [0.0, 80.0] }
+tropism_weight = { by_order = [0.03, 0.04] }
+# The upper third of a cane leans over.
+curvature = { by_order = [[[0.0, 0.0], [0.6, 0.0], [1.0, 110.0]], 30.0] }
+
+[geometry]
+radius_model = "tapered"
+radius_ratio = 0.003
+child_radius_exponent = 1.0
+taper = { by_order = [[[0.0, 1.0], [0.6, 0.8], [1.0, 0.15]], [[0.0, 0.3], [1.0, 0.1]]] }
+flare = 0.0
+collar_flare = 0.0
+
+[foliage]
+length = 0.13
+width_ratio = 0.14
+shape = "lanceolate"
+segments = 2
+fold_deg = 8.0
+curvature_deg = 25.0
+petiole_length = 0.0
+inclination_deg = 50.0
+retention_cycles = 6
+min_order = 1
+color = [0.12, 0.3, 0.06]
+hue_variation = 0.1
+brightness_variation = 0.3
+twig = { leaves = 6, length = 0.14, divergence_deg = 180.0, inclination_deg = 35.0, bend_deg = 20.0, stem_radius = 0.001 }
+
+[bark]
+color = [0.19, 0.3, 0.07]
+color_variation = 0.2
+roughness = 0.5
+
+[variation]
+age = [3, 10]
+scale = [0.7, 1.2]
+weight = 0.8
+
+[variation.jitter]
+"growth.axis_length" = 0.2
+"growth.stems" = 0.3
+"growth.stem_angle" = 0.3
+"growth.curvature" = 0.3
+"foliage.length" = 0.1
+"foliage.color" = 0.1
+"bark.color" = 0.1

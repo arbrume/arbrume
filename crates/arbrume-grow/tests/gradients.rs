@@ -314,6 +314,79 @@ fn forks_double_the_stems_and_open_by_twice_the_fork_angle() {
 }
 
 #[test]
+fn the_fork_limit_caps_successive_forks() {
+    let mut species = plain();
+    species.architecture.max_order = 0;
+    species.growth.fork_probability = OrderCurve::constant(1.0);
+    for (limit, stems) in [(0, 1), (1, 2), (2, 4)] {
+        species.growth.fork_limit = limit;
+        assert_eq!(grown(&species, 9, 8).chain_count(), stems, "limit {limit}");
+    }
+}
+
+#[test]
+fn laterals_older_than_their_lifespan_are_shed_and_droop_with_age() {
+    let mut species = plain();
+    species.growth.branch_lifespan = OrderCurve::constant(3.0);
+    species.growth.branching_angle = OrderCurve::constant(30.0);
+    species.growth.aging_angle = points(&[[0.0, 0.0], [1.0, 60.0]]);
+    let graph = grown(&species, 2, 8);
+    let trunk_top = graph.position(graph.chains()[0].last).y;
+    assert!((trunk_top - 8.0).abs() < 1e-3);
+    assert_eq!(laterals(&graph).count(), 20);
+    for chain in laterals(&graph) {
+        let height = graph.position(chain.attach).y;
+        assert!(
+            height > 5.0 - 1e-3,
+            "lateral at {height} outlived its lifespan"
+        );
+        let cycle = (height - 1e-3).ceil() - 1.0;
+        let relative_age = (7.0 - cycle) / 2.0;
+        let angle = angle_deg(direction(&graph, chain.first), Vec3::Y);
+        let expected = 30.0 + 60.0 * relative_age;
+        assert!((angle - expected).abs() < 0.5, "cycle {cycle}: {angle}");
+    }
+    species.growth.branch_lifespan = OrderCurve::constant(0.0);
+    assert_eq!(laterals(&grown(&species, 2, 8)).count(), 70);
+}
+
+#[test]
+fn foliage_density_order_and_count_per_node_select_the_leaf_sites() {
+    let mut species = plain();
+    species.foliage.enabled = true;
+    species.foliage.retention_cycles = u16::MAX;
+    let full = grown(&species, 6, MATURE);
+    assert_eq!(full.organs().len(), full.node_count());
+    species.foliage.per_node = 3;
+    let tripled = grown(&species, 6, MATURE);
+    assert_eq!(tripled.organs().len(), 3 * full.node_count());
+    let node = tripled.organs()[0].node;
+    let around: Vec<Vec3> = tripled
+        .organs()
+        .iter()
+        .filter(|site| site.node == node)
+        .map(|site| site.direction)
+        .collect();
+    assert_eq!(around.len(), 3);
+    assert!(around[0].dot(around[1]) < 0.9);
+    species.foliage.per_node = 0;
+    species.foliage.min_order = 1;
+    let branches_only = grown(&species, 6, MATURE);
+    assert_eq!(branches_only.organs().len(), full.node_count() - 100);
+    let orders = branches_only.orders();
+    let sites = branches_only.organs().iter();
+    assert!(sites.clone().all(|site| orders[site.node.index()] == 1));
+    species.foliage.min_order = 0;
+    species.foliage.density = 0.3;
+    let thinned = grown(&species, 6, MATURE);
+    let kept = thinned.organs().len() as f32 / full.organs().len() as f32;
+    assert!((kept - 0.3).abs() < 0.05, "kept {kept}");
+    assert_eq!(thinned.organs(), grown(&species, 6, MATURE).organs());
+    let younger = grown(&species, 6, 6);
+    assert!(younger.organs().len() < thinned.organs().len());
+}
+
+#[test]
 fn a_sympodial_stem_is_a_succession_of_relays() {
     let mut species = plain();
     species.architecture.max_order = 0;

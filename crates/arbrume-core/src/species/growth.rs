@@ -120,6 +120,15 @@ pub struct Growth {
     /// attachment position of that axis along its own parent; the order is that of the
     /// bearing axis. The fraction is of the length the axis has at the age of the plant.
     pub bare_base: OrderCurve,
+    /// Number of growth cycles a lateral axis lives before it is shed with all it
+    /// bears, over its attachment position along its parent; the order is that of the
+    /// bearing axis. 0 keeps laterals for ever. A palm keeps its fronds a few cycles; a
+    /// pine clears its trunk this way.
+    pub branch_lifespan: OrderCurve,
+    /// Angle in degrees added to `branching_angle` over the relative age of a lateral
+    /// with a `branch_lifespan`: 0 for a lateral formed in the last cycle, 1 for one
+    /// about to be shed. A rising curve lets old fronds droop under young ones.
+    pub aging_angle: Curve,
     /// Factor in `[0, 1]` applied to `branch_probability` over the position of a node in
     /// its growth unit (towards 0 for the first node, 1 for the last). Used when both
     /// growth and branching pattern are rhythmic; it shapes the tiers of branches.
@@ -146,6 +155,10 @@ pub struct Growth {
     /// cycle, along the axis: a second axis of the same order starts at the tip and
     /// both continue to the same `axis_length` (the stem splits of Weber and Penn).
     pub fork_probability: OrderCurve,
+    /// Largest number of successive forks along one line of descent: 1 lets an axis
+    /// split in two once, 2 gives at most four leaders, and so on. Without a limit a
+    /// fork probability applied over many cycles doubles the axes again and again.
+    pub fork_limit: u8,
     /// Angle in degrees by which each of the two axes of a fork turns away from the
     /// previous direction, along the axis.
     pub fork_angle: OrderCurve,
@@ -184,12 +197,15 @@ impl Default for Growth {
             apical_dominance: 0.0,
             parent_length_exponent: 0.0,
             bare_base: OrderCurve::constant(0.0),
+            branch_lifespan: OrderCurve::constant(0.0),
+            aging_angle: Curve::constant(0.0),
             unit_branching: Curve::linear(&[[0.0, 0.0], [1.0, 1.0]]).unwrap_or_default(),
             whorl: OrderCurve::constant(0.0),
             phyllotaxis_variation: 0.0,
             curvature: OrderCurve::constant(0.0),
             gnarl: OrderCurve::constant(0.0),
             fork_probability: OrderCurve::constant(0.0),
+            fork_limit: u8::MAX,
             fork_angle: OrderCurve::constant(20.0),
             relay_angle: OrderCurve::constant(20.0),
             stems: 1,
@@ -260,6 +276,11 @@ impl Growth {
         let exponent = self.parent_length_exponent;
         check_range("growth.parent_length_exponent", exponent, 0.0, max)?;
         check_curve("growth.bare_base", &self.bare_base, 0.0, 1.0)?;
+        let lifespan = &self.branch_lifespan;
+        check_curve("growth.branch_lifespan", lifespan, 0.0, 65535.0)?;
+        let (aging_lo, aging_hi) = self.aging_angle.bounds();
+        check_range("growth.aging_angle", aging_lo, -180.0, 180.0)?;
+        check_range("growth.aging_angle", aging_hi, -180.0, 180.0)?;
         let (unit_lo, unit_hi) = self.unit_branching.bounds();
         check_range("growth.unit_branching", unit_lo, 0.0, 1.0)?;
         check_range("growth.unit_branching", unit_hi, 0.0, 1.0)?;

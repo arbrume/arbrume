@@ -1,0 +1,82 @@
+# Birch-like broadleaf tree: a slender pale trunk, thin ascending branches and fine
+# pendulous twigs with small leaves, in a light, narrow crown.
+#
+# Typical size at age 30: about 15 m tall, crown 7 m wide, trunk 0.25 m across at the
+# base. Every value is a starting point chosen by eye, not a measurement.
+
+schema_version = 0
+name = "Birch-like broadleaf"
+
+[architecture]
+branching = "monopodial"
+growth_rhythm = "rhythmic"
+branching_pattern = "diffuse"
+branch_timing = "proleptic"
+max_order = 3
+phyllotaxis = { leaves_per_node = 1, divergence_deg = 137.5 }
+
+[growth]
+axis_length = { by_order = [
+    16.0,
+    { points = [[0.0, 1.8], [0.35, 2.9], [0.7, 2.2], [1.0, 1.0]], interp = "smooth" },
+    [[0.0, 0.8], [0.5, 1.8], [1.0, 1.2]],
+    [[0.0, 0.5], [1.0, 0.9]],
+] }
+shoot_length = { by_order = [[[0.0, 0.75], [1.0, 0.25]], [[0.0, 0.45], [1.0, 0.2]], 0.35, 0.3] }
+length_variation = 0.2
+internode_length = { by_order = [0.32, 0.3, 0.22, 0.18] }
+branch_probability = { by_order = [0.65, [[0.0, 0.0], [0.15, 0.6], [1.0, 0.7]], 0.55] }
+bare_base = { by_order = [0.22, 0.0, 0.0] }
+branching_angle = { by_order = [50.0, [[0.0, 60.0], [0.6, 42.0], [1.0, 28.0]], 60.0, 60.0] }
+branching_angle_variation = 8.0
+direction_variation = { by_order = [1.5, 4.0, 6.0, 5.0] }
+gnarl = { by_order = [4.0, 10.0, 10.0, 6.0] }
+# Branches rise; the orders they bear turn down and hang.
+gravitropic_setpoint = { by_order = [0.0, 35.0, 150.0, 175.0] }
+tropism_weight = { by_order = [0.1, 0.04, 0.1, 0.22] }
+
+[geometry]
+radius_model = "tapered"
+radius_ratio = 0.0085
+child_radius_exponent = 1.1
+taper = [[0.0, 1.0], [0.7, 0.5], [1.0, 0.08]]
+flare = 0.4
+
+[foliage]
+length = 0.08
+width_ratio = 0.75
+shape = "ovate"
+segments = 2
+inclination_deg = 60.0
+retention_cycles = 3
+density = 0.75
+per_node = 2
+color = [0.11, 0.29, 0.055]
+hue_variation = 0.15
+brightness_variation = 0.3
+twig = { leaves = 7, length = 0.24, inclination_deg = 60.0, bend_deg = 70.0, stem_radius = 0.0015 }
+
+# White bark on the trunk and the limbs, dark on young wood.
+[bark]
+color = [0.72, 0.71, 0.66]
+young_color = [0.09, 0.05, 0.035]
+young_radius = 0.035
+color_variation = 0.12
+roughness = 0.7
+
+[variation]
+age = [10, 45]
+scale = [0.85, 1.15]
+
+[variation.jitter]
+"growth.axis_length" = 0.15
+"growth.internode_length" = 0.08
+"growth.branch_probability" = 0.1
+"growth.branching_angle" = 0.12
+"growth.gravitropic_setpoint" = 0.1
+"growth.gnarl" = 0.3
+"growth.curvature" = 0.25
+"geometry.radius_ratio" = 0.15
+"foliage.length" = 0.1
+"foliage.color" = 0.1
+"bark.color" = 0.08

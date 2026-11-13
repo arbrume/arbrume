@@ -5,10 +5,50 @@ use std::time::{Duration, Instant};
 
 use arbrume_core::species::Species;
 use arbrume_grow::grow;
-use arbrume_mesh::{MeshOptions, Mesher};
+use arbrume_mesh::{DEFAULT_TOLERANCE, MeshCounts, MeshOptions, Mesher};
 
-use crate::params::{GenError, GenParams};
+use crate::params::{GenError, GenParams, quality_options};
 use crate::plant::{Plant, Stats, Timings};
+
+/// Largest number of times [`Generator::generate_within`] lowers the quality.
+const BUDGET_STEPS: usize = 8;
+/// Quality below which [`Generator::generate_within`] stops lowering it.
+const BUDGET_MIN_QUALITY: f32 = 0.02;
+/// Margin taken under the budget at each step, as a factor on the quality.
+const BUDGET_MARGIN: f32 = 0.95;
+
+/// Largest size of a mesh, for [`Generator::generate_within`].
+///
+/// Triangles are what a renderer draws; vertices are what a file stores (a vertex of an
+/// exported plant takes several times the bytes of a triangle), and foliage made of
+/// separate small triangles has up to three vertices per triangle where bark has about
+/// one for two.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Budget {
+    /// Largest number of triangles, all parts; `None` for no limit.
+    pub triangles: Option<usize>,
+    /// Largest number of vertices, all parts; `None` for no limit.
+    pub vertices: Option<usize>,
+}
+
+impl Budget {
+    /// No limit.
+    pub const NONE: Self = Self {
+        triangles: None,
+        vertices: None,
+    };
+
+    /// The fraction of `counts` the budget allows, at most 1.
+    fn ratio(&self, counts: &MeshCounts) -> f32 {
+        let part = |limit: Option<usize>, count: usize| {
+            limit.map_or(1.0, |limit| limit as f32 / count.max(1) as f32)
+        };
+        let vertices = counts.bark_vertices + counts.leaf_vertices;
+        part(self.triangles, counts.triangles())
+            .min(part(self.vertices, vertices))
+            .min(1.0)
+    }
+}
 
 /// A reusable generator: keeps the working memory of the mesher from one plant to the
 /// next.
@@ -52,19 +92,57 @@ impl Generator {
         params: &GenParams,
         plant: &mut Plant,
     ) -> Result<Timings, GenError> {
+        self.generate_within(species, params, &Budget::NONE, plant)
+    }
+
+    /// Same as [`Generator::generate_into`], with a mesh that fits `budget`.
+    ///
+    /// The plant is grown once. When its mesh at the quality of `params` would exceed
+    /// the budget (known from the planning pass of the mesher, without building the
+    /// mesh), the quality is lowered in proportion and the count taken again, a few
+    /// times at most, and the mesh is built at the quality reached: the level-of-detail
+    /// controls become those of `MeshOptions::with_quality` for that quality. `params`
+    /// of the plant records the options used. The quality is not lowered below 0.02, so
+    /// a budget smaller than the coarsest mesh of the plant is exceeded.
+    ///
+    /// # Errors
+    ///
+    /// The same as [`generate`]. On error `plant` is left untouched.
+    pub fn generate_within(
+        &mut self,
+        species: &Species,
+        params: &GenParams,
+        budget: &Budget,
+        plant: &mut Plant,
+    ) -> Result<Timings, GenError> {
         species.validate()?;
         params.validate()?;
         let start = Instant::now();
         let graph = grow(species, &params.grow_params());
         let grown = Instant::now();
+        let mut options = params.mesh;
+        if *budget != Budget::NONE {
+            let mut quality = (DEFAULT_TOLERANCE / options.tolerance).sqrt();
+            for _ in 0..BUDGET_STEPS {
+                let ratio = budget.ratio(&self.mesher.counts(&graph, species, &options)?);
+                if ratio >= 1.0 || quality <= BUDGET_MIN_QUALITY {
+                    break;
+                }
+                quality = (quality * ratio * BUDGET_MARGIN).max(BUDGET_MIN_QUALITY);
+                options = quality_options(&options, quality);
+            }
+        }
         self.mesher
-            .mesh_into(&graph, species, &params.mesh, &mut plant.mesh)?;
+            .mesh_into(&graph, species, &options, &mut plant.mesh)?;
         let timings = Timings {
             grow: grown - start,
             mesh: grown.elapsed(),
         };
         plant.graph = graph;
-        plant.params = *params;
+        plant.params = GenParams {
+            mesh: options,
+            ..*params
+        };
         plant.stats = Stats::of(&plant.graph, &plant.mesh);
         Ok(timings)
     }

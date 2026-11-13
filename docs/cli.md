@@ -16,6 +16,7 @@ arbrume gen --species broadleaf --count 100 --seed 1 --age-range 10..30 --out ou
 arbrume gen --species conifer --count 1000 --quality 0.5 --lods 3 --out out --manifest --resume
 arbrume gen --species my_oak.toml --count 10 --age 25 --out out
 arbrume gen --config batch.toml
+arbrume gen --random --count 256 --seed 1 --thumb --out plants
 arbrume info my_oak.toml
 arbrume bench
 ```
@@ -26,6 +27,7 @@ arbrume bench
 |---|---|
 | `arbrume gen --species <preset or file.toml> ...` | generate plants of one species |
 | `arbrume gen --config batch.toml` | generate the batch described by a config file |
+| `arbrume gen --random ...` | generate random plants: a varied individual of a random preset each |
 | `arbrume species list` | list the built-in presets (name, display name) |
 | `arbrume species show <name>` | print the TOML file of a preset |
 | `arbrume info <file.toml>` | validate a species file, then generate one plant with the default parameters and print its statistics |
@@ -45,7 +47,12 @@ configuration or species files.
 | `--age A` | 10 | age in growth cycles |
 | `--age-range LO..HI` | | age drawn per plant, uniform over the integers `LO` to `HI` included |
 | `--scale X` or `--scale LO..HI` | 1 | scale factor, fixed or drawn uniformly per plant |
-| `--quality Q` | 1 | mesh quality, as in `MeshOptions::with_quality` |
+| `--quality Q` | 1 (0.6 with `--random`) | mesh quality, as in `MeshOptions::with_quality` |
+| `--random` | | draw each plant from a random preset; excludes `--species`, the age and scale options and `--config` |
+| `--max-triangles N` | 60000 | with `--random`: triangle budget of a plant, 0 for none |
+| `--max-vertices N` | 55000 | with `--random`: vertex budget of a plant, 0 for none |
+| `--thumb [SIZE]` | 256 when given | write a thumbnail of `SIZE` by `SIZE` pixels next to each plant |
+| `--thumb-format F` | `jpg` | `jpg` or `png` |
 | `--lods N` | 1 | levels of detail per plant |
 | `--out DIR` | | output directory, created if missing |
 | `--jobs J` | all cores | worker threads; without it `RAYON_NUM_THREADS` applies |
@@ -68,11 +75,33 @@ preset name or the file stem of the species file (or the `name` of a config entr
 one. Each worker thread writes its own files and reuses its buffers, so memory stays at
 one plant per thread whatever the count.
 
+**Random plants.** With `--random`, plant `i` is drawn by
+`arbrume_gen::RandomSampler` from the base seed and `i` alone: a preset, with a
+probability proportional to its `variation.weight`; an age and a scale within its
+`[variation]` ranges; an individual of the species, whose parameters stray from the
+preset within its `[variation.jitter]` table ([Species library](species.md)); and the
+plant seed. The file is named `<preset>_<seed>_<i>.glb`. A plant is meshed at
+`--quality` unless that exceeds the triangle or the vertex budget, in which case the
+quality is lowered until the mesh fits: a herb keeps its detail and an old tree stays
+light. The defaults (quality 0.6, 60 000 triangles, 55 000 vertices) keep every file
+under about 3 MB; they are starting points, not measured optima. As everywhere, the
+output does not depend on `--jobs`.
+
+**Thumbnails.** `--thumb` renders each plant with the CPU rasterizer
+([Rasterizer](raster.md)) from 20 degrees of azimuth, with the default view
+and lighting of `ThumbnailOptions`, and writes `<species>_<seed>_<i>.jpg` (JPEG quality
+88) or `.png` next to the `.glb`. With several levels of detail the thumbnail shows
+level 0. The manifest line of the plant gets a `thumbnail` key, and `--resume` also
+requires the thumbnail to exist.
+
 **Metadata.** The root node `extras` and `asset.extras` of every file hold the JSON of
 `arbrume_gen::metadata`: generator and version, species display name, plant seed, age,
 scale, mesh options, statistics and the full species parameter set, plus `label`,
 `base_seed`, `index`, `lod` and `quality`. Deserializing `species` gives back the
 species, so every file can be regenerated from its own metadata with the same version.
+For a random plant `species` is the individual, with its jittered parameters, `mesh`
+holds the options reached under the budget, and `preset` names the preset it was drawn
+from.
 
 **Resume.** A file is written under `<name>.tmp` and renamed when complete, so a file
 with its final name is whole. With `--resume` a plant is skipped when all its levels
@@ -85,7 +114,7 @@ does not regenerate the existing files.
 without `--resume` rewrites it, so give each batch its own output directory or resume:
 
 ```json
-{"species": "broadleaf", "species_name": "Starter broadleaf", "index": 4, "seed": 3,
+{"species": "broadleaf", "species_name": "Generic broadleaf", "index": 4, "seed": 3,
  "plant_seed": 12963831759638888921, "age": 9, "scale": 1.0, "quality": 1.0,
  "files": [{"file": "broadleaf_3_4.glb", "lod": 0, "quality": 1.0,
             "vertices": 5836, "triangles": 6458, "bytes": 292124}],
@@ -107,6 +136,8 @@ seed = 42                       # base seed of the entries that set none (defaul
 quality = 1.0                   # mesh quality of the entries that set none (default 1)
 lods = 1                        # levels of detail per plant (default 1)
 manifest = true                 # same as --manifest (default false)
+thumb = 256                     # same as --thumb 256 (default: no thumbnail)
+thumb_format = "jpg"            # or "png"
 age = { uniform = [10, 30] }    # age of the entries that set none (default 10)
 scale = 1.0                     # scale of the entries that set none (default 1)
 
@@ -181,6 +212,8 @@ println!("{} triangles, {:.1} m", plant.stats.triangles, plant.stats.height);
 | `Plant { params, graph, mesh, stats }` | the result; `graph` is the skeleton for sidecar exporters |
 | `Stats { nodes, chains, leaf_sites, vertices, triangles, bounds, height }` | summary; `height` is the vertical extent of the mesh |
 | `Generator::new()`, `.generate(..)`, `.generate_into(.., &mut plant)`, `.remesh(&mut plant, species, options)` | batch loops; reuses the mesher and the mesh buffers, returns timings |
+| `Generator::generate_within(species, params, &budget, &mut plant)`, `Budget { triangles, vertices }` | the same within a mesh budget: the quality is lowered until the mesh fits, and `plant.params.mesh` records the options used |
+| `RandomSampler::new(seed)`, `.pick(index)`, `RandomPick { preset, species, params, budget }`, `.generate(&mut generator, &mut plant)` | random plants: a preset, an age, a scale and a varied individual per index |
 | `generate_many(&[(species, params)])` | a batch on the current `rayon` pool, results in input order |
 | `run_batch(count, \|generator, plant, index\| ..)` | a batch that consumes each plant in the task, one generator and one scratch plant per thread |
 | `Sampler { seed, age, scale, quality }`, `.params(index)`, `plant_seed(seed, index)` | the per-plant parameters of a dataset |
@@ -192,6 +225,24 @@ println!("{} triangles, {:.1} m", plant.stats.triangles, plant.stats.height);
 Every result depends only on the species, the parameters and the version: a batch gives
 the same plants as `generate` on each job, for any number of threads.
 
-**Presets** live in `crates/arbrume-gen/species/`. To add one, drop `<name>.toml` there
-and add its line to `PRESETS` in `crates/arbrume-gen/src/presets.rs`; the tests then
-generate and export it, and CI validates its files.
+**Presets** live in `crates/arbrume-gen/species/` and are described in
+[Species library](species.md). To add one, drop `<name>.toml` there and add its line to
+`PRESETS` in `crates/arbrume-gen/src/presets.rs`; the tests then generate and export it,
+and CI validates its files.
+
+## Looking at species
+
+`arbrume sheet` is a development command, hidden from `--help`, that renders a contact
+sheet of thumbnails into one PNG, for tuning a species by eye:
+
+```sh
+arbrume sheet --species oak_like,pine_like --ages 15,30,60 --seeds 2 --azimuths 20,110 --out sheet.png
+arbrume sheet --species my_oak.toml --ages 40 --view crown --size 512 --out crown.png
+arbrume sheet --random 64 --offset 64 --seeds 1 --size 160 --out random_1.png
+```
+
+A species sheet has one row per species, seed and azimuth and one column per age; a
+random sheet shows plants `offset` to `offset + N` of the random sampler with base seed
+`--seeds`. `--view` is `full`, `crown` (the middle of the crown, enlarged) or `junction`
+(the trunk and its first branches). One line per plant goes to standard output: quality
+reached, height, width, trunk diameter, triangles, vertices, nodes, leaf sites and time.

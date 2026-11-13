@@ -78,16 +78,16 @@ impl Default for MeshOptions {
 impl MeshOptions {
     /// Options for the level of detail `quality`, 1 being full detail and smaller values
     /// coarser. The number of sides, of rings and of leaves are roughly proportional to
-    /// `quality`: the tolerance is [`DEFAULT_TOLERANCE`] divided by `quality` squared,
-    /// axes thinner than half the increase of the tolerance are dropped, and
-    /// `leaf_fraction` is `quality` (at most 1). `quality` is clamped to at least 0.01.
+    /// `quality`: the tolerance is [`DEFAULT_TOLERANCE`] divided by `quality` squared
+    /// and `leaf_fraction` is `quality` (at most 1). No axis is dropped (`min_radius`
+    /// stays 0): a thin axis costs few triangles at a coarse tolerance, and dropping it
+    /// would leave its leaves in the air. `quality` is clamped to at least 0.01.
     #[must_use]
     pub fn with_quality(quality: f32) -> Self {
         let quality = quality.max(0.01);
         let tolerance = DEFAULT_TOLERANCE / (quality * quality);
         Self {
             tolerance,
-            min_radius: 0.5 * (tolerance - DEFAULT_TOLERANCE).max(0.0),
             leaf_fraction: quality.min(1.0),
             ..Self::default()
         }
@@ -128,12 +128,12 @@ mod tests {
     }
 
     #[test]
-    fn lower_quality_is_coarser_in_every_control() {
+    fn lower_quality_is_coarser_and_keeps_every_axis() {
         let half = MeshOptions::with_quality(0.5);
         let quarter = MeshOptions::with_quality(0.25);
         assert!((half.tolerance - 4.0 * DEFAULT_TOLERANCE).abs() < 1e-7);
         assert!(quarter.tolerance > half.tolerance);
-        assert!(quarter.min_radius > half.min_radius && half.min_radius > 0.0);
+        assert_eq!((half.min_radius, quarter.min_radius), (0.0, 0.0));
         assert!(quarter.leaf_fraction < half.leaf_fraction);
         MeshOptions::with_quality(0.0).validate().unwrap();
     }

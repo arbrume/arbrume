@@ -15,19 +15,22 @@
 //! with the thread count. A fraction `f` keeps the first `ceil(f n)` leaves and
 //! multiplies their size by `sqrt(n / kept)`, which preserves the total leaf area.
 //!
-//! **Instance.** A leaf is the template of the species placed in the frame of its site:
+//! **Instance.** A leaf is a template of the species (a single leaf, or one of the
+//! variants of its twig, see [`crate::twig`]) placed in the frame of its site:
 //! `direction`, `normal x direction` and `normal`. The site is on the centerline of the
 //! axis, so the leaf is moved out by the radius of its node along the part of
 //! `direction` that is orthogonal to the internode. Size, attitude and colour vary from
 //! leaf to leaf by the amounts of the species; the draws come from the stream of the
-//! organ index. Colour variation is written as a vertex colour, at most 1 per channel,
-//! which multiplies the base colour of the material.
+//! organ index, as does the choice of the variant. Colour variation is written as a
+//! vertex colour, at most 1 per channel, which multiplies the base colour of the
+//! material; the template adds its own tint per vertex (the shade of each leaf of a twig
+//! and the colour of its stem).
 //!
-//! Every leaf has the same number of vertices and indices, so leaf `k` owns a fixed
-//! range of the buffers, and blocks of leaves are filled independently.
+//! Every instance has the same number of vertices and indices, so instance `k` owns a
+//! fixed range of the buffers, and blocks of instances are filled independently.
 
 use crate::MeshOptions;
-use crate::leaf::LeafTemplate;
+use crate::twig::TemplateSet;
 use arbrume_core::graph::{OrganKind, OrganSite, PlantGraph};
 use arbrume_core::mesh::MeshBuffers;
 use arbrume_core::rng::{Rng, Stream};
@@ -122,7 +125,7 @@ struct LeafOut<'a> {
 struct Instancer<'a> {
     graph: &'a PlantGraph,
     foliage: &'a Foliage,
-    template: &'a LeafTemplate,
+    templates: &'a TemplateSet,
     seed: u64,
     /// Nominal leaf length times the enlargement of the level of detail.
     length: f32,
@@ -166,10 +169,14 @@ impl Instancer<'_> {
             (brightness * (1.0 + hue)).min(1.0),
             brightness,
             (brightness * (1.0 - hue)).min(1.0),
-            1.0,
         ];
         let anchor = self.anchor(site);
-        let template = self.template;
+        let variants = &self.templates.variants;
+        let template = if variants.len() > 1 {
+            &variants[rng.below(variants.len() as u32) as usize]
+        } else {
+            &variants[0]
+        };
         for (slot, local) in out.positions.iter_mut().zip(&template.positions) {
             let offset = forward * local.x + across * local.y + up * local.z;
             *slot = (anchor + offset * size).to_array();
@@ -178,7 +185,14 @@ impl Instancer<'_> {
             *slot = (forward * local.x + across * local.y + up * local.z).to_array();
         }
         out.uvs.copy_from_slice(&template.uvs);
-        out.colors.fill(color);
+        for (slot, tint) in out.colors.iter_mut().zip(&template.tints) {
+            *slot = [
+                color[0] * tint[0],
+                color[1] * tint[1],
+                color[2] * tint[2],
+                1.0,
+            ];
+        }
         for (slot, local) in out.indices.iter_mut().zip(&template.indices) {
             *slot = out.base + local;
         }
@@ -186,7 +200,7 @@ impl Instancer<'_> {
 
     /// Writes the leaves `organs` into `out`, which holds exactly that many leaves.
     fn write_block(&self, organs: &[u32], out: &mut LeafOut) {
-        let (vertices, indices) = (self.template.positions.len(), self.template.indices.len());
+        let (vertices, indices) = self.templates.instance_counts();
         let positions = out.positions.chunks_exact_mut(vertices);
         let normals = out.normals.chunks_exact_mut(vertices);
         let uvs = out.uvs.chunks_exact_mut(vertices);
@@ -208,11 +222,9 @@ impl Instancer<'_> {
 }
 
 /// Number of vertices and of indices of the leaf part for `leaves` leaves.
-pub(crate) fn leaf_counts(template: &LeafTemplate, leaves: usize) -> (usize, usize) {
-    (
-        leaves * template.positions.len(),
-        leaves * template.indices.len(),
-    )
+pub(crate) fn leaf_counts(templates: &TemplateSet, leaves: usize) -> (usize, usize) {
+    let (vertices, indices) = templates.instance_counts();
+    (leaves * vertices, leaves * indices)
 }
 
 /// Where the leaves of one mesh come from.
@@ -224,8 +236,8 @@ pub(crate) struct LeafSource<'a> {
     pub foliage: &'a Foliage,
     /// Leaves to instance.
     pub set: &'a LeafSet,
-    /// Geometry of one leaf.
-    pub template: &'a LeafTemplate,
+    /// Geometry of one instance.
+    pub templates: &'a TemplateSet,
 }
 
 /// Sizes `buffers` for the leaves of `source` and fills them. Their allocations are
@@ -235,9 +247,9 @@ pub(crate) fn mesh_leaves(source: &LeafSource, options: &MeshOptions, buffers: &
         graph,
         foliage,
         set,
-        template,
+        templates,
     } = *source;
-    let (vertices, indices) = leaf_counts(template, set.organs.len());
+    let (vertices, indices) = leaf_counts(templates, set.organs.len());
     buffers.positions.resize(vertices, [0.0; 3]);
     buffers.normals.resize(vertices, [0.0; 3]);
     buffers.uvs.resize(vertices, [0.0; 2]);
@@ -249,12 +261,12 @@ pub(crate) fn mesh_leaves(source: &LeafSource, options: &MeshOptions, buffers: &
     let instancer = Instancer {
         graph,
         foliage,
-        template,
+        templates,
         seed: options.seed,
         length: foliage.length * set.enlargement,
         turn: foliage.orientation_variation_deg.to_radians().tan(),
     };
-    let (per_vertex, per_index) = leaf_counts(template, BLOCK);
+    let (per_vertex, per_index) = leaf_counts(templates, BLOCK);
     let block = |(number, ((((organs, positions), normals), uvs), (colors, indices)))| {
         let mut out = LeafOut {
             positions,

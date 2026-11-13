@@ -9,8 +9,9 @@
 //! | `[architecture]` | [`Architecture`] | qualitative traits: branching, rhythm, phyllotaxis, axis categories |
 //! | `[growth]` | [`Growth`] | lengths, angles, branching and tropism, as curves |
 //! | `[geometry]` | [`Geometry`] | radii: pipe exponent, taper, flare |
-//! | `[foliage]` | [`Foliage`] | leaf size, attitude, retention, appearance |
+//! | `[foliage]` | [`Foliage`] | leaf size, attitude, retention, twigs, appearance |
 //! | `[bark]` | [`Bark`] | bark appearance |
+//! | `[variation]` | [`Variation`] | how individuals differ: age and scale ranges, jitter |
 //!
 //! Every field has a default, so a species file lists only what differs. The defaults
 //! describe a plain generic tree. They are starting points chosen to produce a plausible
@@ -41,15 +42,20 @@ mod bark;
 mod foliage;
 mod geometry;
 mod growth;
+mod variation;
 
 pub use architecture::{
     Architecture, AxisCategory, AxisOrientation, BranchTiming, Branching, BranchingPattern,
     GrowthRhythm, Phyllotaxis,
 };
 pub use bark::Bark;
-pub use foliage::{BladeShape, Foliage, LeafGeometry};
+pub use foliage::{
+    BladeShape, Foliage, LeafGeometry, MAX_BLADE_SEGMENTS, MAX_LEAFLET_PAIRS, MAX_TWIG_FINS,
+    MAX_TWIG_LEAVES, MAX_TWIG_VARIANTS, Twig,
+};
 pub use geometry::{Geometry, RadiusModel};
 pub use growth::{Growth, SelfOrganization};
+pub use variation::{JITTERABLE, Variation};
 
 use crate::curve::OrderCurve;
 use serde::{Deserialize, Serialize};
@@ -105,6 +111,8 @@ pub struct Species {
     pub foliage: Foliage,
     /// Bark parameters.
     pub bark: Bark,
+    /// How individuals of the species vary.
+    pub variation: Variation,
 }
 
 impl Default for Species {
@@ -117,6 +125,7 @@ impl Default for Species {
             geometry: Geometry::default(),
             foliage: Foliage::default(),
             bark: Bark::default(),
+            variation: Variation::default(),
         }
     }
 }
@@ -169,7 +178,8 @@ impl Species {
         self.growth.validate()?;
         self.geometry.validate()?;
         self.foliage.validate()?;
-        self.bark.validate()
+        self.bark.validate()?;
+        self.variation.validate()
     }
 }
 

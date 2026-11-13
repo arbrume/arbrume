@@ -1,0 +1,95 @@
+# Acacia-like umbrella tree: a bare leaning trunk that splits into a few limbs rising
+# steeply and then flattening into a wide, shallow, flat-topped crown of fine foliage.
+#
+# Typical size at age 30: about 11 m tall, crown 16 m wide, trunk 0.45 m across at the
+# base. Every value is a starting point chosen by eye, not a measurement.
+
+schema_version = 0
+name = "Acacia-like umbrella tree"
+
+[architecture]
+branching = "monopodial"
+growth_rhythm = "rhythmic"
+branching_pattern = "diffuse"
+branch_timing = "proleptic"
+max_order = 3
+phyllotaxis = { leaves_per_node = 1, divergence_deg = 137.5 }
+
+[[architecture.axes]]
+orientation = "orthotropic"
+
+[[architecture.axes]]
+orientation = "orthotropic"
+
+[[architecture.axes]]
+orientation = "plagiotropic"
+phyllotaxis = { leaves_per_node = 1, divergence_deg = 180.0 }
+
+[growth]
+axis_length = { by_order = [
+    5.5,
+    { points = [[0.0, 6.0], [0.6, 7.5], [1.0, 7.0]], interp = "smooth" },
+    [[0.0, 0.8], [0.4, 2.6], [1.0, 2.2]],
+    [[0.0, 0.5], [1.0, 0.8]],
+] }
+shoot_length = { by_order = [[[0.0, 0.6], [1.0, 0.3]], [[0.0, 0.7], [1.0, 0.3]], 0.4, 0.25] }
+length_variation = 0.2
+internode_length = { by_order = [0.3, 0.5, 0.3, 0.2] }
+# Limbs leave the top of the trunk; they branch only once they have spread out.
+branch_probability = { by_order = [[[0.0, 0.0], [0.45, 0.0], [0.55, 0.8], [1.0, 0.9]], [[0.0, 0.0], [0.25, 0.0], [0.4, 0.8], [1.0, 0.9]], 0.7] }
+branching_angle = { by_order = [50.0, [[0.0, 55.0], [1.0, 35.0]], 60.0, 55.0] }
+branching_angle_variation = 10.0
+direction_variation = { by_order = [3.0, 5.0, 7.0, 6.0] }
+gnarl = { by_order = [10.0, 16.0, 14.0, 8.0] }
+gravitropic_setpoint = { by_order = [0.0, [[0.0, 40.0], [0.4, 80.0], [1.0, 92.0]], 88.0, 90.0] }
+tropism_weight = { by_order = [0.04, 0.1, 0.1, 0.08] }
+fork_probability = { by_order = [[[0.0, 0.0], [0.5, 0.0], [0.55, 0.35], [1.0, 0.35]], 0.0] }
+fork_limit = 2
+fork_angle = 35.0
+
+[geometry]
+radius_model = "pipe"
+pipe_exponent = 1.75
+tip_radius = 0.005
+flare = 0.5
+
+[foliage]
+length = 0.1
+width_ratio = 0.4
+shape = "elliptic"
+segments = 2
+fold_deg = 5.0
+curvature_deg = 10.0
+petiole_length = 0.0
+inclination_deg = 70.0
+retention_cycles = 4
+density = 0.6
+per_node = 2
+color = [0.11, 0.24, 0.05]
+hue_variation = 0.1
+brightness_variation = 0.3
+# A twig is one feathery compound leaf: two ranks of small leaflets.
+twig = { leaves = 12, length = 0.34, leaves_per_node = 2, divergence_deg = 0.0, inclination_deg = 65.0, bend_deg = 15.0, stem_radius = 0.0015, terminal_leaf = false }
+
+[bark]
+color = [0.12, 0.1, 0.085]
+young_color = [0.16, 0.12, 0.08]
+young_radius = 0.04
+color_variation = 0.15
+
+[variation]
+age = [20, 45]
+scale = [0.85, 1.15]
+
+[variation.jitter]
+"growth.axis_length" = 0.15
+"growth.internode_length" = 0.08
+"growth.branch_probability" = 0.1
+"growth.branching_angle" = 0.12
+"growth.gravitropic_setpoint" = 0.1
+"growth.gnarl" = 0.3
+"growth.curvature" = 0.25
+"geometry.radius_ratio" = 0.15
+"foliage.length" = 0.1
+"foliage.color" = 0.1
+"bark.color" = 0.08

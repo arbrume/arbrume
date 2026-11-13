@@ -13,6 +13,8 @@ workspace = true
 arbrume-core.workspace = true
 arbrume-export.workspace = true
 arbrume-gen.workspace = true
+arbrume-raster.workspace = true
+glam = "0.34.3"
 clap = { version = "4.6", features = ["derive"] }
 rayon = "1.10"
 serde = { version = "1.0.229", features = ["derive"] }

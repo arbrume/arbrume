@@ -11,7 +11,12 @@
 //! and the midrib bends along a circular arc by the curvature angle. Normals are those of
 //! the folded, bent surface and are shared along the midrib, so the fold shades as a
 //! smooth crease. A blade of `n` segments has `3 n - 1` vertices and `4 (n - 1)`
-//! triangles. A pinnately **compound** leaf is `2 pairs + 1` such blades on a straight
+//! triangles. A species that asks for one segment gets a single flat triangle, widest at
+//! its base: a needle.
+//!
+//! Detail below the tolerance is left out: the stalk of a simple leaf when it is thinner
+//! than the tolerance, and the fold and bend of a blade of two segments when both stay
+//! within the tolerance, which leaves a flat diamond of two triangles. A pinnately **compound** leaf is `2 pairs + 1` such blades on a straight
 //! rachis: each leaflet has the length `1 / (1 + pairs / 2)`, the last pair sits at the
 //! base of the terminal leaflet and the others are evenly spaced below it. The petiole
 //! and the rachis are one thin triangle.
@@ -39,6 +44,9 @@ pub(crate) struct LeafTemplate {
     pub normals: Vec<Vec3>,
     /// Texture coordinates.
     pub uvs: Vec<[f32; 2]>,
+    /// Factor on the vertex colour of an instance, per vertex: 1 for a single leaf;
+    /// the shade of each leaf and the colour of the stem for a twig.
+    pub tints: Vec<[f32; 3]>,
     /// Triangle list.
     pub indices: Vec<u32>,
 }
@@ -117,7 +125,7 @@ impl Placement {
 
 /// Point and upward normal of the midrib at the relative position `t`, for a midrib of
 /// length 1 bending by `bend` radians along a circular arc towards `-z`.
-fn midrib(t: f32, bend: f32) -> (Vec3, Vec3) {
+pub(crate) fn midrib(t: f32, bend: f32) -> (Vec3, Vec3) {
     if bend.abs() < 1e-3 {
         return (Vec3::new(t, 0.0, 0.0), Vec3::Z);
     }
@@ -136,6 +144,9 @@ fn outline_fill(foliage: &Foliage, segments: u32) -> f32 {
         let widths = (0..count).map(|i| foliage.blade_width((i as f32 + offset) / count as f32));
         widths.sum::<f32>() / count as f32
     };
+    if segments < 2 {
+        return 2.0 * mean(SAMPLES, 0.5);
+    }
     mean(SAMPLES, 0.5) / mean(segments, 0.0)
 }
 
@@ -145,6 +156,10 @@ struct Builder<'a> {
     segments: u32,
     /// Widening of the blades that preserves their area.
     fill: f32,
+    /// Draw a blade of two segments as a flat diamond.
+    flat: bool,
+    /// Draw the petiole and rachis.
+    stalked: bool,
     template: LeafTemplate,
 }
 
@@ -163,8 +178,42 @@ impl Builder<'_> {
         (template.positions.len() - 1) as u32
     }
 
+    /// Adds a blade of one segment: a flat triangle, widest at its base.
+    fn needle(&mut self, place: &Placement) {
+        let half = 0.5 * self.foliage.width_ratio * self.fill;
+        let side = Vec2::new(0.0, half);
+        let right = self.vertex(place, (-side).extend(0.0), Vec3::Z, -side);
+        let tip = self.vertex(place, Vec3::X, Vec3::Z, Vec2::X);
+        let left = self.vertex(place, side.extend(0.0), Vec3::Z, side);
+        self.template.indices.extend([right, tip, left]);
+    }
+
+    /// Adds a blade of two segments without fold or bend: two triangles.
+    fn diamond(&mut self, place: &Placement) {
+        let width = 0.5 * self.foliage.width_ratio * self.fill * self.foliage.blade_width(0.5);
+        let side = Vec2::new(0.5, width);
+        let base = self.vertex(place, Vec3::ZERO, Vec3::Z, Vec2::ZERO);
+        let right = self.vertex(
+            place,
+            Vec3::new(0.5, -width, 0.0),
+            Vec3::Z,
+            side * Vec2::new(1.0, -1.0),
+        );
+        let tip = self.vertex(place, Vec3::X, Vec3::Z, Vec2::X);
+        let left = self.vertex(place, side.extend(0.0), Vec3::Z, side);
+        self.template
+            .indices
+            .extend([base, right, tip, base, tip, left]);
+    }
+
     /// Adds one folded, bent blade.
     fn blade(&mut self, place: &Placement) {
+        if self.segments < 2 {
+            return self.needle(place);
+        }
+        if self.flat {
+            return self.diamond(place);
+        }
         let foliage = self.foliage;
         let bend = foliage.curvature_deg.to_radians();
         let (fold_sin, fold_cos) = foliage.fold_deg.to_radians().sin_cos();
@@ -221,7 +270,7 @@ impl Builder<'_> {
     fn outline(&mut self) {
         let layout = self.layout;
         let end = layout.petiole + layout.rachis;
-        if end > 0.0 {
+        if end > 0.0 && self.stalked {
             self.stalk(end);
         }
         let pairs = self.foliage.leaflet_pairs;
@@ -254,17 +303,24 @@ impl LeafTemplate {
     /// outline by about `w pi^2 / (16 n^2)`, so a blade gets
     /// `n = pi sqrt(w / (16 tolerance))` segments, at least 2 and at most
     /// `Foliage::segments`. Whatever `n`, the polygon is widened so that its area is that
-    /// of the smooth outline: a coarse leaf covers as much as a fine one.
+    /// of the smooth outline: a coarse leaf covers as much as a fine one. With
+    /// `Foliage::segments` at 1 every blade is one triangle.
     pub(crate) fn new(foliage: &Foliage, tolerance: f32) -> Self {
         let layout = Layout::new(foliage);
         let width = foliage.length * foliage.width_ratio * layout.blade;
         let ideal = (PI * (width / (16.0 * tolerance)).sqrt()).ceil() as u32;
-        let segments = ideal.clamp(2, foliage.segments.max(2));
+        let most = foliage.segments.max(1);
+        let segments = ideal.clamp(most.min(2), most);
+        let rise = 0.5 * width * foliage.fold_deg.to_radians().sin();
+        let sag = foliage.length * layout.blade * foliage.curvature_deg.to_radians().abs() / 8.0;
+        let stalk_width = 2.0 * STALK_HALF_WIDTH * foliage.length;
         let mut builder = Builder {
             foliage,
             layout,
             segments,
             fill: outline_fill(foliage, segments),
+            flat: segments == 2 && rise.max(sag) < tolerance,
+            stalked: foliage.leaflet_pairs > 0 || stalk_width >= tolerance,
             template: Self::default(),
         };
         if foliage.uses_cards() {
@@ -272,7 +328,9 @@ impl LeafTemplate {
         } else {
             builder.outline();
         }
-        builder.template
+        let mut template = builder.template;
+        template.tints = vec![[1.0; 3]; template.positions.len()];
+        template
     }
 
     /// Surface area of the template, in squared leaf lengths.
@@ -307,6 +365,7 @@ mod tests {
         let count = template.positions.len();
         assert_eq!(template.normals.len(), count);
         assert_eq!(template.uvs.len(), count);
+        assert_eq!(template.tints.len(), count);
         assert_eq!(template.indices.len() % 3, 0);
         let mut used = vec![false; count];
         for triangle in template.indices.as_chunks::<3>().0 {
@@ -383,11 +442,29 @@ mod tests {
 
     #[test]
     fn coarse_tolerance_uses_fewer_segments() {
-        let foliage = foliage("segments = 6");
-        let fine = LeafTemplate::new(&foliage, 1e-5);
-        let coarse = LeafTemplate::new(&foliage, 0.05);
+        let plain = foliage("segments = 6");
+        let fine = LeafTemplate::new(&plain, 1e-5);
+        let coarse = LeafTemplate::new(&plain, 0.05);
         assert!(coarse.indices.len() < fine.indices.len());
-        assert_eq!(coarse.indices.len(), 3 * 4 + 3);
+        assert_eq!(coarse.indices.len(), 3 * 2);
+        check(&coarse);
+        let folded = foliage(
+            "segments = 6
+fold_deg = 40.0",
+        );
+        let middling = LeafTemplate::new(&folded, 0.008);
+        assert_eq!(middling.indices.len(), 3 * 4);
+    }
+
+    #[test]
+    fn one_segment_is_a_single_triangle_of_the_outline_area() {
+        let text = "shape = \"needle\"\nsegments = 1\npetiole_length = 0.0\nwidth_ratio = 0.1";
+        let needle = LeafTemplate::new(&foliage(text), 1e-6);
+        assert_eq!((needle.positions.len(), needle.indices.len()), (3, 3));
+        check(&needle);
+        let fine = text.replace("segments = 1", "segments = 16");
+        let fine = LeafTemplate::new(&foliage(&fine), 1e-7);
+        assert!((needle.area() / fine.area() - 1.0).abs() < 0.05);
     }
 
     #[test]

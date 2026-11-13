@@ -62,6 +62,120 @@ pub enum LeafGeometry {
     Card,
 }
 
+/// Largest value of [`Twig::leaves`].
+pub const MAX_TWIG_LEAVES: u32 = 64;
+/// Largest value of [`Twig::fins`].
+pub const MAX_TWIG_FINS: u32 = 8;
+/// Largest value of [`Twig::variants`].
+pub const MAX_TWIG_VARIANTS: u32 = 16;
+
+/// A leafy twig instanced at every organ site instead of a single leaf.
+///
+/// The twig is a small template built by the mesher: a thin stem carrying several
+/// leaves, placed around it like the leaves of a real shoot. A tree uses a few variants
+/// of its template, which differ in the size, attitude and shade of their leaves
+/// (Raistrick et al. 2023 instance twigs the same way). With `inclination_deg` of the
+/// foliage at 0 the twig lies along the axis that bears it, which is how the needles of
+/// a conifer shoot are drawn: one twig stands for the needles of one node.
+///
+/// Needles are far too many and too thin to draw one by one. A needle-bearing twig
+/// therefore has `fins`: flat blades along its stem, as wide as the needles reach, that
+/// stand for the bulk of the needles, while a few enlarged needles fringe the outline.
+///
+/// `leaves = 0` with no fins disables twigs: each site then bears one leaf.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Twig {
+    /// Number of leaves on one twig, at most [`MAX_TWIG_LEAVES`]; 0 for no twig.
+    pub leaves: u32,
+    /// Length of the twig stem, in meters.
+    pub length: f32,
+    /// Leaves at each node of the twig: 1 alternate, 2 opposite, more for a whorl.
+    pub leaves_per_node: u8,
+    /// Angle in degrees by which successive nodes of the twig are turned: 137.5 for a
+    /// spiral, 180 for two flat ranks, 90 with two leaves per node for decussate pairs.
+    pub divergence_deg: f32,
+    /// Angle in degrees between a leaf and the twig, 0 pointing along the twig.
+    pub inclination_deg: f32,
+    /// Total angle in degrees by which the twig bends from base to tip, positive
+    /// towards the lower side of its organ site.
+    pub bend_deg: f32,
+    /// Radius of the twig stem at its base, in meters; 0 for no stem (a twig that lies
+    /// on the axis bearing it needs none).
+    pub stem_radius: f32,
+    /// Whether a leaf continues the twig at its tip.
+    pub terminal_leaf: bool,
+    /// Attitude of the leaves. `false`: the upper side of every leaf faces the upper
+    /// side of the organ site, as on a flat spray. `true`: the plane of every leaf
+    /// contains the twig, as for needles standing around a shoot.
+    pub radial: bool,
+    /// Number of flat blades along the stem, evenly turned around it, at most
+    /// [`MAX_TWIG_FINS`]; 0 for none.
+    pub fins: u32,
+    /// Half-width of a fin, in meters.
+    pub fin_width: f32,
+    /// Brightness of the fins relative to the leaves, in `[0, 1]`: the inside of a
+    /// needle-clad shoot is darker than its fringe.
+    pub fin_shade: f32,
+    /// Number of variants of the template used by one plant, from 1 to
+    /// [`MAX_TWIG_VARIANTS`].
+    pub variants: u32,
+}
+
+impl Default for Twig {
+    fn default() -> Self {
+        Self {
+            leaves: 0,
+            length: 0.12,
+            leaves_per_node: 1,
+            divergence_deg: 137.5,
+            inclination_deg: 50.0,
+            bend_deg: 15.0,
+            stem_radius: 0.002,
+            terminal_leaf: true,
+            radial: false,
+            fins: 0,
+            fin_width: 0.02,
+            fin_shade: 0.8,
+            variants: 4,
+        }
+    }
+}
+
+impl Twig {
+    /// `true` when sites bear twigs instead of single leaves.
+    #[must_use]
+    pub const fn enabled(&self) -> bool {
+        self.leaves > 0 || self.fins > 0
+    }
+
+    fn validate(&self) -> Result<(), SpeciesError> {
+        let max = f32::MAX;
+        let leaves = self.leaves as f32;
+        check_range("foliage.twig.leaves", leaves, 0.0, MAX_TWIG_LEAVES as f32)?;
+        check_range("foliage.twig.length", self.length, f32::MIN_POSITIVE, max)?;
+        let per_node = f32::from(self.leaves_per_node);
+        check_range("foliage.twig.leaves_per_node", per_node, 1.0, 255.0)?;
+        let divergence = self.divergence_deg;
+        check_range("foliage.twig.divergence_deg", divergence, 0.0, 360.0)?;
+        let inclination = self.inclination_deg;
+        check_range("foliage.twig.inclination_deg", inclination, 0.0, 180.0)?;
+        check_range("foliage.twig.bend_deg", self.bend_deg, -180.0, 180.0)?;
+        check_range("foliage.twig.stem_radius", self.stem_radius, 0.0, max)?;
+        let fins = self.fins as f32;
+        check_range("foliage.twig.fins", fins, 0.0, MAX_TWIG_FINS as f32)?;
+        check_range("foliage.twig.fin_width", self.fin_width, 0.0, max)?;
+        check_range("foliage.twig.fin_shade", self.fin_shade, 0.0, 1.0)?;
+        let variants = self.variants as f32;
+        check_range(
+            "foliage.twig.variants",
+            variants,
+            1.0,
+            MAX_TWIG_VARIANTS as f32,
+        )
+    }
+}
+
 /// Leaf parameters of a species.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -81,6 +195,17 @@ pub struct Foliage {
     /// Number of growth cycles a metamer keeps its leaves: 1 for a plant that carries
     /// leaves only on the shoots of the current cycle, more for evergreens.
     pub retention_cycles: u16,
+    /// Probability in `(0, 1]` that a leaf position of a retained node bears a leaf (or
+    /// a twig): below 1 the foliage is thinned at random.
+    pub density: f32,
+    /// Number of leaf positions on each node, spread evenly around it; 0 for those of
+    /// the phyllotaxis. A count above that of the phyllotaxis thickens the foliage without
+    /// adding buds.
+    pub per_node: u8,
+    /// Lowest branching order that bears leaves: 1 keeps the stems bare.
+    pub min_order: u8,
+    /// Twig instanced at each site instead of a single leaf.
+    pub twig: Twig,
     /// Linear RGB base colour.
     pub color: [f32; 3],
     /// Surface roughness in `[0, 1]`.
@@ -94,7 +219,8 @@ pub struct Foliage {
     pub shape: BladeShape,
     /// Number of segments along the midrib of an outline blade, from 2 (a diamond of
     /// four triangles) to [`MAX_BLADE_SEGMENTS`]. The mesher may use fewer for a coarse
-    /// tolerance.
+    /// tolerance. 1 draws the blade as a single triangle, widest at its base, which is
+    /// meant for needles.
     pub segments: u32,
     /// Angle in degrees by which each half of the blade is raised about the midrib, 0
     /// for a flat blade.
@@ -133,6 +259,10 @@ impl Default for Foliage {
             size_along_axis: Curve::constant(1.0),
             inclination_deg: 45.0,
             retention_cycles: 1,
+            density: 1.0,
+            per_node: 0,
+            min_order: 0,
+            twig: Twig::default(),
             color: [0.12, 0.3, 0.06],
             roughness: 0.6,
             texture: None,
@@ -181,13 +311,15 @@ impl Foliage {
         check_range("foliage.inclination_deg", self.inclination_deg, 0.0, 180.0)?;
         check_color("foliage.color", self.color)?;
         check_range("foliage.roughness", self.roughness, 0.0, 1.0)?;
+        check_range("foliage.density", self.density, f32::MIN_POSITIVE, 1.0)?;
+        self.twig.validate()?;
         self.validate_blade()?;
         self.validate_variation()
     }
 
     fn validate_blade(&self) -> Result<(), SpeciesError> {
         let segments = self.segments as f32;
-        check_range("foliage.segments", segments, 2.0, MAX_BLADE_SEGMENTS as f32)?;
+        check_range("foliage.segments", segments, 1.0, MAX_BLADE_SEGMENTS as f32)?;
         check_range("foliage.fold_deg", self.fold_deg, 0.0, 90.0)?;
         check_range("foliage.curvature_deg", self.curvature_deg, -180.0, 180.0)?;
         check_range("foliage.petiole_length", self.petiole_length, 0.0, f32::MAX)?;
@@ -224,7 +356,7 @@ impl Foliage {
 
 #[cfg(test)]
 mod tests {
-    use super::{BladeShape, Foliage, LeafGeometry};
+    use super::{BladeShape, Foliage, LeafGeometry, Twig};
 
     const SHAPES: [BladeShape; 5] = [
         BladeShape::Elliptic,
@@ -267,7 +399,18 @@ mod tests {
     fn blade_parameters_are_validated() {
         let invalid = [
             Foliage {
-                segments: 1,
+                segments: 0,
+                ..Default::default()
+            },
+            Foliage {
+                density: 0.0,
+                ..Default::default()
+            },
+            Foliage {
+                twig: Twig {
+                    leaves: 1000,
+                    ..Twig::default()
+                },
                 ..Default::default()
             },
             Foliage {

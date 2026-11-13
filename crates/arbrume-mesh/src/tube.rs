@@ -94,6 +94,32 @@ pub(crate) struct Style {
     pub v_scale: f32,
     /// `v` at the start of the axis.
     pub v_offset: f32,
+    /// Close the base of the axis with a fan (the foot of a stem).
+    pub closed_base: bool,
+    /// Vertex colours of the axis, `None` for a bark without them.
+    pub tint: Option<Tint>,
+}
+
+/// Vertex colours of one axis, as factors on the base colour of the bark material.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Tint {
+    /// Factor where the radius is 0.
+    pub young: [f32; 3],
+    /// Factor from `young_radius` on.
+    pub old: [f32; 3],
+    /// Radius at which the bark has its old colour.
+    pub young_radius: f32,
+}
+
+impl Tint {
+    /// Vertex colour at `radius`.
+    fn at(&self, radius: f32) -> [f32; 4] {
+        let t = (radius / self.young_radius).clamp(0.0, 1.0);
+        let t = t * t * (3.0 - 2.0 * t);
+        let mix =
+            |channel: usize| self.young[channel] + (self.old[channel] - self.young[channel]) * t;
+        [mix(0), mix(1), mix(2), 1.0]
+    }
 }
 
 /// The part of the bark buffers owned by one axis.
@@ -105,23 +131,28 @@ pub(crate) struct TubeOut<'a> {
     pub normals: &'a mut [[f32; 3]],
     /// Texture coordinates.
     pub uvs: &'a mut [[f32; 2]],
+    /// Vertex colours; empty when the style has no tint.
+    pub colors: &'a mut [[f32; 4]],
     /// Triangle indices.
     pub indices: &'a mut [u32],
     /// Index of the first vertex of the axis in the whole buffer.
     pub base: u32,
 }
 
-/// Number of vertices and of indices of the tube over `rings`.
-pub(crate) fn tube_counts(rings: &[Ring]) -> (usize, usize) {
-    let Some(last) = rings.last() else {
+/// Number of vertices and of indices of the tube over `rings`, with a fan closing its
+/// base when `closed_base`.
+pub(crate) fn tube_counts(rings: &[Ring], closed_base: bool) -> (usize, usize) {
+    let (Some(first), Some(last)) = (rings.first(), rings.last()) else {
         return (0, 0);
     };
+    let foot = if closed_base { first.sides as usize } else { 0 };
     let vertices: usize = rings.iter().map(|ring| ring.sides as usize + 1).sum();
     let bands: usize = rings
         .windows(2)
         .map(|pair| (pair[0].sides + pair[1].sides) as usize)
         .sum();
-    (vertices + 1, 3 * (bands + last.sides as usize))
+    let extra = if closed_base { foot + 2 } else { 1 };
+    (vertices + extra, 3 * (bands + last.sides as usize + foot))
 }
 
 /// Direction of the first vertex of the first ring: as far down as possible while
@@ -202,7 +233,15 @@ impl Writer<'_, '_> {
             *normal = (radial * shrink + axial).to_array();
             *uv = [corner as f32 * u_step, v];
         }
+        self.paint(self.vertex..self.vertex + unit.len(), ring.radius);
         self.vertex += unit.len();
+    }
+
+    /// Writes the colour of the vertices `range`, which lie on an axis of `radius`.
+    fn paint(&mut self, range: std::ops::Range<usize>, radius: f32) {
+        if let Some(tint) = &self.style.tint {
+            self.out.colors[range].fill(tint.at(radius));
+        }
     }
 
     /// Writes the vertices of a ring with buttress lobes. With the radius
@@ -227,6 +266,7 @@ impl Writer<'_, '_> {
             self.out.normals[at] = normal.to_array();
             self.out.uvs[at] = [corner as f32 * u_step, v];
         }
+        self.paint(self.vertex..self.vertex + unit.len(), ring.radius);
         self.vertex += unit.len();
     }
 
@@ -271,9 +311,28 @@ impl Writer<'_, '_> {
             0.5 * self.style.u_repeats,
             self.style.v_offset + (ring.arc + height) * self.style.v_scale,
         ];
+        self.paint(apex..apex + 1, ring.radius);
         self.vertex += 1;
         for side in 0..ring.sides as usize {
             self.triangle(start + side, start + side + 1, apex);
+        }
+    }
+
+    /// Closes the base with a fan facing backwards: a copy of the first ring, which is
+    /// the first vertices of the axis, and a vertex at its centre.
+    fn foot(&mut self, ring: &Ring) {
+        let (sides, start) = (ring.sides as usize, self.vertex);
+        let center = start + sides;
+        let back = (-ring.tangent).to_array();
+        self.out.positions.copy_within(0..sides, start);
+        self.out.uvs.copy_within(0..sides, start);
+        self.out.positions[center] = ring.center.to_array();
+        self.out.uvs[center] = [0.5 * self.style.u_repeats, self.style.v_offset];
+        self.out.normals[start..=center].fill(back);
+        self.paint(start..center + 1, ring.radius);
+        self.vertex += sides + 1;
+        for side in 0..sides {
+            self.triangle(start + (side + 1) % sides, start + side, center);
         }
     }
 }
@@ -316,6 +375,9 @@ pub(crate) fn write_tube(rings: &[Ring], style: &Style, circles: &Circles, out: 
         previous = (start, ring.sides as usize, ring.tangent);
     }
     writer.cap(&rings[rings.len() - 1], previous.0);
+    if style.closed_base {
+        writer.foot(first);
+    }
     assert_eq!(writer.vertex, writer.out.positions.len());
     assert_eq!(writer.index, writer.out.indices.len());
 }
@@ -331,27 +393,33 @@ mod tests {
         u_repeats: 2.0,
         v_scale: 1.0,
         v_offset: 0.0,
+        closed_base: false,
+        tint: None,
     };
 
     struct Tube {
         positions: Vec<[f32; 3]>,
         normals: Vec<[f32; 3]>,
         uvs: Vec<[f32; 2]>,
+        colors: Vec<[f32; 4]>,
         indices: Vec<u32>,
     }
 
     fn tube(rings: &[Ring], style: &Style) -> Tube {
-        let (vertices, indices) = tube_counts(rings);
+        let (vertices, indices) = tube_counts(rings, style.closed_base);
+        let colored = if style.tint.is_some() { vertices } else { 0 };
         let mut tube = Tube {
             positions: vec![[0.0; 3]; vertices],
             normals: vec![[0.0; 3]; vertices],
             uvs: vec![[0.0; 2]; vertices],
+            colors: vec![[0.0; 4]; colored],
             indices: vec![0; indices],
         };
         let mut out = TubeOut {
             positions: &mut tube.positions,
             normals: &mut tube.normals,
             uvs: &mut tube.uvs,
+            colors: &mut tube.colors,
             indices: &mut tube.indices,
             base: 0,
         };
@@ -423,10 +491,38 @@ mod tests {
     }
 
     #[test]
+    fn closed_base_adds_a_backward_fan_and_tint_follows_the_radius() {
+        let mut rings = arc_rings(|_| 6);
+        for (step, ring) in rings.iter_mut().enumerate() {
+            ring.radius = 0.2 - 0.02 * step as f32;
+        }
+        let open = tube(&rings, &STYLE);
+        let style = Style {
+            closed_base: true,
+            tint: Some(super::Tint {
+                young: [0.5, 0.25, 0.25],
+                old: [1.0; 3],
+                young_radius: 0.1,
+            }),
+            ..STYLE
+        };
+        let closed = tube(&rings, &style);
+        assert_eq!(closed.positions.len(), open.positions.len() + 6 + 1);
+        assert_eq!(closed.indices.len(), open.indices.len() + 3 * 6);
+        let foot = &closed.indices[closed.indices.len() - 3..];
+        let [a, b, c] = [0, 1, 2].map(|i| Vec3::from(closed.positions[foot[i] as usize]));
+        assert!((b - a).cross(c - a).dot(rings[0].tangent) < 0.0);
+        assert_eq!(closed.colors[0], [1.0; 4]);
+        let tip = closed.colors[open.positions.len() - 1];
+        assert!(tip[0] < 0.9 && tip[1] < tip[0]);
+        assert_eq!(open.colors.len(), 0);
+    }
+
+    #[test]
     fn rings_of_different_sides_are_zipped() {
         let rings = arc_rings(|step| [12, 12, 9, 7, 7, 4, 3, 5, 8][step]);
         let tube = tube(&rings, &STYLE);
-        let (vertices, indices) = tube_counts(&rings);
+        let (vertices, indices) = tube_counts(&rings, false);
         assert_eq!(
             (tube.positions.len(), tube.indices.len()),
             (vertices, indices)

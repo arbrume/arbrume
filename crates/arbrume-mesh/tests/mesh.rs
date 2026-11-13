@@ -126,6 +126,20 @@ fn from_axis(graph: &PlantGraph, chain: usize, point: Vec3) -> Vec3 {
     best
 }
 
+/// Unit direction of the first internode of `chain`.
+fn base_direction(graph: &PlantGraph, chain: usize) -> Vec3 {
+    let view = graph
+        .chain_view(graph.chain_ids().nth(chain).unwrap())
+        .unwrap();
+    (view.positions[0] - view.origin).normalize()
+}
+
+/// `true` when `normal` belongs to the fan that closes the base of `chain`: it faces
+/// back along the first internode.
+fn on_foot(graph: &PlantGraph, chain: usize, normal: Vec3) -> bool {
+    normal.normalize().dot(base_direction(graph, chain)) < -0.999
+}
+
 #[test]
 fn triangles_and_normals_face_away_from_the_axis() {
     let bare = species("[foliage]\nenabled = false");
@@ -138,13 +152,17 @@ fn triangles_and_normals_face_away_from_the_axis() {
             let centroid = (a + b + c) / 3.0;
             let chain = (centroid.x / 20.0).round().clamp(0.0, 5.0) as usize;
             let outward = from_axis(&graph, chain, centroid);
-            assert!((b - a).cross(c - a).dot(outward) > 0.0, "seed {seed}");
+            let face = (b - a).cross(c - a);
+            let outside = face.dot(outward) > 0.0;
+            assert!(outside || on_foot(&graph, chain, face), "seed {seed}");
         }
         for (position, normal) in buffers.positions.iter().zip(&buffers.normals) {
             let position = Vec3::from(*position);
             let chain = (position.x / 20.0).round().clamp(0.0, 5.0) as usize;
             let outward = from_axis(&graph, chain, position);
-            assert!(Vec3::from(*normal).dot(outward) > 0.0, "seed {seed}");
+            let normal = Vec3::from(*normal);
+            let outside = normal.dot(outward) > 0.0;
+            assert!(outside || on_foot(&graph, chain, normal), "seed {seed}");
         }
     }
 }
@@ -516,4 +534,69 @@ fn hand_built_tree_exports_to_glb() {
     }
     let path = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("hand_built_tree.glb");
     std::fs::write(&path, &bytes).unwrap();
+}
+
+#[test]
+fn twigs_are_instanced_at_every_site_whatever_the_threads() {
+    let text = "[foliage]\nsegments = 2\npetiole_length = 0.0\n\
+                twig = { leaves = 4, length = 0.2, bend_deg = 0.0, variants = 3 }\n\
+                [bark]\nyoung_color = [0.3, 0.2, 0.1]\ncolor_variation = 0.2";
+    let twiggy = species(text);
+    let graph = skeleton(&SkeletonParams::small(5));
+    let sites = graph.organs().len();
+    let options = MeshOptions::default();
+    let mesh = checked(&graph, &twiggy, &options);
+    let counts = mesh_counts(&graph, &twiggy, &options).unwrap();
+    assert_eq!(counts.leaves, sites);
+    let per_twig = 4 + 4 * 5;
+    assert_eq!(counts.leaf_vertices, sites * per_twig);
+    assert_eq!(mesh.parts[1].buffers.positions.len(), sites * per_twig);
+    assert_eq!(counts.leaf_triangles, sites * (3 + 4 * 4));
+    let single = species(
+        "[foliage]
+segments = 2
+petiole_length = 0.0",
+    );
+    let single = mesh_counts(&graph, &single, &options).unwrap();
+    assert_eq!(single.leaf_triangles, sites * 4);
+    let leaf = &mesh.parts[1];
+    assert_eq!(leaf.material.base_color[..3], [0.3, 0.3, 0.1]);
+    let colors = &leaf.buffers.colors;
+    assert!(colors.iter().flatten().all(|c| (0.0..=1.0).contains(c)));
+    let stem = colors[0];
+    assert!(stem[1] < stem[0], "a stem vertex is brown: {stem:?}");
+    let bark = &mesh.parts[0];
+    assert_eq!(bark.buffers.colors.len(), bark.buffers.positions.len());
+    assert_eq!(bark.material.base_color[..3], [0.3, 0.2, 0.1]);
+    let threaded = MeshOptions {
+        parallel: true,
+        ..options
+    };
+    assert_eq!(mesh_tree(&graph, &twiggy, &threaded).unwrap(), mesh);
+    let plain = checked(&graph, &Species::default(), &options);
+    assert_eq!(plain.parts[0].buffers.colors.len(), 0);
+}
+
+#[test]
+fn lower_quality_keeps_every_axis_under_its_leaves() {
+    let graph = skeleton(&SkeletonParams::small(5));
+    let species = Species::default();
+    let full = mesh_counts(&graph, &species, &MeshOptions::default()).unwrap();
+    let coarse = MeshOptions::with_quality(0.2);
+    assert_eq!(coarse.min_radius, 0.0);
+    let counts = mesh_counts(&graph, &species, &coarse).unwrap();
+    assert!(counts.bark_triangles < full.bark_triangles);
+    let mesh = checked(&graph, &species, &coarse);
+    let bark = &mesh.parts[0].buffers.positions;
+    let tolerance = 2.0 * coarse.tolerance + 1e-3;
+    for chain in graph.chain_ids() {
+        let view = graph.chain_view(chain).unwrap();
+        let tip = *view.positions.last().unwrap();
+        let radius = *view.radii.last().unwrap();
+        let near = |p: &[f32; 3]| Vec3::from(*p).distance(tip) < 2.0 * radius + tolerance;
+        assert!(
+            bark.iter().any(near),
+            "the axis of chain {chain:?} is missing"
+        );
+    }
 }

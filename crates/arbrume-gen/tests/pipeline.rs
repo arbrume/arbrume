@@ -3,8 +3,8 @@
 use arbrume_core::species::Species;
 use arbrume_export::{GlbOptions, write_glb};
 use arbrume_gen::{
-    Distribution, GENERATOR, GenParams, Generator, Plant, Sampler, generate, generate_many,
-    metadata, preset, presets, run_batch,
+    Budget, Distribution, GENERATOR, GenParams, Generator, Plant, RandomSampler, Sampler, generate,
+    generate_many, metadata, preset, presets, run_batch,
 };
 
 fn all_presets() -> Vec<(&'static str, Species)> {
@@ -167,4 +167,102 @@ fn every_preset_generates_and_exports() {
             check_glb(&bytes, &plant, name);
         }
     }
+}
+
+#[test]
+fn every_preset_grows_soundly_over_its_range_of_ages() {
+    let names: Vec<&str> = presets().iter().map(|(name, _)| *name).collect();
+    assert!(names.len() >= 16, "{names:?}");
+    for (name, species) in all_presets() {
+        let [young, old] = species.variation.age;
+        let mut tallest = 0.0_f32;
+        for age in [young, young.midpoint(old), old] {
+            let plant = generate(&species, &GenParams::new(11, age).with_quality(0.5)).unwrap();
+            let graph = &plant.graph;
+            graph.check_invariants().unwrap();
+            assert!(graph.is_contiguous(), "{name} at {age}");
+            assert!(plant.stats.leaf_sites > 0, "{name} at {age} has no foliage");
+            assert_eq!(plant.mesh.parts.len(), 2, "{name} at {age}");
+            let finite = |part: &arbrume_core::mesh::MeshPart| {
+                let positions = part.buffers.positions.iter();
+                positions.flatten().all(|c| c.is_finite())
+            };
+            assert!(plant.mesh.parts.iter().all(finite), "{name} at {age}");
+            let radii = graph.radii().iter();
+            assert!(radii.clone().all(|r| *r > 0.0 && r.is_finite()), "{name}");
+            assert!(plant.stats.height > 0.05, "{name} at {age}");
+            assert!(
+                plant.stats.height >= 0.8 * tallest,
+                "{name} shrinks at {age}"
+            );
+            tallest = tallest.max(plant.stats.height);
+        }
+    }
+}
+
+#[test]
+fn every_preset_has_distinct_name_and_jitter() {
+    let species = all_presets();
+    let mut names: Vec<&str> = species.iter().map(|(_, s)| s.name.as_str()).collect();
+    names.sort_unstable();
+    names.dedup();
+    assert_eq!(names.len(), species.len());
+    for (name, species) in &species {
+        assert!(!species.variation.jitter.is_empty(), "{name}");
+        assert_ne!(&species.varied(1, 0), species, "{name}");
+    }
+}
+
+#[test]
+fn random_plants_do_not_depend_on_the_number_of_threads() {
+    let sampler = RandomSampler::new(21);
+    let make = |generator: &mut Generator, plant: &mut Plant, index: usize| {
+        let pick = sampler.pick(index as u32).unwrap();
+        pick.generate(generator, plant).unwrap();
+        (pick.preset, plant.clone())
+    };
+    let sequential = pool(1).install(|| run_batch(20, make));
+    for threads in [3, 8] {
+        let batch = pool(threads).install(|| run_batch(20, make));
+        assert_eq!(batch, sequential, "{threads} threads");
+    }
+    let presets: std::collections::BTreeSet<&str> =
+        sequential.iter().map(|(name, _)| name.as_str()).collect();
+    assert!(presets.len() > 5);
+}
+
+#[test]
+fn a_budget_lowers_the_quality_until_the_mesh_fits() {
+    let species = preset("maple_like").unwrap();
+    let params = GenParams::new(4, 35);
+    let full = generate(&species, &params).unwrap();
+    let mut generator = Generator::new();
+    let mut plant = Plant::default();
+    let unlimited = Budget::NONE;
+    generator
+        .generate_within(&species, &params, &unlimited, &mut plant)
+        .unwrap();
+    assert_eq!(plant, full);
+    let budget = Budget {
+        triangles: Some(full.stats.triangles / 4),
+        vertices: Some(full.stats.vertices / 3),
+    };
+    generator
+        .generate_within(&species, &params, &budget, &mut plant)
+        .unwrap();
+    assert!(plant.stats.triangles <= full.stats.triangles / 4);
+    assert!(plant.stats.vertices <= full.stats.vertices / 3);
+    assert!(plant.stats.triangles > full.stats.triangles / 12);
+    assert!(plant.params.mesh.tolerance > params.mesh.tolerance);
+    assert_eq!(plant.graph, full.graph);
+    let again = generate(&species, &plant.params).unwrap();
+    assert_eq!(again.mesh, plant.mesh);
+    let roomy = Budget {
+        triangles: Some(full.stats.triangles),
+        vertices: None,
+    };
+    generator
+        .generate_within(&species, &params, &roomy, &mut plant)
+        .unwrap();
+    assert_eq!(plant, full);
 }

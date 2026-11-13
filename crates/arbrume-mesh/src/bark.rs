@@ -25,7 +25,7 @@
 //! no collar.
 
 use crate::ring::{Axis, BaseProfile, Ring, Sweep, sample_axis};
-use crate::tube::{Circles, Style, TubeOut, tube_counts, write_tube};
+use crate::tube::{Circles, Style, Tint, TubeOut, tube_counts, write_tube};
 use crate::{MeshError, MeshOptions};
 use arbrume_core::graph::{ChainView, PlantGraph};
 use arbrume_core::mesh::MeshBuffers;
@@ -67,6 +67,8 @@ pub(crate) struct BarkPlan {
     /// Total number of indices.
     pub indices: usize,
     max_sides: u32,
+    /// Whether the tubes carry vertex colours.
+    colored: bool,
 }
 
 /// Base profile of the chain `view`, sampled as `axis`.
@@ -85,21 +87,38 @@ fn base_profile(graph: &PlantGraph, view: &ChainView, axis: &Axis, sweep: &Sweep
     BaseProfile::collar(sweep, radius, parent_radius, sine)
 }
 
-/// Texture mapping of a chain of base radius `radius`.
+/// Texture mapping and colours of a chain of base radius `radius`.
+///
+/// The vertex colours are factors on `Bark::material_color`: the young and old colours
+/// of the species divided by it, both darkened by the shade of the chain, which is drawn
+/// from the mesh seed and the chain id.
 fn style(species: &Species, view: &ChainView, radius: f32, seed: u64) -> Style {
-    let [around, along] = species.bark.texture_size;
+    let bark = &species.bark;
+    let [around, along] = bark.texture_size;
     let circumference = TAU * radius;
     let u_repeats = (circumference / around).round().max(1.0);
-    let v_offset = if view.attach.is_none() {
-        0.0
-    } else {
-        Rng::new(seed, view.chain.0, Stream::BARK).f32()
-    };
+    let mut rng = Rng::new(seed, view.chain.0, Stream::BARK);
+    let offset = rng.f32();
+    let v_offset = if view.attach.is_none() { 0.0 } else { offset };
+    let tint = bark.has_vertex_colors().then(|| {
+        let base = bark.material_color();
+        let shade = bark.color_variation.mul_add(-rng.f32(), 1.0);
+        let factor = |color: [f32; 3]| {
+            std::array::from_fn(|channel| shade * color[channel] / base[channel].max(1e-6))
+        };
+        Tint {
+            young: factor(bark.young_color.unwrap_or(bark.color)),
+            old: factor(bark.color),
+            young_radius: bark.young_radius,
+        }
+    });
     Style {
         lobes: species.geometry.buttress_lobes,
         u_repeats,
         v_scale: u_repeats / circumference * around / along,
         v_offset,
+        closed_base: view.attach.is_none(),
+        tint,
     }
 }
 
@@ -119,6 +138,7 @@ pub(crate) fn plan_bark(
     plan.chains.clear();
     (plan.vertices, plan.indices) = (0, 0);
     plan.max_sides = sweep.max_sides();
+    plan.colored = species.bark.has_vertex_colors();
     for chain in graph.chain_ids() {
         let view = graph.chain_view(chain).ok_or(MeshError::NotContiguous)?;
         let nodes = options
@@ -134,6 +154,8 @@ pub(crate) fn plan_bark(
             u_repeats: 1.0,
             v_scale: 1.0,
             v_offset: 0.0,
+            closed_base: false,
+            tint: None,
         };
         if nodes > 0 && parent_kept && view.radii[0] >= options.min_radius {
             let mut axis = Axis {
@@ -147,7 +169,7 @@ pub(crate) fn plan_bark(
             let radius = axis.radii[0].max(MIN_STYLE_RADIUS);
             chain_style = style(species, &view, radius, options.seed);
         }
-        let (vertices, indices) = tube_counts(&plan.rings[start..]);
+        let (vertices, indices) = tube_counts(&plan.rings[start..], chain_style.closed_base);
         plan.chains.push(ChainPlan {
             rings: start..plan.rings.len(),
             vertices,
@@ -172,6 +194,8 @@ struct Run<'a> {
     positions: &'a mut [[f32; 3]],
     normals: &'a mut [[f32; 3]],
     uvs: &'a mut [[f32; 2]],
+    /// Empty when the bark has no vertex colours.
+    colors: &'a mut [[f32; 4]],
     indices: &'a mut [u32],
 }
 
@@ -181,17 +205,21 @@ impl Run<'_> {
         let (positions, positions_rest) = self.positions.split_at_mut(vertices);
         let (normals, normals_rest) = self.normals.split_at_mut(vertices);
         let (uvs, uvs_rest) = self.uvs.split_at_mut(vertices);
+        let colored = vertices.min(self.colors.len());
+        let (colors, colors_rest) = self.colors.split_at_mut(colored);
         let (indices, indices_rest) = self.indices.split_at_mut(indices);
         let head = Self {
             positions,
             normals,
             uvs,
+            colors,
             indices,
         };
         let rest = Self {
             positions: positions_rest,
             normals: normals_rest,
             uvs: uvs_rest,
+            colors: colors_rest,
             indices: indices_rest,
         };
         (head, rest)
@@ -215,6 +243,7 @@ impl Filler<'_> {
                 positions: own.positions,
                 normals: own.normals,
                 uvs: own.uvs,
+                colors: own.colors,
                 indices: own.indices,
                 base: chain.vertex_start as u32,
             };
@@ -259,7 +288,8 @@ pub(crate) fn fill_bark(
     buffers.positions.resize(plan.vertices, [0.0; 3]);
     buffers.normals.resize(plan.vertices, [0.0; 3]);
     buffers.uvs.resize(plan.vertices, [0.0; 2]);
-    buffers.colors.clear();
+    let colored = if plan.colored { plan.vertices } else { 0 };
+    buffers.colors.resize(colored, [0.0; 4]);
     buffers.indices.resize(plan.indices, 0);
     circles.ensure(plan.max_sides);
     let filler = Filler {
@@ -270,6 +300,7 @@ pub(crate) fn fill_bark(
         positions: &mut buffers.positions,
         normals: &mut buffers.normals,
         uvs: &mut buffers.uvs,
+        colors: &mut buffers.colors,
         indices: &mut buffers.indices,
     };
     if parallel {

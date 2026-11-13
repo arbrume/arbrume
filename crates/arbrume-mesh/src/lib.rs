@@ -11,8 +11,9 @@
 //!   rings of different side counts zipped together, and a cap on the tip.
 //! * `bark`: all axes of the plant, counted first and then filled, in parallel over
 //!   chains when asked.
-//! * `leaf` and `leaves`: the leaf template of the species and its instances at the
-//!   organ sites, in a random order that makes any prefix a lower level of detail.
+//! * `leaf`, `twig` and `leaves`: the leaf of the species, the twig templates that
+//!   carry several leaves on a stem, and their instances at the organ sites, in a random
+//!   order that makes any prefix a lower level of detail.
 //!
 //! Level of detail comes from the graph, not from decimating a mesh: [`MeshOptions`]
 //! sets a tolerance that drives ring and side counts, a radius below which axes are
@@ -46,13 +47,14 @@ mod options;
 mod ring;
 pub mod synthetic;
 mod tube;
+mod twig;
 
 pub use options::{DEFAULT_TOLERANCE, MeshError, MeshOptions};
 
 use arbrume_core::graph::PlantGraph;
 use arbrume_core::mesh::{Material, MeshBuffers, MeshPart, PartKind, TreeMesh};
 use arbrume_core::species::Species;
-use leaf::LeafTemplate;
+use twig::TemplateSet;
 
 /// Sizes of the mesh [`mesh_tree`] would build, known before any buffer is filled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -61,7 +63,7 @@ pub struct MeshCounts {
     pub bark_vertices: usize,
     /// Triangles of the bark part.
     pub bark_triangles: usize,
-    /// Leaves in the leaf part.
+    /// Instances in the leaf part: leaves, or twigs for a species with a twig.
     pub leaves: usize,
     /// Vertices of the leaf part.
     pub leaf_vertices: usize,
@@ -134,17 +136,18 @@ impl Mesher {
         Self::default()
     }
 
-    /// Runs the planning passes and returns the leaf template.
+    /// Runs the planning passes and returns the foliage templates.
     fn plan(
         &mut self,
         graph: &PlantGraph,
         species: &Species,
         options: &MeshOptions,
-    ) -> Result<LeafTemplate, MeshError> {
+    ) -> Result<TemplateSet, MeshError> {
         check(graph, options)?;
         bark::plan_bark(&mut self.bark, graph, species, options)?;
         leaves::select_leaves(&mut self.leaves, graph, &species.foliage, options);
-        let template = LeafTemplate::new(&species.foliage, options.tolerance);
+        let (foliage, bark) = (&species.foliage, &species.bark);
+        let template = TemplateSet::new(foliage, bark, options.tolerance, options.seed);
         let (vertices, _) = leaves::leaf_counts(&template, self.leaves.organs.len());
         if u32::try_from(vertices).is_err() {
             return Err(MeshError::TooLarge { vertices });
@@ -210,20 +213,21 @@ impl Mesher {
         let mut leaf = take_part(mesh, PartKind::Leaf);
         mesh.parts.clear();
         if self.bark.indices > 0 {
-            bark.material = opaque("bark", species.bark.color, species.bark.roughness, false);
+            let color = species.bark.material_color();
+            bark.material = opaque("bark", color, species.bark.roughness, false);
             let circles = &mut self.circles;
             bark::fill_bark(&self.bark, circles, options.parallel, &mut bark.buffers);
             mesh.parts.push(bark);
         }
         let foliage = &species.foliage;
         if !self.leaves.organs.is_empty() {
-            leaf.material = opaque("leaf", foliage.color, foliage.roughness, true);
+            leaf.material = opaque("leaf", template.base_color, foliage.roughness, true);
             leaf.material.alpha_cutoff = foliage.uses_cards().then_some(0.5);
             let source = leaves::LeafSource {
                 graph,
                 foliage,
                 set: &self.leaves,
-                template: &template,
+                templates: &template,
             };
             leaves::mesh_leaves(&source, options, &mut leaf.buffers);
             mesh.parts.push(leaf);
@@ -252,9 +256,11 @@ pub fn mesh_counts(
 ///
 /// The result has a [`PartKind::Bark`] part, with normals and texture coordinates,
 /// followed by a [`PartKind::Leaf`] part, with normals, texture coordinates and vertex
-/// colours; a part that would be empty is left out. Materials take their colour and
-/// roughness from `species.bark` and `species.foliage`, carry no texture, and the leaf
-/// material is double-sided. For card leaves (`foliage.geometry = "card"`) the leaf
+/// colours; a part that would be empty is left out. The bark part has vertex colours
+/// when the species varies the colour of its bark (`bark.young_color`,
+/// `bark.color_variation`). Materials take their colour and roughness from
+/// `species.bark` and `species.foliage`, carry no texture, and the leaf material is
+/// double-sided. The leaf part also holds the stems of twigs (`foliage.twig`). For card leaves (`foliage.geometry = "card"`) the leaf
 /// material is alpha-masked; the caller attaches the texture.
 ///
 /// Organ sites of a kind other than `Leaf` are ignored.

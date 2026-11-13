@@ -87,6 +87,8 @@ pub struct Meristem {
     pub nodes: u32,
     /// Number of shoots (cycles with at least one metamer) built by this meristem.
     pub shoots: u16,
+    /// Number of forks between the first axis of the apparent axis and this one.
+    pub forks: u8,
     /// Arc length of the apparent axis at which this chain starts.
     pub start: f32,
     /// Arc length of the apparent axis at the tip.
@@ -155,6 +157,8 @@ pub(crate) struct LeafyNode {
     pub(crate) shoot: u16,
     /// Growth cycle of the node.
     pub(crate) birth: u16,
+    /// Index of the node among the metamers of its meristem.
+    pub(crate) index: u32,
     /// Relative position of the node along its full-grown axis.
     pub(crate) position: f32,
     /// Frame of the node.

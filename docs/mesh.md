@@ -34,16 +34,16 @@ with and without `MeshOptions::parallel`, for any number of threads, and whether
 |---|---|---|
 | `tolerance` | 0.002 m | largest distance allowed between the mesh and the smooth surface it approximates |
 | `min_radius` | 0 | axes whose base radius is below this are not meshed, nor are the axes they bear; their leaves stay |
-| `leaf_fraction` | 1 | fraction of the leaves kept, enlarged so that the total leaf area is preserved |
+| `leaf_fraction` | 1 | fraction of the leaves (or twigs) kept, enlarged so that the total leaf area is preserved |
 | `max_cycle` | none | mesh the plant as it was at the end of this growth cycle |
 | `seed` | 0 | seed of the mesh-level variation (leaf order, size, attitude and colour, texture offsets) |
 | `parallel` | false | fill the buffers on the global `rayon` pool |
 
-`MeshOptions::with_quality(q)` sets the three level-of-detail controls from one number,
-1 being full detail: the tolerance is the default divided by `q` squared, `min_radius` is
-half the increase of the tolerance, and `leaf_fraction` is `q`. Side, ring and leaf
-counts are then roughly proportional to `q`. The defaults are starting points, not
-measured values.
+`MeshOptions::with_quality(q)` sets the level-of-detail controls from one number, 1 being
+full detail: the tolerance is the default divided by `q` squared and `leaf_fraction` is
+`q`. Side, ring and leaf counts are then roughly proportional to `q`. `min_radius` stays
+0: a thin axis costs few triangles at a coarse tolerance, and dropping it would leave its
+leaves in the air. The defaults are starting points, not measured values.
 
 ## Branch sweep
 
@@ -87,7 +87,11 @@ the smooth surface: radial, tilted by the slope of the radius, so collars and fl
 shade as curved surfaces. Front faces are counter-clockwise seen from outside.
 
 **Tip.** The tip of every axis is closed by a fan to one apex vertex half a radius beyond
-the last ring. The base of a root axis is left open.
+the last ring.
+
+**Foot.** The base of a root axis is closed by a flat fan facing backwards, with its own
+copy of the first ring and a vertex at its centre, so a stem is not hollow seen from
+below.
 
 ## Junctions
 
@@ -133,13 +137,27 @@ Texel density is that of the species wherever the circumference is at least one 
 repeat. Thinner axes have one repeat around and a higher density. Along a tapering axis
 the density rises towards the tip, since the number of repeats around is constant.
 
-The bark part has no vertex colours; its material takes `bark.color` and
-`bark.roughness`.
+## Bark colour
+
+The bark material takes `bark.roughness` and a base colour. A species that sets neither
+`bark.young_color` nor `bark.color_variation` has no vertex colours on its bark, and the
+base colour is `bark.color`.
+
+- `young_color` is the colour of thin axes: the bark blends from it to `color` as the
+  radius grows from 0 to `young_radius`, along a smoothstep. A birch has a white trunk and
+  dark twigs this way, a pine a grey-brown trunk and orange limbs.
+- `color_variation` darkens each axis by a random fraction up to this value, drawn from
+  the mesh seed and the chain.
+
+Both are written as vertex colours, constant around a ring. The base colour of the
+material is then, per channel, the larger of `color` and `young_color`, and the vertex
+colours are the ratio to it, so they never exceed 1.
 
 ## Foliage
 
-One leaf is instanced at every `OrganSite` of kind `Leaf` whose node is not shed. Other
-kinds of organ are ignored for now.
+One leaf, or one twig for a species with a `[foliage.twig]`, is instanced at every
+`OrganSite` of kind `Leaf` whose node is not shed. Other kinds of organ are ignored for
+now.
 
 **Leaf geometry.** The species leaf is built once per mesh, in the frame of a site: `x`
 from base to tip, `y` across, `z` towards the upper side.
@@ -151,7 +169,9 @@ from base to tip, `y` across, `z` towards the upper side.
   midrib bends along a circular arc by `curvature_deg`. A blade of `n` segments has
   `3 n - 1` vertices and `4 (n - 1)` triangles; `n` is `segments` at most, fewer when the
   tolerance is coarse. Whatever `n`, the polygon is widened so that its area is that of
-  the smooth outline.
+  the smooth outline. A blade of two segments whose fold and bend both stay within the
+  tolerance is drawn flat, as a diamond of two triangles. With `segments = 1` a blade is
+  a single flat triangle, widest at its base: a needle.
 - `leaflet_pairs > 0`: a pinnately compound leaf, `2 pairs + 1` blades on a straight
   rachis, the lateral ones at `leaflet_angle_deg` from it.
 - `geometry = "card"`: a flat rectangle over the extent of the leaf, for an alpha-masked
@@ -159,19 +179,51 @@ from base to tip, `y` across, `z` towards the upper side.
   texture to it.
 
 Both kinds have texture coordinates over the bounding rectangle of the leaf, `v` from
-base to tip. The petiole (`petiole_length`) and the rachis are one thin triangle. The leaf
+base to tip. The petiole (`petiole_length`) and the rachis are one thin triangle; the
+petiole of a simple leaf is left out when it is thinner than the tolerance. The leaf
 material is double-sided.
+
+**Twigs.** With `foliage.twig.leaves > 0` (or fins) a site bears a twig instead of a
+leaf: a small template built once per mesh and instanced like a leaf, baked into the
+leaf part (glTF instancing is not used). A twig lives in the frame of its site, `x`
+along it, and its stem follows a circular arc of `twig.length` that bends by
+`twig.bend_deg` towards the lower side of the site.
+
+- *Leaves.* `twig.leaves` copies of the species leaf: the lateral ones on nodes evenly
+  spaced along the stem, `twig.leaves_per_node` per node, turned by
+  `twig.divergence_deg` from node to node and leaving the stem at
+  `twig.inclination_deg`; a terminal one continues the stem (`twig.terminal_leaf`).
+  Their upper sides face the upper side of the site, or with `twig.radial` their planes
+  contain the stem, as for needles around a shoot.
+- *Stem.* A three-sided pyramid of radius `twig.stem_radius` at the base, in two segments
+  when the twig bends; none when the radius is 0.
+- *Fins.* `twig.fins` flat strips along the stem, `twig.fin_width` wide on each side,
+  darkened by `twig.fin_shade`. Needles are too many and too thin to draw: the fins stand
+  for their bulk at two triangles each, and a few enlarged needles fringe the outline.
+- *Variants.* A plant uses `twig.variants` versions of the template, which differ in the
+  size, attitude and shade of each leaf (by the variation amounts of the species). Each
+  site draws its variant. All variants have the same vertex count.
+
+The stem belongs to the leaf part and takes the colour of young bark: the base colour of
+the leaf material is, per channel, the larger of `foliage.color` and that colour, and the
+vertex colours carry the ratio. With `foliage.inclination_deg = 0` a twig lies along the
+axis that bears it and needs no stem: this is how the needles of a pine shoot are drawn.
+
+A twig of 5 leaves of two segments at the default tolerance has 44 vertices and 28
+triangles (8 vertices and 5 triangles per leaf with its petiole, 4 and 3 for the stem); a
+bent conifer branchlet of 12 needles and 3 fins has 61 vertices and 33 triangles.
 
 **Placement.** The leaf takes the frame of its site: `direction`, `normal x direction`,
 `normal`. The site is on the centerline, so the leaf is moved out by the radius of its
 node along the part of `direction` that is orthogonal to the internode. Its length is
 `foliage.length` times the `scale` of the site.
 
-**Variation.** Each leaf draws its own size (`size_variation`), a small rotation about
+**Variation.** Each leaf or twig draws its own size (`size_variation`), a small rotation about
 each of its axes (`orientation_variation_deg`) and a colour (`hue_variation`,
 `brightness_variation`) from the random stream of its organ index, so a leaf looks the
 same whatever else changes in the plant. The colour is written as a vertex colour, at
-most 1 per channel, that multiplies the base colour `foliage.color` of the material.
+most 1 per channel, that multiplies the base colour of the material (`foliage.color`,
+unless the stem of a twig raises it, see above).
 
 ## Level of detail
 
@@ -180,7 +232,8 @@ Detail is reduced from the graph, not by decimating a mesh.
 - **Tolerance.** A larger tolerance gives fewer rings, fewer sides and coarser blades,
   and leaves out collars, flares and lobes smaller than itself.
 - **Radius cut.** Axes below `min_radius` are dropped with everything they bear. Their
-  leaves stay, which keeps the crown full at a distance.
+  leaves stay, which keeps the crown full at a distance but leaves them in the air when
+  seen closer; `with_quality` therefore does not use it.
 - **Leaf prefix.** Leaves are stored in a random order, so any prefix of the leaf buffer
   is an unbiased sample of the crown (the stochastic simplification of Cook et al. 2007,
   used for foliage by Livny et al. 2011 and Pirk et al. 2012). `leaf_fraction = f` keeps
@@ -238,7 +291,7 @@ All defaults are starting points for tuning, not measured values.
 |---|---|---|
 | `geometry` | `"outline"` | `"outline"` mesh or `"card"` rectangle |
 | `shape` | `"ovate"` | blade outline: `elliptic`, `ovate`, `obovate`, `lanceolate`, `needle` |
-| `segments` | 4 | most segments along the midrib of a blade (2 to 16) |
+| `segments` | 4 | most segments along the midrib of a blade (2 to 16), or 1 for a single triangle |
 | `fold_deg` | 15 | angle by which each half of the blade is raised about the midrib |
 | `curvature_deg` | 25 | bend of the blade from base to tip, positive towards its lower side |
 | `petiole_length` | 0.15 | petiole length divided by the leaf length |
@@ -253,10 +306,37 @@ All defaults are starting points for tuning, not measured values.
 `length`, `width_ratio`, `color` and `retention_cycles` are used as described above. For
 a compound leaf `length` is that of the whole leaf and `width_ratio` that of a leaflet.
 
+`density`, `per_node` and `min_order` select the leaf sites during growth
+([Growth](growth.md)).
+
+### `[foliage.twig]`
+
+| Field | Default | Meaning |
+|---|---|---|
+| `leaves` | 0 | leaves on one twig, 0 for none (at most 64) |
+| `length` | 0.12 m | length of the twig stem |
+| `leaves_per_node` | 1 | leaves at each node of the twig |
+| `divergence_deg` | 137.5 | turn between successive nodes: 180 for two flat ranks, 0 with two leaves per node for a feather |
+| `inclination_deg` | 50 | angle between a leaf and the twig |
+| `bend_deg` | 15 | bend of the twig from base to tip, positive towards the lower side of the site |
+| `stem_radius` | 0.002 m | radius of the stem at its base, 0 for no stem |
+| `terminal_leaf` | true | a leaf continues the twig at its tip |
+| `radial` | false | leaf planes contain the stem, and the first leaf points to a random azimuth |
+| `fins` | 0 | flat strips along the stem (at most 8) |
+| `fin_width` | 0.02 m | half-width of a fin |
+| `fin_shade` | 0.8 | brightness of the fins relative to the leaves |
+| `variants` | 4 | versions of the template used by one plant (1 to 16) |
+
 ### `[bark]`
 
-`color`, `roughness` and `texture_size` are used as described above; the mesher adds no
-bark parameter.
+| Field | Default | Meaning |
+|---|---|---|
+| `color` | `[0.2, 0.14, 0.09]` | colour of old bark, linear RGB |
+| `young_color` | none | colour of thin axes |
+| `young_radius` | 0.03 m | radius from which the bark has its old colour |
+| `color_variation` | 0 | largest darkening of one axis, in `[0, 1]` |
+| `roughness` | 0.9 | roughness of the bark material |
+| `texture_size` | `[0.5, 0.5]` m | size of one texture repeat, around and along |
 
 ## Looking at a mesh
 
@@ -272,4 +352,7 @@ writes the mesh of a hand-built skeleton as a `.glb` file for any glTF viewer.
   angle shows a crease where the two tubes meet.
 - Where an axis bends more tightly than its own radius, rings overlap on the inside of
   the bend.
-- Twigs, flowers and fruits are not instanced yet, and leaf textures are not generated.
+- Twigs are baked into the leaf part, one copy per site: a file does not shrink for
+  repeating them. Flowers and fruits are not instanced yet, and leaf textures are not
+  generated.
+- Twig stems are labelled as foliage, since they belong to the leaf part.

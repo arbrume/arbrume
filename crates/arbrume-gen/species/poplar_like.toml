@@ -1,0 +1,79 @@
+# Poplar-like broadleaf tree of the columnar kind: branches leave the trunk at a narrow
+# angle and rise close to it, in a tall spire furnished from near the ground.
+#
+# Typical size at age 30: about 19 m tall, crown 4.5 m wide, trunk 0.4 m across at the
+# base. Every value is a starting point chosen by eye, not a measurement.
+
+schema_version = 0
+name = "Poplar-like columnar broadleaf"
+
+[architecture]
+branching = "monopodial"
+growth_rhythm = "rhythmic"
+branching_pattern = "diffuse"
+branch_timing = "proleptic"
+max_order = 3
+phyllotaxis = { leaves_per_node = 1, divergence_deg = 137.5 }
+
+[growth]
+axis_length = { by_order = [
+    21.0,
+    { points = [[0.0, 5.5], [0.4, 5.0], [0.8, 3.0], [1.0, 1.2]], interp = "smooth" },
+    [[0.0, 0.6], [0.4, 1.6], [1.0, 0.9]],
+    0.4,
+] }
+shoot_length = { by_order = [[[0.0, 0.9], [1.0, 0.35]], [[0.0, 0.5], [1.0, 0.25]], 0.3, 0.2] }
+length_variation = 0.15
+internode_length = { by_order = [0.36, 0.34, 0.2, 0.13] }
+branch_probability = { by_order = [0.7, [[0.0, 0.0], [0.1, 0.6], [1.0, 0.7]], 0.5] }
+bare_base = { by_order = [0.06, 0.0, 0.0] }
+branching_angle = { by_order = [50.0, [[0.0, 30.0], [1.0, 20.0]], 30.0, 35.0] }
+branching_angle_variation = 5.0
+direction_variation = { by_order = [1.0, 3.0, 5.0, 5.0] }
+gnarl = { by_order = [2.0, 6.0, 8.0, 6.0] }
+gravitropic_setpoint = { by_order = [0.0, 4.0, 10.0, 30.0] }
+tropism_weight = { by_order = [0.1, 0.12, 0.1, 0.05] }
+
+[geometry]
+radius_model = "tapered"
+radius_ratio = 0.011
+child_radius_exponent = 1.25
+taper = [[0.0, 1.0], [0.7, 0.45], [1.0, 0.08]]
+flare = 0.6
+
+[foliage]
+length = 0.09
+width_ratio = 0.95
+shape = "ovate"
+segments = 2
+inclination_deg = 55.0
+retention_cycles = 4
+density = 0.55
+per_node = 2
+color = [0.085, 0.24, 0.045]
+hue_variation = 0.1
+brightness_variation = 0.3
+twig = { leaves = 5, length = 0.18, inclination_deg = 60.0, bend_deg = 10.0, stem_radius = 0.002 }
+
+[bark]
+color = [0.16, 0.15, 0.13]
+young_color = [0.2, 0.19, 0.12]
+young_radius = 0.04
+color_variation = 0.12
+
+[variation]
+age = [10, 40]
+scale = [0.85, 1.15]
+
+[variation.jitter]
+"growth.axis_length" = 0.15
+"growth.internode_length" = 0.08
+"growth.branch_probability" = 0.1
+"growth.branching_angle" = 0.12
+"growth.gravitropic_setpoint" = 0.1
+"growth.gnarl" = 0.3
+"growth.curvature" = 0.25
+"geometry.radius_ratio" = 0.15
+"foliage.length" = 0.1
+"foliage.color" = 0.1
+"bark.color" = 0.08

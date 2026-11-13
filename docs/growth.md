@@ -67,12 +67,20 @@ the graph is compacted) nor by an order of creation.
 
 ### Age
 
-Except for one parameter, the stages of the parametric mode do not look at `age`. A plant
-grown for `n` cycles is then exactly the nodes born before cycle `n` of the same plant
-grown longer: same chains, same positions. The exception is `bare_base`, which removes
-the lowest laterals as the bearing axis gets longer; everything else stays in place,
-because the random draws of an axis do not depend on which other axes exist. Radii, leaf
-sites and bending are computed at the end and do depend on the age.
+Except for two parameters, the stages of the parametric mode do not look at `age`. A
+plant grown for `n` cycles is then exactly the nodes born before cycle `n` of the same
+plant grown longer: same chains, same positions. The exceptions are `bare_base`, which
+removes the lowest laterals as the bearing axis gets longer, and `branch_lifespan`, which
+removes laterals older than a number of cycles (and `aging_angle`, which turns them as
+they age); everything else stays in place, because the random draws of an axis do not
+depend on which other axes exist. Radii, leaf sites and bending are computed at the end
+and do depend on the age.
+
+A plant stops changing once every axis has reached its full-grown length. How long that
+takes follows from `axis_length` and `shoot_length`: a `shoot_length` curve that falls
+along the trunk gives fast early growth that slows towards the full height, and a trunk
+that needs more cycles than the ages one generates never saturates. Node counts need not
+increase with age, since `bare_base` and `branch_lifespan` shed branches.
 
 ## Parametric mode
 
@@ -84,8 +92,9 @@ refer to the full-grown length of the axis, which is fixed when its bud forms.
 Bud formation. On each new node the buds follow the leaves: `leaves_per_node` positions,
 turned by the divergence angle from node to node. A bud forms with probability
 `branch_probability`. No bud forms above `max_order`, on a short axis, or on the
-`bare_base` of its bearing axis. A bud whose axis would be shorter than half an internode
-aborts.
+`bare_base` of its bearing axis, and a bud older than the `branch_lifespan` of its
+position is left out with all it would bear. A bud whose axis would be shorter than half
+an internode aborts.
 
 Axis length. An admitted bud gets the full-grown length of its axis at once:
 
@@ -160,6 +169,8 @@ defaults are starting points for tuning, not measurements.
 |---|---|---|---|
 | `branch_probability` | curve, order of the bearing axis | along the bearing axis | probability that a bud forms |
 | `bare_base` | curve, order of the bearing axis | attachment of the bearing axis along its own parent | fraction of the axis from its base without laterals, counted on the length the axis has at the age of the plant |
+| `branch_lifespan` | curve, order of the bearing axis | along the bearing axis | number of cycles a lateral lives before it is shed with all it bears; 0 for ever. A lateral formed in cycle `c` is present while `age - c` is at most the lifespan |
+| `aging_angle` | single curve | relative age of a lateral with a lifespan, 0 just formed, 1 about to be shed | angle added to `branching_angle`; a rising curve makes old fronds droop under young ones |
 | `unit_branching` | single curve | position of the node in its growth unit | factor on `branch_probability` for a rhythmic branching pattern; rising towards 1 puts branches in tiers at the end of each unit |
 | `whorl` | curve, order of the bearing axis | along the axis | number of buds spread evenly on the last node of each growth unit; below 0.5 the node follows the phyllotaxis |
 | `branching_angle` | curve, order of the lateral | along the parent | insertion angle between a lateral and its parent |
@@ -182,6 +193,7 @@ defaults are starting points for tuning, not measurements.
 | Field | Type | Position | Meaning |
 |---|---|---|---|
 | `fork_probability` | curve | along the axis | probability per cycle that a monopodial axis forks at the end of its shoot; both axes keep the order and the full-grown length |
+| `fork_limit` | integer | | largest number of successive forks along one line of descent: 1 gives at most two leaders, 2 at most four. Unlimited by default, in which case a fork probability applied over many cycles doubles the axes again and again |
 | `fork_angle` | curve | along the axis | angle by which each axis of a fork turns away; the fork opens by twice this |
 | `relay_angle` | curve | along the axis | angle between a relay of a sympodial axis and the axis it continues |
 | `stems` | integer | | number of stems rising from the ground |
@@ -233,15 +245,28 @@ Each leaf is an `OrganSite` of kind `Leaf` on the node that bears it.
 | `scale` | `foliage.size_along_axis` at the position of the node along its axis |
 | `birth` | growth cycle of the node |
 
-A node has `leaves_per_node` sites, at the same azimuths as its buds. With `r` the
+A node has `leaves_per_node` sites, at the same azimuths as its buds, or
+`foliage.per_node` sites spread evenly around it when that is set: more sites than the
+phyllotaxis gives thicken the foliage without adding buds. With `r` the
 `foliage.retention_cycles`, a node keeps its leaves when it was born in the last `r`
 cycles, or when it belongs to the last `r` shoots of an axis that has finished growing:
 the tip of a full-grown axis stays leafy, as if it kept making short shoots. For a
-conifer, one site stands for the needles of one node.
+deciduous tree `r` counts the growth units whose short shoots still bear leaves, not the
+life of one leaf, so 3 or 4 fills a crown where 1 leaves only tufts at the tips.
 
-## Starter species
+Two more fields select the sites. Axes of an order below `foliage.min_order` bear none
+(1 keeps a trunk or a cane bare). Each position is kept with the probability
+`foliage.density`, drawn from the key of the meristem, the index of the node and the
+position, so thinning the foliage does not move the leaves that stay.
 
-`crates/arbrume-grow/tests/data/` holds three species files that exercise the mode: a
+A site bears one leaf, or one twig when the species has a `[foliage.twig]`: a stem with
+several leaves, or a needle-clad branchlet, built by the mesher (see
+[Meshing](mesh.md)). With `foliage.inclination_deg = 0` the twig lies along the axis.
+
+## Species
+
+The preset library is described in [Species library](species.md).
+`crates/arbrume-grow/tests/data/` holds three older species files kept as test fixtures: a
 broadleaf tree (`broadleaf.toml`: diffuse branching, plagiotropic branches, forks, pipe
 radii, bending), a conifer (`conifer.toml`: whorls at the end of each growth unit,
 conical crown, tapered radii, four cycles of needles) and a shrub (`shrub.toml`: six
