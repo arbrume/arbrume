@@ -8,5 +8,6 @@ code.
 :maxdepth: 2
 
 overview
+core
 research
 ```

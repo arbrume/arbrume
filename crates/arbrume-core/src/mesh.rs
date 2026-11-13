@@ -1,7 +1,7 @@
 //! Mesh buffers shared by the mesher and the exporters.
 //!
 //! A [`TreeMesh`] is a list of parts, one per material. Buffers are flat `f32`/`u32`
-//! vectors so they can be handed to glTF, NumPy or Blender without conversion.
+//! vectors so they can be handed to glTF, `NumPy` or Blender without conversion.
 //! Coordinates are meters, right-handed, Y up (the glTF convention).
 
 /// Semantic class of a part, written to exports as the ML label.

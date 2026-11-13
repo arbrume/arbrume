@@ -1,0 +1,74 @@
+# Example species file for the Arbrume species schema, version 0.
+#
+# An illustrative broadleaf tree, not a measured species: the values are starting points
+# for tuning. Every key is optional; anything left out takes the schema default.
+#
+# Curve syntax: a number is a constant; [[x, y], ...] is a list of control points over
+# the relative position x in [0, 1]; { points = [...], interp = "smooth" } joins them
+# with a monotone cubic; { by_order = [...] } gives one curve per branching order
+# (0 = trunk), the last one serving all deeper orders.
+
+schema_version = 0
+name = "Example broadleaf"
+
+[architecture]
+branching = "monopodial"
+growth_rhythm = "rhythmic"
+branching_pattern = "diffuse"
+branch_timing = "proleptic"
+max_order = 4
+phyllotaxis = { leaves_per_node = 1, divergence_deg = 137.5 }
+
+# Erect trunk, slanted branches with leaves in two ranks, short shoots at the periphery.
+[[architecture.axes]]
+orientation = "orthotropic"
+
+[[architecture.axes]]
+orientation = "plagiotropic"
+phyllotaxis = { leaves_per_node = 1, divergence_deg = 180.0 }
+
+[[architecture.axes]]
+orientation = "plagiotropic"
+short = true
+
+[growth]
+# Trunk height, then branch length over the attachment position along the parent: the
+# order 1 curve draws a rounded crown with its widest point below mid-height.
+axis_length = { by_order = [
+    12.0,
+    { points = [[0.0, 0.0], [0.2, 0.0], [0.45, 5.0], [0.8, 3.0], [1.0, 0.8]], interp = "smooth" },
+    [[0.0, 1.6], [1.0, 0.6]],
+    0.4,
+] }
+internode_length = { by_order = [0.3, 0.18, 0.1, 0.05] }
+# No branches on the lowest fifth of the trunk; more branching towards the tips.
+branch_probability = { by_order = [[[0.0, 0.0], [0.2, 0.0], [0.25, 0.6], [1.0, 0.9]], 0.5] }
+# Wide angles low on the trunk, narrower near the top.
+branching_angle = { by_order = [[[0.0, 75.0], [1.0, 35.0]], 50.0] }
+branching_angle_variation = 8.0
+direction_variation = { by_order = [1.5, 5.0, 9.0] }
+gravitropic_setpoint = { by_order = [0.0, 70.0, 80.0] }
+tropism_weight = { by_order = [0.05, [[0.0, 0.05], [1.0, 0.25]]] }
+
+[growth.self_organization]
+axis_bias = 0.52
+perception_distance = 5.0
+
+[geometry]
+radius_model = "pipe"
+pipe_exponent = 2.3
+tip_radius = 0.0025
+flare = 0.8
+
+[foliage]
+length = 0.09
+width_ratio = 0.6
+size_along_axis = [[0.0, 0.7], [1.0, 1.0]]
+inclination_deg = 50.0
+retention_cycles = 1
+color = [0.1, 0.28, 0.05]
+
+[bark]
+color = [0.22, 0.17, 0.12]
+roughness = 0.95
+texture_size = [0.6, 0.6]
