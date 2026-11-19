@@ -17,7 +17,9 @@
 //!
 //! Level of detail comes from the graph, not from decimating a mesh: [`MeshOptions`]
 //! sets a tolerance that drives ring and side counts, a radius below which axes are
-//! dropped and the fraction of leaves kept.
+//! dropped (their leaves reattached to a kept ancestor when asked) and the fractions of
+//! leaves and of twig leaves kept. [`lod`] plans a chain of such levels within triangle
+//! budgets, and [`wind`] computes the baked wind data of a mesh.
 //!
 //! The output depends on the graph, the species and the options only. In particular it
 //! is bit-identical with and without [`MeshOptions::parallel`] and for any number of
@@ -40,20 +42,28 @@
 
 #![forbid(unsafe_code)]
 
+mod axes;
 mod bark;
 mod leaf;
 mod leaves;
+pub mod lod;
 mod options;
+mod provenance;
 mod ring;
 pub mod synthetic;
 mod tube;
 mod twig;
+pub mod wind;
 
-pub use options::{DEFAULT_TOLERANCE, MeshError, MeshOptions};
+pub use leaves::LeafInstance;
+pub use lod::{LodLevel, LodOptions};
+pub use options::{DEFAULT_TOLERANCE, MeshError, MeshOptions, OrphanLeaves};
+pub use provenance::mesh_provenance;
 
 use arbrume_core::graph::PlantGraph;
 use arbrume_core::mesh::{Material, MeshBuffers, MeshPart, PartKind, TreeMesh};
 use arbrume_core::species::Species;
+use glam::Vec3;
 use twig::TemplateSet;
 
 /// Sizes of the mesh [`mesh_tree`] would build, known before any buffer is filled.
@@ -96,6 +106,7 @@ fn opaque(name: &str, color: [f32; 3], roughness: f32, double_sided: bool) -> Ma
         double_sided,
         alpha_cutoff: None,
         base_color_texture: None,
+        normal_texture: None,
     }
 }
 
@@ -127,6 +138,13 @@ pub struct Mesher {
     bark: bark::BarkPlan,
     leaves: leaves::LeafSet,
     circles: tube::Circles,
+    /// Whether each chain is meshed, by chain id.
+    kept: Vec<bool>,
+    /// Arc length of each node along its axis.
+    arcs: Vec<f32>,
+    wind: wind::WindPlan,
+    /// Largest radius cut of the level-of-detail chain being planned.
+    radius_cap: f32,
 }
 
 impl Mesher {
@@ -145,9 +163,22 @@ impl Mesher {
     ) -> Result<TemplateSet, MeshError> {
         check(graph, options)?;
         bark::plan_bark(&mut self.bark, graph, species, options)?;
-        leaves::select_leaves(&mut self.leaves, graph, &species.foliage, options);
+        self.bark.fill_kept(&mut self.kept);
+        let reattach = options.orphan_leaves == OrphanLeaves::Reattach && options.min_radius > 0.0;
+        if reattach || options.wind {
+            axes::node_arcs(graph, &mut self.arcs);
+        }
+        let mounting = axes::Mounting {
+            graph,
+            arcs: &self.arcs,
+            kept: &self.kept,
+            max_cycle: options.max_cycle,
+        };
+        leaves::select_leaves(&mut self.leaves, &mounting, &species.foliage, options);
         let (foliage, bark) = (&species.foliage, &species.bark);
-        let template = TemplateSet::new(foliage, bark, options.tolerance, options.seed);
+        let (tolerance, seed) = (options.tolerance, options.seed);
+        let fraction = options.twig_leaf_fraction;
+        let template = TemplateSet::thinned(foliage, bark, tolerance, seed, fraction);
         let (vertices, _) = leaves::leaf_counts(&template, self.leaves.organs.len());
         if u32::try_from(vertices).is_err() {
             return Err(MeshError::TooLarge { vertices });
@@ -212,11 +243,25 @@ impl Mesher {
         let mut bark = take_part(mesh, PartKind::Bark);
         let mut leaf = take_part(mesh, PartKind::Leaf);
         mesh.parts.clear();
+        mesh.wind = None;
+        self.wind.leaves.clear();
+        if options.wind {
+            self.wind
+                .build(graph, &self.bark, &self.arcs, options.max_cycle);
+            let (organs, mounts) = (&self.leaves.organs, &self.leaves.mounts);
+            self.wind.fill_leaves(graph, organs, mounts, &self.arcs);
+            mesh.wind = Some(self.wind.table.clone());
+        }
         if self.bark.indices > 0 {
             let color = species.bark.material_color();
             bark.material = opaque("bark", color, species.bark.roughness, false);
             let circles = &mut self.circles;
             bark::fill_bark(&self.bark, circles, options.parallel, &mut bark.buffers);
+            if options.wind {
+                self.wind.fill_bark(&self.bark, &mut bark.buffers);
+            } else {
+                bark.buffers.wind.clear();
+            }
             mesh.parts.push(bark);
         }
         let foliage = &species.foliage;
@@ -228,11 +273,73 @@ impl Mesher {
                 foliage,
                 set: &self.leaves,
                 templates: &template,
+                wind: &self.wind.leaves,
             };
             leaves::mesh_leaves(&source, options, &mut leaf.buffers);
             mesh.parts.push(leaf);
         }
         Ok(())
+    }
+}
+
+/// The leaf part of a mesh as instances of a few templates, for exporters that instance
+/// geometry instead of baking it.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct LeafInstances {
+    /// Template variants in the frame of a leaf (unit: one leaf length), with their
+    /// normals, texture coordinates and, as RGBA colours, the tints that multiply the
+    /// colour of an instance.
+    pub templates: Vec<MeshBuffers>,
+    /// Base colour of the leaf material.
+    pub base_color: [f32; 3],
+    /// The instances, in the order of the leaf part.
+    pub instances: Vec<LeafInstance>,
+}
+
+impl Mesher {
+    /// The leaves that [`Mesher::mesh`] builds from the same arguments, as instances of
+    /// their templates: transforming template `variant` of each instance gives the leaf
+    /// part vertex for vertex.
+    ///
+    /// # Errors
+    ///
+    /// The same as [`mesh_tree`].
+    pub fn leaf_instances(
+        &mut self,
+        graph: &PlantGraph,
+        species: &Species,
+        options: &MeshOptions,
+    ) -> Result<LeafInstances, MeshError> {
+        let template = self.plan(graph, species, options)?;
+        let source = leaves::LeafSource {
+            graph,
+            foliage: &species.foliage,
+            set: &self.leaves,
+            templates: &template,
+            wind: &[],
+        };
+        let instances = leaves::leaf_instances(&source, options);
+        let templates = template
+            .variants
+            .iter()
+            .map(|variant| MeshBuffers {
+                positions: variant.positions.iter().map(Vec3::to_array).collect(),
+                normals: variant.normals.iter().map(Vec3::to_array).collect(),
+                uvs: variant.uvs.clone(),
+                colors: variant
+                    .tints
+                    .iter()
+                    .map(|t| [t[0], t[1], t[2], 1.0])
+                    .collect(),
+                wind: Vec::new(),
+                indices: variant.indices.clone(),
+            })
+            .collect();
+        Ok(LeafInstances {
+            templates,
+            base_color: template.base_color,
+            instances,
+        })
     }
 }
 

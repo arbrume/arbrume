@@ -15,6 +15,7 @@ pub const TINY_PNG: [u8; 77] = [
 pub fn sample_mesh() -> TreeMesh {
     TreeMesh {
         parts: vec![trunk(), leaf_card()],
+        wind: None,
     }
 }
 
@@ -47,6 +48,7 @@ fn trunk() -> MeshPart {
             double_sided: false,
             alpha_cutoff: None,
             base_color_texture: None,
+            normal_texture: None,
         },
         buffers,
     }
@@ -62,6 +64,7 @@ fn leaf_card() -> MeshPart {
             double_sided: true,
             alpha_cutoff: Some(0.5),
             base_color_texture: Some(TINY_PNG.to_vec()),
+            normal_texture: None,
         },
         buffers: MeshBuffers {
             positions: vec![
@@ -73,6 +76,7 @@ fn leaf_card() -> MeshPart {
             normals: vec![[0.0, 0.0, 1.0]; 4],
             uvs: vec![[0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]],
             colors: Vec::new(),
+            wind: Vec::new(),
             indices: vec![0, 1, 2, 0, 2, 3],
         },
     }

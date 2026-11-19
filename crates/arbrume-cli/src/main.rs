@@ -7,17 +7,21 @@
 //! * `species list`, `species show <name>`: the built-in presets;
 //! * `info <file.toml>`: validate a species file;
 //! * `bench`: time each stage of the pipeline and the batch throughput, as a Markdown
-//!   table.
+//!   table;
+//! * `metrics`: the `ICTree` features of skeletons, summarised per species.
 //!
 //! Exit codes: 0 on success, 1 when generation or writing failed, 2 for invalid
 //! arguments, configuration or species files. The user guide is `docs/cli.md`.
 
 #![forbid(unsafe_code)]
 
+mod annotate;
 mod batch;
 mod bench;
 mod config;
 mod error;
+mod lods;
+mod metrics_cmd;
 mod progress;
 mod scene;
 mod sheet;
@@ -56,6 +60,8 @@ enum Command {
     Info(InfoArgs),
     /// Time the pipeline on the presets and print a Markdown table.
     Bench(bench::BenchArgs),
+    /// Summarise the realism features of skeletons per species.
+    Metrics(metrics_cmd::MetricsArgs),
     /// Render a contact sheet of thumbnails, for tuning species by eye.
     #[command(hide = true)]
     Sheet(sheet::SheetArgs),
@@ -90,6 +96,7 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Command::Species(SpeciesCommand::Show { name }) => species_cmd::show(&name),
         Command::Info(args) => species_cmd::info(&args.file),
         Command::Bench(args) => bench::run(&args),
+        Command::Metrics(args) => metrics_cmd::run(&args),
         Command::Sheet(args) => sheet::run(&args),
     }
 }

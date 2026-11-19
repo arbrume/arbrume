@@ -16,6 +16,8 @@ arbrume-mesh = { path = "crates/arbrume-mesh" }
 arbrume-export = { path = "crates/arbrume-export" }
 arbrume-gen = { path = "crates/arbrume-gen" }
 arbrume-raster = { path = "crates/arbrume-raster" }
+arbrume-lod = { path = "crates/arbrume-lod" }
+arbrume-metrics = { path = "crates/arbrume-metrics" }
 
 [workspace.lints.rust]
 missing_debug_implementations = "warn"

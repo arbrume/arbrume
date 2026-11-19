@@ -60,7 +60,7 @@ impl Budget {
 /// was used for before.
 #[derive(Debug, Clone, Default)]
 pub struct Generator {
-    mesher: Mesher,
+    pub(crate) mesher: Mesher,
 }
 
 impl Generator {
@@ -183,6 +183,23 @@ impl Generator {
         plant.params.mesh = *options;
         plant.stats.set_mesh(&plant.mesh);
         Ok(elapsed)
+    }
+
+    /// Where every vertex of the mesh of `plant` comes from (axis or organ site, and
+    /// semantic class), for ML labels. Runs the planning pass of the mesher on the graph
+    /// and mesh options of `plant`, which must be those its mesh was built with, as
+    /// every method of the generator leaves them.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GenError::Mesh`] when the mesher rejects the graph or the options.
+    pub fn provenance(
+        &mut self,
+        plant: &Plant,
+        species: &Species,
+    ) -> Result<arbrume_core::mesh::MeshProvenance, GenError> {
+        let options = &plant.params.mesh;
+        Ok(self.mesher.provenance(&plant.graph, species, options)?)
     }
 }
 

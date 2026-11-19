@@ -43,7 +43,8 @@ pub struct MeshOptions {
     /// axis) are left out.
     pub tolerance: f32,
     /// Axes whose base radius is below this value, in meters, are not meshed, nor are the
-    /// axes they bear. Their leaves stay. 0 keeps every axis.
+    /// axes they bear, within the limit of `max_drop_reach`. Their leaves follow
+    /// `orphan_leaves`. 0 keeps every axis.
     pub min_radius: f32,
     /// Fraction of the leaves to keep, in `[0, 1]`. Leaves are stored in a random order
     /// and the first `ceil(fraction * count)` are kept, each enlarged by
@@ -60,6 +61,35 @@ pub struct MeshOptions {
     /// Fill the buffers with the global `rayon` thread pool instead of the calling
     /// thread. The result is bit-identical either way.
     pub parallel: bool,
+    /// An axis thinner than `min_radius` is dropped only when every node of the axes it
+    /// bears, and of itself, is within this distance of its base, in meters. A finite
+    /// value bounds how far a reattached leaf moves ([`OrphanLeaves::Reattach`]), which
+    /// keeps the outline of the crown. Infinite by default: `min_radius` alone decides.
+    pub max_drop_reach: f32,
+    /// What happens to the leaves of axes dropped by `min_radius`.
+    pub orphan_leaves: OrphanLeaves,
+    /// Fraction of the leaves of a twig template kept, in `(0, 1]`: a twig of `n` leaves
+    /// keeps `max(1, round(fraction * n))` of them, spread along its stem and enlarged
+    /// so that the leaf area of the twig is preserved. No effect without a twig.
+    pub twig_leaf_fraction: f32,
+    /// Compute the baked wind data: [`MeshBuffers::wind`](arbrume_core::mesh::MeshBuffers)
+    /// on every part and [`TreeMesh::wind`](arbrume_core::mesh::TreeMesh), see
+    /// [`crate::wind`].
+    pub wind: bool,
+}
+
+/// What [`MeshOptions::min_radius`] does to the leaves of the axes it drops.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OrphanLeaves {
+    /// The leaves stay where they are, in the air where their axis was.
+    #[default]
+    Keep,
+    /// Each leaf moves to the nearest point of the kept axis its dropped axis grows
+    /// from, on its surface, so that no leaf floats.
+    Reattach,
+    /// The leaves are left out, and the others are enlarged so that the total leaf area
+    /// is preserved.
+    Drop,
 }
 
 impl Default for MeshOptions {
@@ -71,6 +101,10 @@ impl Default for MeshOptions {
             max_cycle: None,
             seed: 0,
             parallel: false,
+            max_drop_reach: f32::INFINITY,
+            orphan_leaves: OrphanLeaves::Keep,
+            twig_leaf_fraction: 1.0,
+            wind: false,
         }
     }
 }
@@ -98,7 +132,8 @@ impl MeshOptions {
     /// # Errors
     ///
     /// Returns [`MeshError::InvalidOption`] for a tolerance that is not positive and
-    /// finite, a negative or NaN `min_radius`, or a `leaf_fraction` outside `[0, 1]`.
+    /// finite, a negative or NaN `min_radius`, a `leaf_fraction` outside `[0, 1]` or a
+    /// `twig_leaf_fraction` outside `(0, 1]`.
     pub fn validate(&self) -> Result<(), MeshError> {
         let invalid = |field, value: f32, domain: &str| MeshError::InvalidOption {
             field,
@@ -112,6 +147,17 @@ impl MeshOptions {
         }
         if !(0.0..=1.0).contains(&self.leaf_fraction) {
             return Err(invalid("leaf_fraction", self.leaf_fraction, "in [0, 1]"));
+        }
+        if self.max_drop_reach.is_nan() || self.max_drop_reach < 0.0 {
+            return Err(invalid(
+                "max_drop_reach",
+                self.max_drop_reach,
+                "zero or more",
+            ));
+        }
+        if !(self.twig_leaf_fraction > 0.0 && self.twig_leaf_fraction <= 1.0) {
+            let value = self.twig_leaf_fraction;
+            return Err(invalid("twig_leaf_fraction", value, "in (0, 1]"));
         }
         Ok(())
     }

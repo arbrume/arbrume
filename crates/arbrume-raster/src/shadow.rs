@@ -101,6 +101,8 @@ impl DepthMap {
                 indices: part.indices,
                 cull_back: false,
                 first_id: 0,
+                mask: None,
+                alpha: part.alpha_test(),
             };
             rasterize(&mut self.buffer, &call);
         }

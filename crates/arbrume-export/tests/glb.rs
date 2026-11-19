@@ -226,6 +226,7 @@ fn empty_mesh_is_a_valid_empty_scene() {
             "empty_part",
             TreeMesh {
                 parts: vec![empty_part],
+                wind: None,
             },
         ),
     ] {
@@ -243,7 +244,13 @@ fn part_without_optional_attributes() {
     let mut part = common::sample_mesh().parts.remove(1);
     part.buffers.normals.clear();
     part.buffers.uvs.clear();
-    let bytes = encode("positions_only", &TreeMesh { parts: vec![part] });
+    let bytes = encode(
+        "positions_only",
+        &TreeMesh {
+            parts: vec![part],
+            wind: None,
+        },
+    );
     let gltf = parse(&bytes);
     let primitive = gltf.meshes().next().unwrap().primitives().next().unwrap();
     assert_eq!(primitive.attributes().count(), 1);
@@ -273,7 +280,10 @@ fn strip(vertices: usize) -> TreeMesh {
         indices,
         ..MeshBuffers::default()
     };
-    TreeMesh { parts: vec![part] }
+    TreeMesh {
+        parts: vec![part],
+        wind: None,
+    }
 }
 
 #[test]

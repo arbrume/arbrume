@@ -82,6 +82,7 @@ dependencies = [
  "arbrume-gen",
  "arbrume-grow",
  "arbrume-mesh",
+ "arbrume-metrics",
  "arbrume-raster",
  "clap",
  "glam",
@@ -109,6 +110,8 @@ version = "0.0.1"
 dependencies = [
  "arbrume-core",
  "bytemuck",
+ "crc32fast",
+ "glam",
  "gltf",
  "serde",
  "serde_json",
@@ -122,7 +125,9 @@ dependencies = [
  "arbrume-core",
  "arbrume-export",
  "arbrume-grow",
+ "arbrume-lod",
  "arbrume-mesh",
+ "arbrume-raster",
  "criterion",
  "glam",
  "gltf",
@@ -147,6 +152,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "arbrume-lod"
+version = "0.0.1"
+dependencies = [
+ "arbrume-core",
+ "arbrume-gen",
+ "arbrume-mesh",
+ "arbrume-raster",
+ "glam",
+ "png",
+]
+
+[[package]]
 name = "arbrume-mesh"
 version = "0.0.1"
 dependencies = [
@@ -156,6 +173,17 @@ dependencies = [
  "glam",
  "rayon",
  "thiserror",
+]
+
+[[package]]
+name = "arbrume-metrics"
+version = "0.0.1"
+dependencies = [
+ "arbrume-core",
+ "arbrume-gen",
+ "glam",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

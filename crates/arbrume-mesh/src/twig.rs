@@ -54,6 +54,12 @@ pub(crate) struct TemplateSet {
     pub variants: Vec<LeafTemplate>,
     /// Base colour of the leaf material.
     pub base_color: [f32; 3],
+    /// Number of leading vertices of each variant that belong to the twig stem; 0
+    /// without a twig or without a stem.
+    pub stem_vertices: usize,
+    /// Per variant and vertex, the distance of the vertex from the attachment point of
+    /// the instance divided by the largest such distance of the variant, in `[0, 1]`.
+    pub flutter: Vec<Vec<f32>>,
 }
 
 /// Frame of one leaf on a twig.
@@ -78,6 +84,10 @@ struct TwigBuilder<'a> {
     leaf_tint: [f32; 3],
     /// Tint of the stem.
     stem_tint: [f32; 3],
+    /// Factor on the size of every leaf, above 1 when the twig keeps fewer leaves.
+    leaf_scale: f32,
+    /// Leaves on the twig, at most `twig.leaves`.
+    leaves: u32,
     out: LeafTemplate,
 }
 
@@ -136,7 +146,7 @@ impl TwigBuilder<'_> {
             origin,
             forward,
             up,
-            scale: foliage.size_variation.mul_add(rng.signed(), 1.0),
+            scale: self.leaf_scale * foliage.size_variation.mul_add(rng.signed(), 1.0),
             tint: self.leaf_tint.map(|channel| channel * shade),
         }
     }
@@ -144,8 +154,8 @@ impl TwigBuilder<'_> {
     /// Adds the lateral leaves and the terminal leaf.
     fn leaves(&mut self, rng: &mut Rng) {
         let twig = self.foliage.twig;
-        let terminal = u32::from(twig.terminal_leaf).min(twig.leaves);
-        let laterals = twig.leaves - terminal;
+        let terminal = u32::from(twig.terminal_leaf).min(self.leaves);
+        let laterals = self.leaves - terminal;
         let per_node = u32::from(twig.leaves_per_node);
         let nodes = laterals.div_ceil(per_node).max(1);
         let phase = if twig.radial { rng.angle() } else { 0.0 };
@@ -247,15 +257,37 @@ impl TwigBuilder<'_> {
 impl TemplateSet {
     /// Templates of the foliage of a species, for a mesh built with `tolerance` and
     /// `seed`. `bark` gives the colour of twig stems.
-    pub(crate) fn new(foliage: &Foliage, bark: &Bark, tolerance: f32, seed: u64) -> Self {
+    ///
+    /// The twig keeps `max(1, round(fraction n))` of its `n` leaves, enlarged by
+    /// `sqrt(n / kept)` so that its leaf area is preserved.
+    pub(crate) fn thinned(
+        foliage: &Foliage,
+        bark: &Bark,
+        tolerance: f32,
+        seed: u64,
+        fraction: f32,
+    ) -> Self {
         let leaf = LeafTemplate::new(foliage, tolerance);
         let twig = &foliage.twig;
         if !twig.enabled() {
+            let flutter = vec![flutter_of(&leaf)];
             return Self {
                 variants: vec![leaf],
                 base_color: foliage.color,
+                stem_vertices: 0,
+                flutter,
             };
         }
+        let leaves = if twig.leaves == 0 {
+            0
+        } else {
+            ((fraction * twig.leaves as f32).round() as u32).clamp(1, twig.leaves)
+        };
+        let leaf_scale = if leaves == 0 {
+            1.0
+        } else {
+            (twig.leaves as f32 / leaves as f32).sqrt()
+        };
         let stem = bark.color_at(0.0);
         let has_stem = twig.stem_radius > 0.0;
         let base_color: [f32; 3] = std::array::from_fn(|channel| {
@@ -264,7 +296,8 @@ impl TemplateSet {
         });
         let ratio =
             |color: [f32; 3]| std::array::from_fn(|channel| color[channel] / base_color[channel]);
-        let variants = (0..twig.variants)
+        let mut stem_vertices = 0;
+        let variants: Vec<LeafTemplate> = (0..twig.variants)
             .map(|variant| {
                 let mut builder = TwigBuilder {
                     foliage,
@@ -273,17 +306,23 @@ impl TemplateSet {
                     bend: twig.bend_deg.to_radians(),
                     leaf_tint: ratio(foliage.color),
                     stem_tint: ratio(stem),
+                    leaf_scale,
+                    leaves,
                     out: LeafTemplate::default(),
                 };
                 let mut rng = Rng::new(seed, u32::MAX - variant, Stream::FOLIAGE);
                 builder.stem();
+                stem_vertices = builder.out.positions.len();
                 builder.leaves(&mut rng);
                 builder.out
             })
             .collect();
+        let flutter = variants.iter().map(flutter_of).collect();
         Self {
             variants,
             base_color,
+            stem_vertices,
+            flutter,
         }
     }
 
@@ -295,6 +334,21 @@ impl TemplateSet {
     }
 }
 
+/// Distance of each vertex of `template` from its origin, divided by the largest.
+fn flutter_of(template: &LeafTemplate) -> Vec<f32> {
+    let reach = template
+        .positions
+        .iter()
+        .map(|p| p.length())
+        .fold(0.0_f32, f32::max);
+    let scale = if reach > 0.0 { reach.recip() } else { 0.0 };
+    template
+        .positions
+        .iter()
+        .map(|p| (p.length() * scale).min(1.0))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::TemplateSet;
@@ -302,7 +356,7 @@ mod tests {
 
     fn set(foliage: &str) -> TemplateSet {
         let species = Species::from_toml_str(&format!("[foliage]\n{foliage}")).unwrap();
-        TemplateSet::new(&species.foliage, &species.bark, 1e-4, 7)
+        TemplateSet::thinned(&species.foliage, &species.bark, 1e-4, 7, 1.0)
     }
 
     #[test]
@@ -360,7 +414,7 @@ mod tests {
              [bark]\ncolor = [0.2, 0.1, 0.02]\n",
         )
         .unwrap();
-        let set = TemplateSet::new(&species.foliage, &species.bark, 1e-4, 1);
+        let set = TemplateSet::thinned(&species.foliage, &species.bark, 1e-4, 1, 1.0);
         assert_eq!(set.base_color, [0.2, 0.3, 0.05]);
         let stem = set.variants[0].tints[0];
         assert!((stem[0] - 1.0).abs() < 1e-6 && (stem[1] - 1.0 / 3.0).abs() < 1e-6);

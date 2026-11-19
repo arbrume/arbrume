@@ -29,10 +29,11 @@
 //! Every instance has the same number of vertices and indices, so instance `k` owns a
 //! fixed range of the buffers, and blocks of instances are filled independently.
 
-use crate::MeshOptions;
+use crate::axes::{Mount, Mounting};
 use crate::twig::TemplateSet;
+use crate::{MeshOptions, OrphanLeaves};
 use arbrume_core::graph::{OrganKind, OrganSite, PlantGraph};
-use arbrume_core::mesh::MeshBuffers;
+use arbrume_core::mesh::{MeshBuffers, WindVertex};
 use arbrume_core::rng::{Rng, Stream};
 use arbrume_core::species::Foliage;
 use glam::Vec3;
@@ -52,6 +53,10 @@ pub(crate) struct LeafSet {
     pub organs: Vec<u32>,
     /// Factor applied to the size of every kept leaf.
     pub enlargement: f32,
+    /// Where each kept leaf is attached, in buffer order, when some leaves were moved
+    /// to an ancestor of their axis ([`OrphanLeaves::Reattach`]); empty otherwise, every
+    /// leaf then being attached at its own node.
+    pub mounts: Vec<Mount>,
     /// Scratch of the counting sort: where the next leaf of each bucket goes.
     starts: Vec<u32>,
 }
@@ -71,21 +76,28 @@ fn bears_leaf(graph: &PlantGraph, site: &OrganSite, options: &MeshOptions, reten
     live && born && cycle - site.birth < retention
 }
 
-/// Chooses and orders the leaves of `graph` into `set`.
+/// Chooses and orders the leaves of `graph` into `set`. `mounting` says which axes are
+/// meshed; it decides, with `options.orphan_leaves`, what happens to the leaves of the
+/// others.
 pub(crate) fn select_leaves(
     set: &mut LeafSet,
-    graph: &PlantGraph,
+    mounting: &Mounting,
     foliage: &Foliage,
     options: &MeshOptions,
 ) {
     set.organs.clear();
+    set.mounts.clear();
     set.enlargement = 1.0;
     if !foliage.enabled || options.leaf_fraction <= 0.0 {
         return;
     }
+    let graph = mounting.graph;
     let retention = foliage.retention_cycles;
+    let drop = options.orphan_leaves == OrphanLeaves::Drop;
+    let own_kept = |site: &OrganSite| mounting.kept[graph.chain_of(site.node).index()];
+    let live = |site: &OrganSite| bears_leaf(graph, site, options, retention);
     let eligible = |(organ, site): (usize, &OrganSite)| {
-        bears_leaf(graph, site, options, retention).then(|| (organ, order_key(options.seed, organ)))
+        (live(site) && (!drop || own_kept(site))).then(|| (organ, order_key(options.seed, organ)))
     };
     let starts = &mut set.starts;
     starts.clear();
@@ -107,7 +119,47 @@ pub(crate) fn select_leaves(
     }
     let kept = ((options.leaf_fraction * total as f32).ceil() as usize).clamp(1, total);
     set.organs.truncate(kept);
-    set.enlargement = (total as f32 / kept as f32).sqrt();
+    let all = if drop {
+        graph.organs().iter().filter(|site| live(site)).count()
+    } else {
+        total
+    };
+    set.enlargement = (all as f32 / kept as f32).sqrt();
+    let sites = graph.organs();
+    let orphans = |&organ: &u32| !own_kept(&sites[organ as usize]);
+    if options.orphan_leaves == OrphanLeaves::Reattach && set.organs.iter().any(orphans) {
+        let mount = |&organ: &u32| {
+            let node = sites[organ as usize].node;
+            mounting
+                .mount(node)
+                .unwrap_or_else(|| mounting.on_node(node, graph.chain_of(node)))
+        };
+        set.mounts.extend(set.organs.iter().map(mount));
+    }
+}
+
+/// One leaf (or twig) of the leaf part: the template variant and the transform that
+/// place it, as [`crate::Mesher::leaf_instances`] returns them.
+///
+/// A vertex `p` of the template becomes `anchor + size * (p.x axes[0] + p.y axes[1] +
+/// p.z axes[2])`, and its normal `n` becomes `n.x axes[0] + n.y axes[1] + n.z axes[2]`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LeafInstance {
+    /// Organ index of the site in the graph.
+    pub organ: u32,
+    /// Chain id of the axis the leaf is attached to: its own, or the kept ancestor it
+    /// was moved to.
+    pub chain: u32,
+    /// Point of the bark surface the leaf is attached at.
+    pub anchor: [f32; 3],
+    /// Unit axes of the leaf frame: forward (base to tip), across, up.
+    pub axes: [[f32; 3]; 3],
+    /// Uniform scale of the template.
+    pub size: f32,
+    /// Colour factor of the leaf, multiplied with the tints of the template.
+    pub color: [f32; 3],
+    /// Template variant.
+    pub variant: u32,
 }
 
 /// The part of the leaf buffers owned by a run of leaves.
@@ -116,6 +168,8 @@ struct LeafOut<'a> {
     normals: &'a mut [[f32; 3]],
     uvs: &'a mut [[f32; 2]],
     colors: &'a mut [[f32; 4]],
+    /// Empty without wind data.
+    wind: &'a mut [WindVertex],
     indices: &'a mut [u32],
     /// Index of the first vertex of the run in the whole buffer.
     base: u32,
@@ -131,25 +185,36 @@ struct Instancer<'a> {
     length: f32,
     /// Tangent of the largest random rotation about each axis.
     turn: f32,
+    /// Mount of each leaf in buffer order, or empty when every leaf is on its node.
+    mounts: &'a [Mount],
+    /// Wind data of each leaf in buffer order, with a zero flutter, or empty.
+    wind: &'a [WindVertex],
 }
 
 impl Instancer<'_> {
-    /// Point of the bark surface where the leaf of `site` is attached.
-    fn anchor(&self, site: &OrganSite) -> Vec3 {
+    /// Point of the bark surface where the leaf of `site` is attached: on its node, or
+    /// on `mount` when it was moved.
+    fn anchor(&self, site: &OrganSite, mount: Option<&Mount>) -> Vec3 {
         let graph = self.graph;
-        let node = graph.position(site.node);
-        let axis = (node - graph.proximal(site.node)).normalize_or_zero();
+        let (node, axis, radius) = mount.map_or_else(
+            || {
+                let node = graph.position(site.node);
+                let axis = (node - graph.proximal(site.node)).normalize_or_zero();
+                (node, axis, graph.radii()[site.node.index()])
+            },
+            |mount| (mount.center, mount.axis, mount.radius),
+        );
         let outward = site.direction - axis * site.direction.dot(axis);
         let reach = outward.length();
         if reach > 1e-3 {
-            node + outward * (graph.radii()[site.node.index()] / reach)
+            node + outward * (radius / reach)
         } else {
             node
         }
     }
 
-    /// Writes the leaf of organ `organ` into `out`, which holds exactly one leaf.
-    fn write(&self, organ: u32, out: &mut LeafOut) {
+    /// Where and how the leaf in buffer position `slot`, of organ `organ`, is placed.
+    fn place(&self, slot: usize, organ: u32) -> LeafInstance {
         let site = &self.graph.organs()[organ as usize];
         let foliage = self.foliage;
         let mut rng = Rng::at(self.seed, organ, Stream::FOLIAGE, 1);
@@ -170,13 +235,34 @@ impl Instancer<'_> {
             brightness,
             (brightness * (1.0 - hue)).min(1.0),
         ];
-        let anchor = self.anchor(site);
-        let variants = &self.templates.variants;
-        let template = if variants.len() > 1 {
-            &variants[rng.below(variants.len() as u32) as usize]
+        let mount = self.mounts.get(slot);
+        let anchor = self.anchor(site, mount);
+        let variants = self.templates.variants.len();
+        let variant = if variants > 1 {
+            rng.below(variants as u32)
         } else {
-            &variants[0]
+            0
         };
+        let chain = mount.map_or_else(|| self.graph.chain_of(site.node).0, |mount| mount.chain);
+        LeafInstance {
+            organ,
+            chain,
+            anchor: anchor.to_array(),
+            axes: [forward.to_array(), across.to_array(), up.to_array()],
+            size,
+            color,
+            variant,
+        }
+    }
+
+    /// Writes the leaf in buffer position `slot`, of organ `organ`, into `out`, which
+    /// holds exactly one leaf.
+    fn write(&self, slot: usize, organ: u32, out: &mut LeafOut) {
+        let placed = self.place(slot, organ);
+        let [forward, across, up] = placed.axes.map(Vec3::from);
+        let (anchor, size, color) = (Vec3::from(placed.anchor), placed.size, placed.color);
+        let variant = placed.variant as usize;
+        let template = &self.templates.variants[variant];
         for (slot, local) in out.positions.iter_mut().zip(&template.positions) {
             let offset = forward * local.x + across * local.y + up * local.z;
             *slot = (anchor + offset * size).to_array();
@@ -196,27 +282,43 @@ impl Instancer<'_> {
         for (slot, local) in out.indices.iter_mut().zip(&template.indices) {
             *slot = out.base + local;
         }
+        if let Some(base) = self.wind.get(slot) {
+            let flutter = &self.templates.flutter[variant];
+            for (vertex, &amount) in out.wind.iter_mut().zip(flutter) {
+                *vertex = *base;
+                vertex[5] = amount;
+            }
+        }
     }
 
-    /// Writes the leaves `organs` into `out`, which holds exactly that many leaves.
-    fn write_block(&self, organs: &[u32], out: &mut LeafOut) {
+    /// Writes the leaves `organs`, the first of which is in buffer position `first`,
+    /// into `out`, which holds exactly that many leaves.
+    fn write_block(&self, first: usize, organs: &[u32], out: &mut LeafOut) {
         let (vertices, indices) = self.templates.instance_counts();
         let positions = out.positions.chunks_exact_mut(vertices);
         let normals = out.normals.chunks_exact_mut(vertices);
         let uvs = out.uvs.chunks_exact_mut(vertices);
         let colors = out.colors.chunks_exact_mut(vertices);
         let triangles = out.indices.chunks_exact_mut(indices);
+        let windy = !out.wind.is_empty();
+        let mut winds = out.wind.chunks_exact_mut(vertices.max(1));
         let slots = positions.zip(normals).zip(uvs).zip(colors).zip(triangles);
         for (leaf, ((((positions, normals), uvs), colors), indices)) in slots.enumerate() {
+            let wind = if windy {
+                winds.next().unwrap_or_default()
+            } else {
+                &mut []
+            };
             let mut one = LeafOut {
                 positions,
                 normals,
                 uvs,
                 colors,
+                wind,
                 indices,
                 base: out.base + (leaf * vertices) as u32,
             };
-            self.write(organs[leaf], &mut one);
+            self.write(first + leaf, organs[leaf], &mut one);
         }
     }
 }
@@ -238,6 +340,41 @@ pub(crate) struct LeafSource<'a> {
     pub set: &'a LeafSet,
     /// Geometry of one instance.
     pub templates: &'a TemplateSet,
+    /// Wind data of each leaf in buffer order, with a zero flutter, or empty for none.
+    pub wind: &'a [WindVertex],
+}
+
+/// The slices of the leaf buffers of one block of [`BLOCK`] leaves.
+type BlockSlices<'a> = (
+    usize,
+    (
+        (
+            (
+                ((&'a [u32], &'a mut [[f32; 3]]), &'a mut [[f32; 3]]),
+                &'a mut [[f32; 2]],
+            ),
+            (&'a mut [[f32; 4]], &'a mut [u32]),
+        ),
+        &'a mut [WindVertex],
+    ),
+);
+
+/// The placement of every leaf of `source`, in buffer order.
+pub(crate) fn leaf_instances(source: &LeafSource, options: &MeshOptions) -> Vec<LeafInstance> {
+    let instancer = Instancer {
+        graph: source.graph,
+        foliage: source.foliage,
+        templates: source.templates,
+        seed: options.seed,
+        length: source.foliage.length * source.set.enlargement,
+        turn: source.foliage.orientation_variation_deg.to_radians().tan(),
+        mounts: &source.set.mounts,
+        wind: &[],
+    };
+    let organs = source.set.organs.iter().enumerate();
+    organs
+        .map(|(slot, &organ)| instancer.place(slot, organ))
+        .collect()
 }
 
 /// Sizes `buffers` for the leaves of `source` and fills them. Their allocations are
@@ -248,12 +385,17 @@ pub(crate) fn mesh_leaves(source: &LeafSource, options: &MeshOptions, buffers: &
         foliage,
         set,
         templates,
+        wind,
     } = *source;
     let (vertices, indices) = leaf_counts(templates, set.organs.len());
     buffers.positions.resize(vertices, [0.0; 3]);
     buffers.normals.resize(vertices, [0.0; 3]);
     buffers.uvs.resize(vertices, [0.0; 2]);
     buffers.colors.resize(vertices, [0.0; 4]);
+    buffers.wind.clear();
+    if !wind.is_empty() {
+        buffers.wind.resize(vertices, [0.0; 6]);
+    }
     buffers.indices.resize(indices, 0);
     if vertices == 0 {
         return;
@@ -265,18 +407,29 @@ pub(crate) fn mesh_leaves(source: &LeafSource, options: &MeshOptions, buffers: &
         seed: options.seed,
         length: foliage.length * set.enlargement,
         turn: foliage.orientation_variation_deg.to_radians().tan(),
+        mounts: &set.mounts,
+        wind,
     };
     let (per_vertex, per_index) = leaf_counts(templates, BLOCK);
-    let block = |(number, ((((organs, positions), normals), uvs), (colors, indices)))| {
+    let block = |slices: BlockSlices| {
+        let (number, ((((organs, positions), normals), uvs), (colors, indices)), wind) =
+            (slices.0, slices.1.0, slices.1.1);
         let mut out = LeafOut {
             positions,
             normals,
             uvs,
             colors,
+            wind,
             indices,
             base: (number * per_vertex) as u32,
         };
-        instancer.write_block(organs, &mut out);
+        instancer.write_block(number * BLOCK, organs, &mut out);
+    };
+    let blocks = set.organs.len().div_ceil(BLOCK);
+    let mut winds: Vec<&mut [WindVertex]> = if buffers.wind.is_empty() {
+        (0..blocks).map(|_| Default::default()).collect()
+    } else {
+        buffers.wind.chunks_mut(per_vertex).collect()
     };
     if options.parallel {
         let organs = set.organs.par_chunks(BLOCK);
@@ -285,8 +438,10 @@ pub(crate) fn mesh_leaves(source: &LeafSource, options: &MeshOptions, buffers: &
         let uvs = buffers.uvs.par_chunks_mut(per_vertex);
         let colors = buffers.colors.par_chunks_mut(per_vertex);
         let indices = buffers.indices.par_chunks_mut(per_index);
+        let winds = winds.par_iter_mut().map(std::mem::take);
         let slots = organs.zip(positions).zip(normals).zip(uvs);
-        slots.zip(colors.zip(indices)).enumerate().for_each(block);
+        let slots = slots.zip(colors.zip(indices)).zip(winds);
+        slots.enumerate().for_each(block);
     } else {
         let organs = set.organs.chunks(BLOCK);
         let positions = buffers.positions.chunks_mut(per_vertex);
@@ -294,8 +449,10 @@ pub(crate) fn mesh_leaves(source: &LeafSource, options: &MeshOptions, buffers: &
         let uvs = buffers.uvs.chunks_mut(per_vertex);
         let colors = buffers.colors.chunks_mut(per_vertex);
         let indices = buffers.indices.chunks_mut(per_index);
+        let winds = winds.iter_mut().map(std::mem::take);
         let slots = organs.zip(positions).zip(normals).zip(uvs);
-        slots.zip(colors.zip(indices)).enumerate().for_each(block);
+        let slots = slots.zip(colors.zip(indices)).zip(winds);
+        slots.enumerate().for_each(block);
     }
 }
 
@@ -308,8 +465,17 @@ mod tests {
     use arbrume_core::species::Foliage;
 
     fn select_leaves(graph: &PlantGraph, foliage: &Foliage, options: &MeshOptions) -> LeafSet {
+        let mut arcs = Vec::new();
+        crate::axes::node_arcs(graph, &mut arcs);
+        let kept = vec![true; graph.chain_count()];
+        let mounting = crate::axes::Mounting {
+            graph,
+            arcs: &arcs,
+            kept: &kept,
+            max_cycle: options.max_cycle,
+        };
         let mut set = LeafSet::default();
-        super::select_leaves(&mut set, graph, foliage, options);
+        super::select_leaves(&mut set, &mounting, foliage, options);
         set
     }
 

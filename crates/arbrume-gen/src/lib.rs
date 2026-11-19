@@ -39,6 +39,7 @@
 #![forbid(unsafe_code)]
 
 mod batch;
+mod lods;
 mod metadata;
 mod overrides;
 mod params;
@@ -49,7 +50,10 @@ mod sample;
 mod timeline;
 
 pub use arbrume_grow::{Occluder, Shape, Surroundings, VoxelMask};
+pub use arbrume_lod::{BillboardMethod, BillboardOptions};
+pub use arbrume_mesh::{LeafInstance, LeafInstances, LodOptions};
 pub use batch::{Budget, Generator, generate, generate_many, run_batch};
+pub use lods::{LodKind, LodMesh, LodSettings};
 pub use metadata::{GENERATOR, VERSION, metadata};
 pub use overrides::species_with_overrides;
 pub use params::{GenError, GenParams};

@@ -18,7 +18,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use arbrume_core::species::Species;
-use arbrume_export::{GlbOptions, write_glb};
+use arbrume_export::{ExtraAttribute, GlbOptions};
 use arbrume_gen::{Budget, Distribution, GENERATOR, GenParams, Generator, Plant};
 use arbrume_gen::{RandomSampler, Sampler};
 use arbrume_gen::{Stats, metadata, run_batch};
@@ -27,8 +27,10 @@ use clap::{Args, ValueEnum};
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::annotate::{self, AnnotationSet};
 use crate::config::{self, Batch, Defaults, Entry, Thumb};
 use crate::error::CliError;
+use crate::lods::{self, LodArgs, LodConfig};
 use crate::progress::Progress;
 use crate::source::resolve;
 
@@ -68,9 +70,13 @@ pub struct GenArgs {
     /// Mesh quality, 1 being full detail [default: 1, or 0.6 with --random].
     #[arg(long, conflicts_with = "config")]
     quality: Option<f32>,
-    /// Levels of detail per plant; level k is meshed at quality * 0.5^k [default: 1].
+    /// Mesh levels of detail per plant, each within a triangle budget (docs/lod.md)
+    /// [default: 1].
     #[arg(long, conflicts_with = "config")]
     lods: Option<u32>,
+    /// Wind data, billboard and level-of-detail files.
+    #[command(flatten)]
+    lod: LodArgs,
     /// Surroundings file: envelope, obstacles and neighbours around each plant.
     #[arg(long, value_name = "FILE", conflicts_with = "config")]
     surroundings: Option<PathBuf>,
@@ -92,6 +98,10 @@ pub struct GenArgs {
     /// Write one JSON line per plant to manifest.jsonl in the output directory.
     #[arg(long)]
     manifest: bool,
+    /// ML annotations, a list of: skeleton, labels, points=N, branches[=K], metrics,
+    /// json (see docs/annotations.md).
+    #[arg(long, value_name = "LIST")]
+    annotations: Option<AnnotationSet>,
     /// Print nothing but errors.
     #[arg(long, short)]
     quiet: bool,
@@ -185,6 +195,8 @@ fn random_batch(args: &GenArgs) -> Result<Batch, CliError> {
         manifest: false,
         thumb: None,
         growth_frames: 0,
+        annotations: AnnotationSet::default(),
+        lod: LodConfig::default(),
         entries: Vec::new(),
         random: Some((sampler, args.count)),
     })
@@ -224,6 +236,8 @@ fn batch_from_flags(args: &GenArgs) -> Result<Batch, CliError> {
         manifest: false,
         thumb: None,
         growth_frames: 0,
+        annotations: AnnotationSet::default(),
+        lod: LodConfig::default(),
         entries: vec![entry],
         random: None,
     })
@@ -246,6 +260,16 @@ pub fn run(args: &GenArgs) -> Result<(), CliError> {
     }
     if let Some(frames) = args.growth_frames {
         batch.growth_frames = frames;
+    }
+    if let Some(annotations) = args.annotations {
+        batch.annotations = annotations;
+    }
+    batch.lod = args.lod.merge(batch.lod);
+    let chained = batch.lod.wind.is_some() || batch.lod.billboard.is_some();
+    if batch.growth_frames > 0 && chained {
+        return Err(CliError::usage(
+            "a growth sequence cannot be combined with --wind or --billboard",
+        ));
     }
     if batch.growth_frames > 0 && (batch.lods > 1 || batch.random.is_some()) {
         return Err(CliError::usage(
@@ -360,6 +384,10 @@ struct Context<'a> {
     /// Frames of the growth sequence of each plant; 0 writes the plant only.
     frames: u16,
     thumb: Option<Thumb>,
+    /// ML annotations written next to each plant.
+    annotations: AnnotationSet,
+    /// Levels of detail, wind and billboard.
+    lod: LodConfig,
     manifest: Option<Mutex<File>>,
     progress: Progress,
 }
@@ -400,6 +428,8 @@ fn execute(batch: &Batch, options: &RunOptions) -> Result<(), CliError> {
         lods: batch.lods,
         frames: batch.growth_frames,
         thumb: batch.thumb,
+        annotations: batch.annotations,
+        lod: batch.lod,
         manifest,
         progress: Progress::new(tasks.len(), skipped, options.quiet),
     };
@@ -506,12 +536,14 @@ fn frame_name(job: &Job, frame: usize) -> String {
 fn files_exist(out: &Path, job: &Job, batch: &Batch) -> bool {
     let thumb = batch
         .thumb
-        .is_none_or(|thumb| out.join(thumb_name(job, thumb)).is_file());
+        .is_none_or(|thumb| out.join(thumb_name(job, thumb)).is_file())
+        && batch.annotations.files(&stem(job)).exist(out);
     if batch.growth_frames > 0 {
         let frames = usize::from(batch.growth_frames.min(job.params.age));
         return thumb && (0..frames).all(|frame| out.join(frame_name(job, frame)).is_file());
     }
-    thumb && (0..batch.lods).all(|lod| out.join(file_name(job, lod, batch.lods)).is_file())
+    let files = lods::file_count(batch.lods, batch.lod);
+    thumb && (0..files).all(|lod| out.join(file_name(job, lod, files)).is_file())
 }
 
 /// One written file, as recorded in the manifest.
@@ -552,6 +584,9 @@ struct Record<'a> {
     thumbnail: Option<String>,
     stats: Stats,
     timings_ms: TimingsMs,
+    /// Annotation files, parameters and metrics, with `--annotations`.
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    annotation: Option<annotate::ManifestExtra>,
 }
 
 /// What generating one plant produced, for its manifest line.
@@ -562,6 +597,7 @@ struct Written {
     stats: Stats,
     quality: f32,
     timings: TimingsMs,
+    annotation: Option<annotate::ManifestExtra>,
 }
 
 /// Generates the plant of `job`, writes its files, its thumbnail and its manifest line.
@@ -595,6 +631,7 @@ fn make_plant(
         thumbnail: written.thumbnail,
         stats: written.stats,
         timings_ms: written.timings,
+        annotation: written.annotation,
     };
     append_line(manifest, &record).map_err(fail)
 }
@@ -616,17 +653,62 @@ fn write_levels(
     let mut export = Duration::ZERO;
     let mut files = Vec::new();
     let mut thumbnail = None;
-    for lod in 0..context.lods {
-        let quality = lod_quality(base_quality, lod);
-        if lod > 0 {
+    let mut annotation = None;
+    let chain = lods::chain(generator, plant, &job.species, context.lods, context.lod)?;
+    mesh += chain
+        .iter()
+        .flatten()
+        .map(|level| level.time)
+        .sum::<Duration>();
+    let levels = chain
+        .as_ref()
+        .map_or(context.lods, |chain| chain.len() as u32);
+    let single = context.lod.single_file && chain.is_some();
+    let mut root_extras = None;
+    for lod in 0..levels {
+        let mut quality = lod_quality(base_quality, lod);
+        let level = chain.as_ref().map(|chain| &chain[lod as usize]);
+        if let Some(level) = level {
+            lods::install(plant, level);
+            quality = level.quality;
+        } else if lod > 0 {
             let options = job.params.clone().with_quality(quality).mesh;
             mesh += generator
                 .remesh(plant, &job.species, &options)
                 .map_err(|e| e.to_string())?;
         }
-        let name = file_name(job, lod, context.lods);
+        let name = file_name(
+            job,
+            if single { 0 } else { lod },
+            if single { 1 } else { levels },
+        );
+        let info = level.map(|level| lods::level_extras(lod as usize, level));
         let start = Instant::now();
-        let bytes = write_file(context.out, &name, job, plant, (lod, quality))?;
+        let labels = mesh_labels(context, generator, plant, job)?;
+        let extra = labels
+            .as_ref()
+            .map(|l| l.glb.attributes())
+            .unwrap_or_default();
+        let bytes = if single {
+            0
+        } else {
+            let level = (lod, quality, info);
+            write_file(context.out, &name, job, plant, level, &extra, context.lod)?
+        };
+        if single && lod == 0 {
+            root_extras = Some(job_extras(job, plant));
+        }
+        if lod == 0 && context.annotations.any() {
+            let (set, out, label) = (&context.annotations, context.out, labels.as_ref());
+            annotation = Some(annotate::write(
+                set,
+                out,
+                &stem(job),
+                plant,
+                &job.species,
+                label,
+            )?);
+        }
         if let (0, Some(thumb)) = (lod, context.thumb) {
             let name = thumb_name(job, thumb);
             write_thumb(context.out, &name, plant, thumb)?;
@@ -643,6 +725,10 @@ fn write_levels(
             bytes,
         });
     }
+    if let (true, Some(chain)) = (single, &chain) {
+        let extras = root_extras.unwrap_or_else(|| job_extras(job, plant));
+        export += write_single(context, (job, extras), chain, &mut files)?;
+    }
     Ok(Written {
         files,
         thumbnail,
@@ -653,6 +739,7 @@ fn write_levels(
             mesh: ms(mesh),
             export: ms(export),
         },
+        annotation,
     })
 }
 
@@ -680,7 +767,13 @@ fn write_sequence(
             .map_err(|e| e.to_string())?;
         let name = frame_name(job, frame);
         let start = Instant::now();
-        let bytes = write_file(context.out, &name, job, plant, (0, quality))?;
+        let labels = mesh_labels(context, generator, plant, job)?;
+        let extra = labels
+            .as_ref()
+            .map(|l| l.glb.attributes())
+            .unwrap_or_default();
+        let level = (0, quality, None);
+        let bytes = write_file(context.out, &name, job, plant, level, &extra, context.lod)?;
         export += start.elapsed();
         files.push(FileRecord {
             file: name,
@@ -691,6 +784,19 @@ fn write_sequence(
             triangles: plant.stats.triangles,
             bytes,
         });
+    }
+    let mut annotation = None;
+    if context.annotations.any() && !files.is_empty() {
+        let labels = mesh_labels(context, generator, plant, job)?;
+        let (set, out, label) = (&context.annotations, context.out, labels.as_ref());
+        annotation = Some(annotate::write(
+            set,
+            out,
+            &stem(job),
+            plant,
+            &job.species,
+            label,
+        )?);
     }
     let mut thumbnail = None;
     if let (Some(thumb), false) = (context.thumb, files.is_empty()) {
@@ -710,6 +816,7 @@ fn write_sequence(
             mesh: ms(mesh),
             export: ms(export),
         },
+        annotation,
     })
 }
 
@@ -738,25 +845,73 @@ fn write_thumb(out: &Path, name: &str, plant: &Plant, thumb: Thumb) -> Result<()
     fs::rename(&temp, &path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-/// Writes `plant` to `out/name` through a temporary file; returns the file size.
-/// `(lod, quality)` go to the metadata, with the label, base seed and index of `job`
-/// and, for a random plant, the name of its preset.
-fn write_file(
-    out: &Path,
-    name: &str,
-    job: &Job,
+/// Labels of the current mesh of `plant`, when `--annotations` asks for labels or
+/// points and the mesh can be labelled.
+fn mesh_labels(
+    context: &Context,
+    generator: &mut Generator,
     plant: &Plant,
-    (lod, quality): (u32, f32),
-) -> Result<u64, String> {
+    job: &Job,
+) -> Result<Option<annotate::Labels>, String> {
+    let set = &context.annotations;
+    if set.labels() || set.points.is_some() {
+        annotate::labels(generator, plant, &job.species)
+    } else {
+        Ok(None)
+    }
+}
+
+/// Writes every level of `chain` in the one file of `job`, its root node carrying
+/// `extras`, records its size in `files` and returns the time taken.
+fn write_single(
+    context: &Context,
+    (job, extras): (&Job, Value),
+    chain: &[arbrume_gen::LodMesh],
+    files: &mut [FileRecord],
+) -> Result<Duration, String> {
+    let start = Instant::now();
+    let name = file_name(job, 0, 1);
+    let bytes = lods::write_chain_file(context.out, &name, extras, chain, context.lod)?;
+    for file in files {
+        file.bytes = bytes;
+    }
+    Ok(start.elapsed())
+}
+
+/// The metadata of the files of `job`: that of `plant`, with the label, base seed and
+/// index of `job` and, for a random plant, the name of its preset.
+fn job_extras(job: &Job, plant: &Plant) -> Value {
     let mut extras = metadata(&job.species, plant);
     if let Value::Object(map) = &mut extras {
         map.insert("label".to_owned(), job.label.to_string().into());
         map.insert("base_seed".to_owned(), job.base_seed.into());
         map.insert("index".to_owned(), job.index.into());
-        map.insert("lod".to_owned(), lod.into());
-        map.insert("quality".to_owned(), quality.into());
         if job.random {
             map.insert("preset".to_owned(), job.label.to_string().into());
+        }
+    }
+    extras
+}
+
+/// Writes `plant` to `out/name` through a temporary file; returns the file size.
+/// `(lod, quality, info)` go to the metadata with [`job_extras`], `info` being the keys
+/// of a level of a level-of-detail chain. `extra` are vertex attributes added to the
+/// parts (the ML labels); `config` says how wind data and skins are written.
+fn write_file(
+    out: &Path,
+    name: &str,
+    job: &Job,
+    plant: &Plant,
+    (lod, quality, info): (u32, f32, Option<Value>),
+    extra: &[ExtraAttribute],
+    config: LodConfig,
+) -> Result<u64, String> {
+    let mut extras = job_extras(job, plant);
+    if let Value::Object(map) = &mut extras {
+        map.insert("lod".to_owned(), lod.into());
+        map.insert("quality".to_owned(), quality.into());
+        if let Some(Value::Object(info)) = info {
+            map.extend(info);
         }
     }
     let options = GlbOptions {
@@ -768,7 +923,8 @@ fn write_file(
     let temp = out.join(format!("{name}.tmp"));
     let file = File::create(&temp).map_err(|e| format!("{}: {e}", temp.display()))?;
     let mut writer = BufWriter::with_capacity(1 << 16, file);
-    write_glb(&plant.mesh, &options, &mut writer).map_err(|e| e.to_string())?;
+    lods::write_mesh(&plant.mesh, &options, extra, config, &mut writer)
+        .map_err(|e| e.to_string())?;
     let file = writer.into_inner().map_err(|e| e.error().to_string())?;
     let bytes = file.metadata().map_err(|e| e.to_string())?.len();
     drop(file);

@@ -13,6 +13,9 @@
 //! age = { uniform = [10, 30] }    # default age distribution
 //! scale = 1.0                     # default scale distribution
 //! growth_frames = 0               # frames of a growth sequence per plant, 0 for none
+//! annotations = "skeleton,labels" # ML annotations, as `--annotations`
+//! lod = { wind = "texcoord", billboard = "cloud" } # as `--wind`, `--billboard`; also
+//!                                 # `file`, `skin`, `instance_leaves` (docs/lod.md)
 //!
 //! [surroundings]                  # around every plant that sets none, in meters
 //! envelope = { shape = "ellipsoid", center = [0.0, 4.0, 0.0], radii = [3.0, 4.0, 3.0] }
@@ -44,8 +47,10 @@ use arbrume_gen::species_with_overrides;
 use arbrume_gen::{Distribution, GenParams, RandomSampler, Sampler, Surroundings};
 use serde::Deserialize;
 
+use crate::annotate::AnnotationSet;
 use crate::batch::ThumbFormat;
 use crate::error::CliError;
+use crate::lods::{LodConfig, LodFile};
 use crate::source::{SpeciesSource, resolve, sanitize};
 
 /// One species of a batch.
@@ -85,6 +90,10 @@ pub struct Batch {
     pub thumb: Option<Thumb>,
     /// Frames of the growth sequence written for each plant; 0 writes the plant only.
     pub growth_frames: u16,
+    /// ML annotations written next to each plant.
+    pub annotations: AnnotationSet,
+    /// Levels of detail, wind and billboard.
+    pub lod: LodConfig,
     /// The species to generate.
     pub entries: Vec<Entry>,
     /// Random plants to generate: their sampler and their number.
@@ -107,6 +116,10 @@ struct ConfigFile {
     scale: Option<Distribution>,
     #[serde(default)]
     growth_frames: u16,
+    #[serde(default)]
+    annotations: AnnotationSet,
+    #[serde(default)]
+    lod: LodFile,
     surroundings: Option<Surroundings>,
     species: Vec<EntryFile>,
 }
@@ -229,6 +242,8 @@ pub fn load(path: &Path) -> Result<Batch, CliError> {
             format: file.thumb_format.unwrap_or(ThumbFormat::Jpg),
         }),
         growth_frames: file.growth_frames,
+        annotations: file.annotations,
+        lod: file.lod.config(),
         entries,
         random: None,
     })

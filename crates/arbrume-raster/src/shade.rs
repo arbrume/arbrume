@@ -421,6 +421,16 @@ fn interpolate(part: &PartView<'_>, tri: &TriangleCache, bary: Vec3, depth: f32)
         let tint = |i: usize| Vec3::new(part.colors[i][0], part.colors[i][1], part.colors[i][2]);
         albedo *= tint(a) * bary.x + tint(b) * bary.y + tint(c) * bary.z;
     }
+    if !part.uvs.is_empty() {
+        let uv = |i: usize| Vec2::from(part.uvs[i]);
+        let at = uv(a) * bary.x + uv(b) * bary.y + uv(c) * bary.z;
+        if let Some(texture) = part.base_texture {
+            albedo *= texture.sample(at).truncate();
+        }
+        if let Some(texture) = part.normal_texture {
+            normal = normal_mapped(part, tri.vertices, normal, texture.sample(at).truncate());
+        }
+    }
     Surface {
         position,
         normal,
@@ -432,6 +442,33 @@ fn interpolate(part: &PartView<'_>, tri: &TriangleCache, bary: Vec3, depth: f32)
         },
         depth,
     }
+}
+
+/// `normal` perturbed by the tangent-space normal `texel` (components in `[0, 1]`), in
+/// the frame of the triangle `vertices` of `part`: tangent along increasing `u`,
+/// bitangent along decreasing `v` (glTF convention, `v` growing downwards in images).
+fn normal_mapped(part: &PartView<'_>, vertices: [usize; 3], normal: Vec3, texel: Vec3) -> Vec3 {
+    let [a, b, c] = vertices;
+    let p = |i: usize| Vec3::from(part.positions[i]);
+    let uv = |i: usize| Vec2::from(part.uvs[i]);
+    let (e1, e2) = (p(b) - p(a), p(c) - p(a));
+    let (d1, d2) = (uv(b) - uv(a), uv(c) - uv(a));
+    let det = d1.x * d2.y - d2.x * d1.y;
+    if det.abs() < 1e-12 {
+        return normal;
+    }
+    let tangent = ((e1 * d2.y - e2 * d1.y) / det)
+        .reject_from(normal)
+        .normalize_or_zero();
+    let along_v = (e2 * d1.x - e1 * d2.x) / det;
+    let handed = if along_v.dot(normal.cross(tangent)) < 0.0 {
+        1.0
+    } else {
+        -1.0
+    };
+    let bitangent = normal.cross(tangent) * handed;
+    let local = texel * 2.0 - Vec3::ONE;
+    (tangent * local.x + bitangent * local.y + normal * local.z).normalize_or(normal)
 }
 
 /// What one sample sees.

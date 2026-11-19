@@ -5,7 +5,9 @@
 //! and export to memory, with the size of the `.glb`. The throughput is that of a batch
 //! of `batch` plants of the species and age (base seed 1, indices `0..batch`), generated
 //! and exported to memory by [`run_batch`], on one thread and on every thread of the
-//! global pool. Nothing is written to disk.
+//! global pool. Nothing is written to disk. With `--annotations`, the annotations of
+//! that list are computed and serialized to memory too, and their time is part of the
+//! export column and of the throughput.
 //!
 //! `--engine` prints another table instead, for the species in the self-organizing mode:
 //! the median growth time of the same plant with the default engine options, with a
@@ -24,6 +26,7 @@ use arbrume_grow::{EngineOptions, GridStorage, GrowParams, Surroundings, grow_in
 use clap::Args;
 use rayon::prelude::*;
 
+use crate::annotate::{self, AnnotationSet};
 use crate::error::CliError;
 use crate::source::resolve;
 
@@ -48,6 +51,9 @@ pub struct BenchArgs {
     /// Compare the engine options of the self-organizing mode instead.
     #[arg(long)]
     engine: bool,
+    /// Also compute these annotations, as `gen --annotations`.
+    #[arg(long, value_name = "LIST")]
+    annotations: Option<AnnotationSet>,
 }
 
 /// One row of the table.
@@ -90,12 +96,13 @@ pub fn run(args: &BenchArgs) -> Result<(), CliError> {
                 quality: args.quality,
             };
             sampler.validate().map_err(CliError::usage)?;
-            let row = time_stages(species, &sampler, args.repeats)?;
+            let set = args.annotations.unwrap_or_default();
+            let row = time_stages(species, &sampler, args.repeats, &set)?;
             let (one, all) = if args.batch == 0 {
                 (String::from("-"), String::from("-"))
             } else {
-                let one = single.install(|| throughput(species, &sampler, args.batch))?;
-                let all = throughput(species, &sampler, args.batch)?;
+                let one = single.install(|| throughput(species, &sampler, args.batch, &set))?;
+                let all = throughput(species, &sampler, args.batch, &set)?;
                 (format!("{one:.1}"), format!("{all:.1}"))
             };
             println!(
@@ -150,8 +157,14 @@ fn median(mut times: Vec<Duration>) -> Duration {
     times[times.len() / 2]
 }
 
-/// Median stage times of plant 0 of `sampler` over `repeats` runs.
-fn time_stages(species: &Species, sampler: &Sampler, repeats: usize) -> Result<Row, CliError> {
+/// Median stage times of plant 0 of `sampler` over `repeats` runs; the annotations of
+/// `set` count as export.
+fn time_stages(
+    species: &Species,
+    sampler: &Sampler,
+    repeats: usize,
+    set: &AnnotationSet,
+) -> Result<Row, CliError> {
     let params = sampler.params(0);
     let mut generator = Generator::new();
     let mut plant = Plant::default();
@@ -163,6 +176,11 @@ fn time_stages(species: &Species, sampler: &Sampler, repeats: usize) -> Result<R
             .map_err(CliError::failed)?;
         let start = Instant::now();
         export(species, &plant, &mut bytes)?;
+        if set.any() {
+            let mut sidecar = Vec::new();
+            annotate::in_memory(set, &mut generator, &plant, species, &mut sidecar)
+                .map_err(CliError::failed)?;
+        }
         export_times.push(start.elapsed());
         grow.push(timings.grow);
         mesh.push(timings.mesh);
@@ -183,15 +201,27 @@ thread_local! {
     static BUFFER: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
-/// Plants per second of a batch of `count` plants on the current pool.
-fn throughput(species: &Species, sampler: &Sampler, count: u32) -> Result<f64, CliError> {
+/// Plants per second of a batch of `count` plants on the current pool, each with the
+/// annotations of `set`.
+fn throughput(
+    species: &Species,
+    sampler: &Sampler,
+    count: u32,
+    set: &AnnotationSet,
+) -> Result<f64, CliError> {
     let start = Instant::now();
     let results = run_batch(count as usize, |generator, plant, index| {
         let params = sampler.params(index as u32);
         generator
             .generate_into(species, &params, plant)
             .map_err(CliError::failed)?;
-        BUFFER.with_borrow_mut(|bytes| export(species, plant, bytes))
+        BUFFER.with_borrow_mut(|bytes| export(species, plant, bytes))?;
+        if set.any() {
+            BUFFER.with_borrow_mut(|bytes| {
+                annotate::in_memory(set, generator, plant, species, bytes).map_err(CliError::failed)
+            })?;
+        }
+        Ok(())
     });
     let elapsed = start.elapsed().as_secs_f64();
     results.into_iter().collect::<Result<Vec<()>, _>>()?;

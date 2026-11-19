@@ -10,8 +10,17 @@
 //! accessors and buffer views. A mesh with no drawable part produces a valid file with a
 //! single empty node.
 
+mod instancing;
 mod json;
+mod levels;
+mod skin;
+mod tangent;
+mod wind;
 
+pub use instancing::{InstanceTransform, LeafInstancing};
+pub use levels::{ExportOptions, GlbLevel, SkinOptions, WindLayout, write_glb_levels};
+
+use std::borrow::Cow;
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
 use std::path::Path;
@@ -21,7 +30,8 @@ use serde_json::Value;
 
 use json::{
     ARRAY_BUFFER, Accessor, Attributes, Buffer, BufferView, ELEMENT_ARRAY_BUFFER, FLOAT, Image,
-    Pbr, Primitive, PrimitiveExtras, Root, Texture, TextureInfo, UNSIGNED_INT, UNSIGNED_SHORT,
+    Pbr, Primitive, PrimitiveExtras, Root, Texture, TextureInfo, UNSIGNED_BYTE, UNSIGNED_INT,
+    UNSIGNED_SHORT,
 };
 
 #[cfg(target_endian = "big")]
@@ -59,6 +69,56 @@ impl Default for GlbOptions {
             extras: None,
         }
     }
+}
+
+/// Components of an [`ExtraAttribute`], one or more per vertex.
+///
+/// glTF allows `u32` components for indices only, and asks every vertex element to be a
+/// multiple of 4 bytes; pick the component type and count accordingly (for example `f32`,
+/// or four `u8`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AttributeData<'a> {
+    /// 32-bit floats.
+    F32(&'a [f32]),
+    /// 16-bit unsigned integers.
+    U16(&'a [u16]),
+    /// 8-bit unsigned integers.
+    U8(&'a [u8]),
+}
+
+impl AttributeData<'_> {
+    /// Number of components.
+    #[must_use]
+    pub const fn len(&self) -> usize {
+        match self {
+            Self::F32(values) => values.len(),
+            Self::U16(values) => values.len(),
+            Self::U8(values) => values.len(),
+        }
+    }
+
+    /// `true` when there is no component.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+/// An application-specific vertex attribute added to one part by [`write_glb_with`].
+///
+/// `name` is the attribute semantic and must start with an underscore (glTF 2.0,
+/// section 3.7.2.1). `data` holds `components` values per vertex of the part, in vertex
+/// order.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExtraAttribute<'a> {
+    /// Index of the part in `TreeMesh::parts`.
+    pub part: usize,
+    /// Attribute semantic, such as `_SEMANTIC`.
+    pub name: String,
+    /// Values per vertex: 1, 2, 3 or 4.
+    pub components: u8,
+    /// The values.
+    pub data: AttributeData<'a>,
 }
 
 /// Errors of the glb writer.
@@ -117,6 +177,14 @@ pub enum GlbError {
     /// The file would exceed the 4 GiB limit of the glb container.
     #[error("glb would be {0} bytes, over the 4 GiB format limit")]
     TooLarge(usize),
+    /// An extra attribute has a bad name, part, component count or length.
+    #[error("extra attribute `{name}`: {problem}")]
+    ExtraAttribute {
+        /// Attribute semantic.
+        name: String,
+        /// What is wrong.
+        problem: &'static str,
+    },
 }
 
 /// Writes `mesh` as a binary glTF 2.0 file to `out`.
@@ -125,17 +193,40 @@ pub enum GlbError {
 ///
 /// # Errors
 /// Returns [`GlbError`] when the mesh is malformed (see the variants) or the output fails.
-pub fn write_glb(
+pub fn write_glb(mesh: &TreeMesh, options: &GlbOptions, out: impl Write) -> Result<(), GlbError> {
+    write_glb_with(mesh, options, &[], out)
+}
+
+/// Same as [`write_glb`], with application-specific vertex attributes added to the
+/// primitives of their parts. Attributes of an empty part, which has no primitive, are
+/// dropped.
+///
+/// # Errors
+/// Same as [`write_glb`], and [`GlbError::ExtraAttribute`] for an attribute whose name
+/// does not start with an underscore or is used twice on a part, whose part does not
+/// exist, or whose length is not `components` per vertex.
+pub fn write_glb_with(
     mesh: &TreeMesh,
     options: &GlbOptions,
-    mut out: impl Write,
+    extra: &[ExtraAttribute],
+    out: impl Write,
 ) -> Result<(), GlbError> {
-    let mut builder = Builder::new(options);
+    check_extra(mesh, extra)?;
+    let export = ExportOptions::default();
+    let mut builder = Builder::new(options, &export);
+    builder.mesh = Some(mesh);
     for (index, part) in mesh.parts.iter().enumerate() {
-        builder.add_part(index, part)?;
+        let own = extra.iter().filter(|attribute| attribute.part == index);
+        builder.add_part(index, part, own)?;
     }
+    builder.close_mesh(None, None);
     let (root, layout) = builder.finish();
-    let mut json = serde_json::to_vec(&root)?;
+    emit(&root, &layout, out)
+}
+
+/// Writes the glb container of `root` and `layout` to `out`.
+fn emit(root: &Root, layout: &Layout, mut out: impl Write) -> Result<(), GlbError> {
+    let mut json = serde_json::to_vec(root)?;
     json.resize(pad4(json.len()), b' ');
     let bin_chunk = if layout.size == 0 {
         0
@@ -197,6 +288,8 @@ enum Payload<'a> {
     Bytes(&'a [u8]),
     /// `u32` indices narrowed to `u16` while writing.
     Narrow(&'a [u32]),
+    /// Bytes computed by the writer.
+    Owned(Vec<u8>),
 }
 
 impl Payload<'_> {
@@ -204,6 +297,7 @@ impl Payload<'_> {
         match self {
             Payload::Bytes(bytes) => bytes.len(),
             Payload::Narrow(indices) => indices.len() * 2,
+            Payload::Owned(bytes) => bytes.len(),
         }
     }
 }
@@ -224,6 +318,7 @@ impl<'a> Layout<'a> {
             buffer: 0,
             byte_offset: self.size,
             byte_length: len,
+            byte_stride: None,
             target,
         });
         self.payloads.push(payload);
@@ -237,6 +332,7 @@ impl<'a> Layout<'a> {
             match payload {
                 Payload::Bytes(bytes) => out.write_all(bytes)?,
                 Payload::Narrow(indices) => write_narrowed(indices, out)?,
+                Payload::Owned(bytes) => out.write_all(bytes)?,
             }
             out.write_all(&[0; 3][..pad4(payload.len()) - payload.len()])?;
         }
@@ -260,7 +356,20 @@ fn write_narrowed(indices: &[u32], out: &mut impl Write) -> io::Result<()> {
 #[derive(Debug)]
 struct Builder<'a> {
     options: &'a GlbOptions,
+    export: &'a ExportOptions,
+    /// The mesh whose parts are being added.
+    mesh: Option<&'a TreeMesh>,
     primitives: Vec<Primitive>,
+    meshes: Vec<json::Mesh<'a>>,
+    /// Nodes beyond the single root node of a one-mesh file.
+    nodes: Vec<json::Node<'a>>,
+    /// Roots of the scene when `nodes` is used.
+    scene_nodes: Vec<u32>,
+    skins: Vec<json::Skin>,
+    /// Extensions the file uses.
+    extensions_used: Vec<&'static str>,
+    /// Joints of the skin of the mesh being added, when skinned.
+    skinning: Option<skin::Skinning>,
     materials: Vec<json::Material<'a>>,
     textures: Vec<Texture>,
     images: Vec<Image>,
@@ -269,10 +378,18 @@ struct Builder<'a> {
 }
 
 impl<'a> Builder<'a> {
-    fn new(options: &'a GlbOptions) -> Self {
+    fn new(options: &'a GlbOptions, export: &'a ExportOptions) -> Self {
         Self {
             options,
+            export,
+            mesh: None,
             primitives: Vec::new(),
+            meshes: Vec::new(),
+            nodes: Vec::new(),
+            scene_nodes: Vec::new(),
+            skins: Vec::new(),
+            extensions_used: Vec::new(),
+            skinning: None,
             materials: Vec::new(),
             textures: Vec::new(),
             images: Vec::new(),
@@ -281,8 +398,17 @@ impl<'a> Builder<'a> {
         }
     }
 
-    /// Adds one part as a primitive with its material; empty parts are skipped.
-    fn add_part(&mut self, index: usize, part: &'a MeshPart) -> Result<(), GlbError> {
+    /// Adds one part as a primitive with its material and its extra attributes; empty
+    /// parts are skipped.
+    fn add_part<'e>(
+        &mut self,
+        index: usize,
+        part: &'a MeshPart,
+        extra: impl Iterator<Item = &'e ExtraAttribute<'a>>,
+    ) -> Result<(), GlbError>
+    where
+        'a: 'e,
+    {
         let buffers = &part.buffers;
         check_part(index, part)?;
         if buffers.positions.is_empty() || buffers.indices.is_empty() {
@@ -294,18 +420,40 @@ impl<'a> Builder<'a> {
             self.vertex_accessor(bytemuck::cast_slice(&buffers.positions), count, "VEC3");
         self.accessors[position as usize].min = Some(min);
         self.accessors[position as usize].max = Some(max);
-        let attributes = Attributes {
+        let mut attributes = Attributes {
             position,
             normal: self.optional_accessor(bytemuck::cast_slice(&buffers.normals), count, "VEC3"),
             texcoord: self.optional_accessor(bytemuck::cast_slice(&buffers.uvs), count, "VEC2"),
             color: self.optional_accessor(bytemuck::cast_slice(&buffers.colors), count, "VEC4"),
+            extra: std::collections::BTreeMap::new(),
         };
+        for attribute in extra {
+            let accessor = self.extra_accessor(attribute, count);
+            attributes.extra.insert(attribute.name.clone(), accessor);
+        }
+        self.add_wind(part, &mut attributes);
+        self.add_skin_weights(part, &mut attributes);
         let indices = self.index_accessor(&buffers.indices, count);
+        let textured = attributes.texcoord.is_some();
         let texture = match &part.material.base_color_texture {
-            Some(bytes) if attributes.texcoord.is_some() => Some(self.add_texture(index, bytes)?),
+            Some(bytes) if textured => Some(self.add_texture(index, bytes)?),
             _ => None,
         };
-        self.materials.push(material(&part.material, texture));
+        let normal = match &part.material.normal_texture {
+            Some(bytes) if textured && attributes.normal.is_some() => {
+                let tangents: Vec<f32> = tangent::tangents(buffers).into_iter().flatten().collect();
+                let tangent_bytes = bytemuck::cast_slice(&tangents).to_vec();
+                let view = self
+                    .layout
+                    .push(Payload::Owned(tangent_bytes), Some(ARRAY_BUFFER));
+                let accessor = self.accessor(view, FLOAT, count, "VEC4");
+                attributes.extra.insert("TANGENT".to_owned(), accessor);
+                Some(self.add_texture(index, bytes)?)
+            }
+            _ => None,
+        };
+        self.materials
+            .push(material(&part.material, texture, normal));
         self.primitives.push(Primitive {
             attributes,
             indices,
@@ -320,6 +468,17 @@ impl<'a> Builder<'a> {
     fn vertex_accessor(&mut self, bytes: &'a [u8], count: usize, kind: &'static str) -> u32 {
         let view = self.layout.push(Payload::Bytes(bytes), Some(ARRAY_BUFFER));
         self.accessor(view, FLOAT, count, kind)
+    }
+
+    fn extra_accessor(&mut self, attribute: &ExtraAttribute<'a>, count: usize) -> u32 {
+        let (bytes, component) = match attribute.data {
+            AttributeData::F32(values) => (bytemuck::cast_slice(values), FLOAT),
+            AttributeData::U16(values) => (bytemuck::cast_slice(values), UNSIGNED_SHORT),
+            AttributeData::U8(values) => (values, UNSIGNED_BYTE),
+        };
+        let kind = ["SCALAR", "VEC2", "VEC3", "VEC4"][usize::from(attribute.components) - 1];
+        let view = self.layout.push(Payload::Bytes(bytes), Some(ARRAY_BUFFER));
+        self.accessor(view, component, count, kind)
     }
 
     fn optional_accessor(
@@ -350,6 +509,7 @@ impl<'a> Builder<'a> {
     ) -> u32 {
         self.accessors.push(Accessor {
             buffer_view,
+            byte_offset: None,
             component_type,
             count,
             kind,
@@ -372,18 +532,40 @@ impl<'a> Builder<'a> {
         Ok((self.textures.len() - 1) as u32)
     }
 
-    /// Assembles the JSON root and hands back the binary layout.
+    /// Moves the primitives added so far into a mesh named `name` (the file name when
+    /// `None`) with `extras`, and returns its index; `None` when there is no primitive.
+    fn close_mesh(&mut self, name: Option<String>, extras: Option<Value>) -> Option<u32> {
+        if self.primitives.is_empty() {
+            return None;
+        }
+        let name = name.map_or(Cow::Borrowed(self.options.name.as_str()), Cow::Owned);
+        let extras = extras.or_else(|| self.wind_extras());
+        self.meshes.push(json::Mesh {
+            name,
+            primitives: std::mem::take(&mut self.primitives),
+            extras,
+        });
+        Some((self.meshes.len() - 1) as u32)
+    }
+
+    /// Assembles the JSON root and hands back the binary layout. Without nodes of its
+    /// own, the file has one root node holding the first mesh.
     fn finish(mut self) -> (Root<'a>, Layout<'a>) {
         let options = self.options;
-        let has_mesh = !self.primitives.is_empty();
-        let meshes = if has_mesh {
-            vec![json::Mesh {
-                name: &options.name,
-                primitives: self.primitives,
-            }]
-        } else {
-            Vec::new()
-        };
+        let has_mesh = !self.meshes.is_empty();
+        if self.nodes.is_empty() {
+            self.nodes.push(json::Node {
+                name: Cow::Borrowed(&options.name),
+                children: Vec::new(),
+                translation: None,
+                mesh: has_mesh.then_some(0),
+                skin: None,
+                extensions: None,
+                extras: options.extras.as_ref().map(Cow::Borrowed),
+            });
+            self.scene_nodes = vec![0];
+        }
+        let meshes = std::mem::take(&mut self.meshes);
         let buffers = if self.layout.size > 0 {
             vec![Buffer {
                 byte_length: self.layout.size,
@@ -397,17 +579,15 @@ impl<'a> Builder<'a> {
                 generator: &options.generator,
                 extras: options.extras.as_ref(),
             },
+            extensions_used: std::mem::take(&mut self.extensions_used),
             scene: 0,
             scenes: [json::Scene {
                 name: &options.name,
-                nodes: [0],
+                nodes: std::mem::take(&mut self.scene_nodes),
             }],
-            nodes: [json::Node {
-                name: &options.name,
-                mesh: has_mesh.then_some(0),
-                extras: options.extras.as_ref(),
-            }],
+            nodes: std::mem::take(&mut self.nodes),
             meshes,
+            skins: std::mem::take(&mut self.skins),
             materials: self.materials,
             textures: self.textures,
             images: self.images,
@@ -417,6 +597,38 @@ impl<'a> Builder<'a> {
         };
         (root, self.layout)
     }
+}
+
+/// Checks the name, part, component count and length of every extra attribute.
+fn check_extra(mesh: &TreeMesh, extra: &[ExtraAttribute]) -> Result<(), GlbError> {
+    for (position, attribute) in extra.iter().enumerate() {
+        let fail = |problem| {
+            Err(GlbError::ExtraAttribute {
+                name: attribute.name.clone(),
+                problem,
+            })
+        };
+        let Some(part) = mesh.parts.get(attribute.part) else {
+            return fail("no such part");
+        };
+        if !attribute.name.starts_with('_') {
+            return fail("an application-specific semantic must start with `_`");
+        }
+        if !(1..=4).contains(&attribute.components) {
+            return fail("components must be 1 to 4");
+        }
+        let vertices = part.buffers.positions.len();
+        if attribute.data.len() != vertices * usize::from(attribute.components) {
+            return fail("length is not `components` values per vertex");
+        }
+        let twice = extra[..position]
+            .iter()
+            .any(|other| other.part == attribute.part && other.name == attribute.name);
+        if twice {
+            return fail("given twice for the same part");
+        }
+    }
+    Ok(())
 }
 
 /// Checks attribute lengths, triangle count and index range of one part.
@@ -468,8 +680,9 @@ fn bounds(part: usize, positions: &[[f32; 3]]) -> Result<([f32; 3], [f32; 3]), G
     Ok((min, max))
 }
 
-/// glTF material of one part; `texture` is the base colour texture index when embedded.
-fn material(material: &Material, texture: Option<u32>) -> json::Material<'_> {
+/// glTF material of one part; `texture` and `normal` are the base colour and normal
+/// texture indices when embedded.
+fn material(material: &Material, texture: Option<u32>, normal: Option<u32>) -> json::Material<'_> {
     json::Material {
         name: &material.name,
         pbr_metallic_roughness: Pbr {
@@ -479,6 +692,7 @@ fn material(material: &Material, texture: Option<u32>) -> json::Material<'_> {
             roughness_factor: material.roughness,
         },
         double_sided: material.double_sided,
+        normal_texture: normal.map(|index| TextureInfo { index }),
         alpha_mode: material.alpha_cutoff.map(|_| "MASK"),
         alpha_cutoff: material.alpha_cutoff,
     }
@@ -489,5 +703,6 @@ const fn semantic(kind: PartKind) -> &'static str {
     match kind {
         PartKind::Bark => "bark",
         PartKind::Leaf => "leaf",
+        PartKind::Billboard => "billboard",
     }
 }

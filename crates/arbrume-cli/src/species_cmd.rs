@@ -46,5 +46,17 @@ pub fn info(path: &Path) -> Result<(), CliError> {
         stats.triangles,
         stats.height
     );
+    let metrics = arbrume_metrics::features(&plant.graph);
+    let local = |name: &str| metrics.local.get(name).map_or(0.0, |s| s.mean);
+    println!(
+        "metrics: sibling angle {:.1} deg, segment volume {:.3e} m3, chain length {:.3} m, \
+         length ratio {:.2}, tapering {:.2}, {} tips",
+        local("sibling_angle"),
+        local("segment_volume"),
+        local("chain_length"),
+        local("parent_length_ratio"),
+        local("chain_tapering"),
+        metrics.global["tip_count"]
+    );
     Ok(())
 }

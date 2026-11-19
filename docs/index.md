@@ -11,9 +11,12 @@ overview
 core
 growth
 mesh
+lod
+wind
 species
 raster
 cli
+annotations
 python
 blender
 research

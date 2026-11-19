@@ -14,6 +14,7 @@ arbrume-core.workspace = true
 arbrume-export.workspace = true
 arbrume-gen.workspace = true
 arbrume-grow.workspace = true
+arbrume-metrics.workspace = true
 arbrume-mesh.workspace = true
 arbrume-raster.workspace = true
 glam = "0.34.3"

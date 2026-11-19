@@ -1,4 +1,4 @@
-//! CPU rasterizer for plant thumbnails and, later, billboard atlas baking.
+//! CPU rasterizer for plant thumbnails and billboard atlas baking.
 //!
 //! The crate renders an [`arbrume_core::mesh::TreeMesh`] on one thread, without a GPU:
 //!
@@ -13,6 +13,7 @@
 //! * [`target`]: the resolved [`RenderTarget`] (colour, albedo, normal, depth, coverage)
 //!   and 8-bit sRGB [`Image`]s;
 //! * [`encode`]: PNG and JPEG encoding;
+//! * [`texture`]: PNG textures of parts, alpha masking and normal mapping;
 //! * [`thumbnail`]: [`render_thumbnail`], one call from a mesh to an image.
 //!
 //! Output is deterministic: the same mesh and options give byte-identical images on the
@@ -34,6 +35,7 @@ pub mod scene;
 pub mod shade;
 pub mod shadow;
 pub mod target;
+pub mod texture;
 pub mod thumbnail;
 
 pub use camera::{Bounds, Camera, Projection};
@@ -41,4 +43,5 @@ pub use encode::EncodeError;
 pub use raster::VisibilityBuffer;
 pub use scene::{Background, Ground, Lighting, Renderer, Scene};
 pub use target::{Image, RenderTarget};
+pub use texture::{AlphaTest, Texture};
 pub use thumbnail::{ThumbnailOptions, render_thumbnail};

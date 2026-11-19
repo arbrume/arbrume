@@ -24,6 +24,7 @@
 
 use crate::camera::Bounds;
 use crate::scene::MeshView;
+use arbrume_core::mesh::PartKind;
 use glam::{IVec3, Vec3};
 
 /// Grid steps of the sky directions, each one cell up.
@@ -86,7 +87,11 @@ impl OcclusionGrid {
 
     fn splat(&mut self, mesh: &MeshView<'_>) {
         let volume = self.cell.x * self.cell.y * self.cell.z;
-        for part in &mesh.parts {
+        for part in mesh
+            .parts
+            .iter()
+            .filter(|part| part.kind != PartKind::Billboard)
+        {
             let faces = if part.double_sided { 2.0 } else { 1.0 };
             for tri in part.indices.as_chunks::<3>().0 {
                 let Some(corners) = triangle(part.positions, *tri) else {

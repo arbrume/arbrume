@@ -1,0 +1,19 @@
+[package]
+name = "arbrume-metrics"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+arbrume-core.workspace = true
+glam = "0.34.3"
+serde = { version = "1.0.229", features = ["derive"] }
+
+[dev-dependencies]
+arbrume-gen.workspace = true
+serde_json = "1.0"

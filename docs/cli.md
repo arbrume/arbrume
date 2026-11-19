@@ -34,6 +34,7 @@ arbrume bench
 | `arbrume species show <name>` | print the TOML file of a preset |
 | `arbrume info <file.toml>` | validate a species file, then generate one plant with the default parameters and print its statistics |
 | `arbrume bench` | time each stage of the pipeline and the batch throughput, print a Markdown table |
+| `arbrume metrics <dir>` or `arbrume metrics --presets all` | summarise the ICTree realism features of skeletons per species ([ML annotations](annotations.md#realism-metric-v0)) |
 
 Exit codes: 0 on success, 1 when generating or writing a plant failed (the other plants
 are still generated, the failures are listed on stderr), 2 for invalid arguments,
@@ -55,13 +56,19 @@ configuration or species files.
 | `--max-vertices N` | 55000 | with `--random`: vertex budget of a plant, 0 for none |
 | `--thumb [SIZE]` | 256 when given | write a thumbnail of `SIZE` by `SIZE` pixels next to each plant |
 | `--thumb-format F` | `jpg` | `jpg` or `png` |
-| `--lods N` | 1 | levels of detail per plant |
+| `--lods N` | 1 | mesh levels of detail per plant, each within a triangle budget ([Levels of detail](lod.md)) |
+| `--billboard [METHOD]` | `cloud` when given | add a billboard as the last level: `cloud` or `cross` |
+| `--wind [LAYOUT]` | `texcoord` when given | bake wind data into every level: `texcoord` or `custom` ([Wind](wind.md)) |
+| `--skin` | | add a skeleton with skin weights following the wind data; needs `--wind` |
+| `--lod-file` | | write all levels of a plant in one file, one child node per level |
+| `--instance-leaves` | | with `--lod-file`: leaves as GPU instances of their templates (`EXT_mesh_gpu_instancing`) |
 | `--surroundings FILE` | | TOML file of the envelope, obstacles and neighbours around each plant |
-| `--growth-frames K` | | write each plant as `K` frames of its growth instead of one file; excludes `--lods` above 1 and `--random` |
+| `--growth-frames K` | | write each plant as `K` frames of its growth instead of one file; excludes `--lods` above 1, `--wind`, `--billboard` and `--random` |
 | `--out DIR` | | output directory, created if missing |
 | `--jobs J` | all cores | worker threads; without it `RAYON_NUM_THREADS` applies |
 | `--resume` | | skip plants already complete |
 | `--manifest` | | write `manifest.jsonl` in the output directory |
+| `--annotations LIST` | | ML ground truth next to each plant: `skeleton`, `labels`, `points=N`, `branches[=K]`, `metrics`, `json` ([ML annotations](annotations.md)) |
 | `--quiet`, `-q` | | print errors only |
 | `--config FILE` | | batch config file; excludes the species and parameter options |
 
@@ -73,10 +80,16 @@ the test suite checks that the files are byte-identical.
 
 **Files.** Plant `i` is written to `<species>_<seed>_<i>.glb`, where `<species>` is the
 preset name or the file stem of the species file (or the `name` of a config entry) and
-`<seed>` the base seed. With `--lods N`, `N > 1`, level `k` is
-`<species>_<seed>_<i>_lod<k>.glb`, meshed from the same graph at quality
-`Q * 0.5^k`: every level has roughly half the sides, rings and leaves of the previous
-one. Each worker thread writes its own files and reuses its buffers, so memory stays at
+`<seed>` the base seed. With `--lods N`, `N > 1`, or `--billboard`, level `k` is
+`<species>_<seed>_<i>_lod<k>.glb`: the `N` mesh levels of
+`arbrume_gen::Generator::lod_chain`, meshed from the same graph, each within a triangle
+budget `0.3^k` times that of level 0, then the billboard
+([Levels of detail](lod.md)). With `--lod-file` they are all in
+`<species>_<seed>_<i>.glb`, one child node per level. The metadata of each level adds
+`lod_kind` (`mesh` or `billboard`), `lod_budget`, `lod_triangles`, `max_screen_height`
+(the plant height on screen, in pixels, up to which the level is meant) and `quality`;
+the manifest lists each level with its triangles (with `--lod-file`, every level names
+the one file). With `--wind` every level carries the [wind data](wind.md). Each worker thread writes its own files and reuses its buffers, so memory stays at
 one plant per thread whatever the count.
 
 **Surroundings.** `--surroundings FILE` reads an envelope and occluders, in meters
@@ -156,7 +169,10 @@ without `--resume` rewrites it, so give each batch its own output directory or r
 ```
 
 `stats` describe level 0; `timings_ms` are wall-clock milliseconds summed over the
-levels. Plant seeds are full 64-bit integers: read them with a JSON parser that keeps
+levels. With `--annotations` a line also has `annotations` (the sidecar file names),
+`species_params` (the full parameter set the plant was grown with), `metrics` when asked
+and `annotate_ms` ([ML annotations](annotations.md#manifest)); `--resume` then also
+requires the annotation files. Plant seeds are full 64-bit integers: read them with a JSON parser that keeps
 integers exact (Python does; JavaScript `JSON.parse` does not).
 
 ## Batch config files
@@ -172,6 +188,8 @@ thumb_format = "jpg"            # or "png"
 age = { uniform = [10, 30] }    # age of the entries that set none (default 10)
 scale = 1.0                     # scale of the entries that set none (default 1)
 growth_frames = 0               # same as --growth-frames (default 0: one file per plant)
+annotations = "skeleton,labels" # same as --annotations (default: none)
+lod = { wind = "texcoord", billboard = "cloud", file = false, skin = false, instance_leaves = false }
 
 [surroundings]                  # around the plants of the entries that set none
 occluders = [{ shape = "box", min = [1.5, 0.0, -8.0], max = [2.0, 9.0, 8.0] }]
@@ -231,6 +249,10 @@ the file size. The throughput columns time a batch of `--batch` plants (default 
 0 skips them) generated and exported to memory, on one thread and on every thread of
 the pool. Nothing is written to disk, so the disk is not measured: a batch of large
 plants on many cores can be limited by the write speed of the disk instead.
+
+`--annotations LIST` adds the annotations of `LIST` to every plant, computed and
+serialized to memory, their time counted in the export column and in the throughput
+([ML annotations](annotations.md#throughput) has the comparison).
 
 `cargo bench -p arbrume-gen` measures the same stages with criterion
 (`pipeline/<stage>/<preset>/<age>`).

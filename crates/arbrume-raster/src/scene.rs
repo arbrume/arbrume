@@ -25,6 +25,7 @@ use crate::raster::{DrawCall, VisibilityBuffer, rasterize};
 use crate::shade::{Shader, resolve};
 use crate::shadow::{DepthMap, MapRequest};
 use crate::target::RenderTarget;
+use crate::texture::{AlphaTest, Texture};
 use arbrume_core::mesh::{PartKind, TreeMesh};
 use glam::{Vec2, Vec3, Vec4};
 
@@ -162,6 +163,14 @@ pub(crate) struct PartView<'a> {
     pub indices: &'a [u32],
     pub base_color: Vec3,
     pub double_sided: bool,
+    /// Texture coordinates, empty when the part has none or no texture.
+    pub uvs: &'a [[f32; 2]],
+    /// Decoded base colour texture, used with `uvs`.
+    pub base_texture: Option<&'a Texture>,
+    /// Decoded normal texture, used with `uvs`.
+    pub normal_texture: Option<&'a Texture>,
+    /// Alpha cutoff of the material.
+    pub alpha_cutoff: Option<f32>,
     /// Id of the first triangle of the part.
     pub first_id: u32,
     /// Index of the first vertex of the part in the concatenated clip buffer.
@@ -174,14 +183,54 @@ pub(crate) struct MeshView<'a> {
     pub parts: Vec<PartView<'a>>,
 }
 
+impl PartView<'_> {
+    /// The alpha masking of the part, when it has a textured, alpha-masked material.
+    pub(crate) fn alpha_test(&self) -> Option<AlphaTest<'_>> {
+        Some(AlphaTest {
+            uvs: self.uvs,
+            texture: self.base_texture?,
+            cutoff: self.alpha_cutoff?,
+        })
+    }
+}
+
+/// The decoded textures of each part of a mesh: base colour and normal.
+pub(crate) type PartTextures = Vec<(Option<Texture>, Option<Texture>)>;
+
+/// Decodes the PNG textures of the parts of `mesh` that have texture coordinates.
+pub(crate) fn decode_textures(mesh: &TreeMesh) -> PartTextures {
+    mesh.parts
+        .iter()
+        .map(|part| {
+            let uvs = part.buffers.uvs.len() == part.buffers.positions.len();
+            let decode = |bytes: &Option<Vec<u8>>, srgb| {
+                bytes
+                    .as_deref()
+                    .filter(|_| uvs)
+                    .and_then(|bytes| Texture::from_png(bytes, srgb))
+            };
+            let material = &part.material;
+            (
+                decode(&material.base_color_texture, true),
+                decode(&material.normal_texture, false),
+            )
+        })
+        .collect()
+}
+
 impl<'a> MeshView<'a> {
-    pub(crate) fn new(mesh: &'a TreeMesh) -> Self {
+    pub(crate) fn new(mesh: &'a TreeMesh, textures: &'a PartTextures) -> Self {
         let mut first_id = 0_u32;
         let mut first_vertex = 0;
         let mut parts = Vec::with_capacity(mesh.parts.len());
-        for part in &mesh.parts {
+        for (index, part) in mesh.parts.iter().enumerate() {
             let b = &part.buffers;
             let c = part.material.base_color;
+            let (base_texture, normal_texture) =
+                textures.get(index).map_or((None, None), |(base, normal)| {
+                    (base.as_ref(), normal.as_ref())
+                });
+            let textured = base_texture.is_some() || normal_texture.is_some();
             parts.push(PartView {
                 kind: part.kind,
                 positions: &b.positions,
@@ -198,6 +247,10 @@ impl<'a> MeshView<'a> {
                 indices: &b.indices,
                 base_color: Vec3::new(c[0], c[1], c[2]),
                 double_sided: part.material.double_sided,
+                uvs: if textured { &b.uvs } else { &[] },
+                base_texture,
+                normal_texture,
+                alpha_cutoff: part.material.alpha_cutoff,
                 first_id,
                 first_vertex,
             });
@@ -221,6 +274,7 @@ pub struct Renderer {
     scratch: Vec<Vec4>,
     sun: DepthMap,
     occlusion: OcclusionGrid,
+    textures: PartTextures,
 }
 
 impl Default for Renderer {
@@ -239,6 +293,7 @@ impl Renderer {
             scratch: Vec::new(),
             sun: DepthMap::empty(),
             occlusion: OcclusionGrid::new(),
+            textures: Vec::new(),
         }
     }
 
@@ -250,9 +305,42 @@ impl Renderer {
 
     /// Renders `mesh` as seen in `scene`.
     pub fn render(&mut self, mesh: &TreeMesh, scene: &Scene) -> RenderTarget {
+        self.render_selected(mesh, scene, &[])
+    }
+
+    /// Renders the triangles of `mesh` selected by `masks`: `masks[p][t]` says whether
+    /// triangle `t` of part `p` is drawn, and a part without a mask is drawn whole. The
+    /// sun shadows and the sky occlusion still come from the whole mesh, so a subset
+    /// is lit as it is within the plant.
+    pub fn render_selected(
+        &mut self,
+        mesh: &TreeMesh,
+        scene: &Scene,
+        masks: &[Vec<bool>],
+    ) -> RenderTarget {
+        let mut textures = std::mem::take(&mut self.textures);
+        textures.clear();
+        let textured = mesh.parts.iter().any(|part| {
+            part.material.base_color_texture.is_some() || part.material.normal_texture.is_some()
+        });
+        if textured {
+            textures = decode_textures(mesh);
+        }
+        let target = self.render_view(mesh, scene, masks, &textures);
+        self.textures = textures;
+        target
+    }
+
+    fn render_view(
+        &mut self,
+        mesh: &TreeMesh,
+        scene: &Scene,
+        masks: &[Vec<bool>],
+        textures: &PartTextures,
+    ) -> RenderTarget {
         let ss = scene.supersampling.max(1);
         let (width, height) = (scene.width * ss, scene.height * ss);
-        let view = MeshView::new(mesh);
+        let view = MeshView::new(mesh, textures);
         let aspect = scene.width.max(1) as f32 / scene.height.max(1) as f32;
         let clip_from_world = scene.camera.clip_from_world(aspect);
         self.visibility.reset(width, height);
@@ -261,13 +349,15 @@ impl Renderer {
             let transform = |&p: &[f32; 3]| clip_from_world * Vec3::from(p).extend(1.0);
             self.clip.extend(part.positions.iter().map(transform));
         }
-        for part in &view.parts {
+        for (index, part) in view.parts.iter().enumerate() {
             let count = part.positions.len();
             let call = DrawCall {
                 clip: &self.clip[part.first_vertex..part.first_vertex + count],
                 indices: part.indices,
                 cull_back: !part.double_sided,
                 first_id: part.first_id,
+                mask: masks.get(index).map(Vec::as_slice),
+                alpha: part.alpha_test(),
             };
             rasterize(&mut self.visibility, &call);
         }

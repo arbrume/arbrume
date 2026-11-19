@@ -33,7 +33,11 @@ with and without `MeshOptions::parallel`, for any number of threads, and whether
 | Field | Default | Meaning |
 |---|---|---|
 | `tolerance` | 0.002 m | largest distance allowed between the mesh and the smooth surface it approximates |
-| `min_radius` | 0 | axes whose base radius is below this are not meshed, nor are the axes they bear; their leaves stay |
+| `min_radius` | 0 | axes whose base radius is below this are not meshed, nor are the axes they bear; their leaves follow `orphan_leaves` |
+| `max_drop_reach` | infinite | an axis below `min_radius` is dropped only when what it bears stays within this distance of its base |
+| `orphan_leaves` | `Keep` | leaves of dropped axes: `Keep` (in the air), `Reattach` (to the nearest kept ancestor) or `Drop` (area preserved by the others) |
+| `twig_leaf_fraction` | 1 | fraction of the leaves of a twig template kept, enlarged to preserve its leaf area |
+| `wind` | false | compute the baked wind data ([Wind](wind.md)) |
 | `leaf_fraction` | 1 | fraction of the leaves (or twigs) kept, enlarged so that the total leaf area is preserved |
 | `max_cycle` | none | mesh the plant as it was at the end of this growth cycle |
 | `seed` | 0 | seed of the mesh-level variation (leaf order, size, attitude and colour, texture offsets) |
@@ -231,9 +235,16 @@ Detail is reduced from the graph, not by decimating a mesh.
 
 - **Tolerance.** A larger tolerance gives fewer rings, fewer sides and coarser blades,
   and leaves out collars, flares and lobes smaller than itself.
-- **Radius cut.** Axes below `min_radius` are dropped with everything they bear. Their
-  leaves stay, which keeps the crown full at a distance but leaves them in the air when
-  seen closer; `with_quality` therefore does not use it.
+- **Radius cut.** Axes below `min_radius` are dropped with everything they bear, but
+  only those whose descendants all stay within `max_drop_reach` of their base. With
+  `orphan_leaves = Keep` their leaves stay, which keeps the crown full at a distance but
+  leaves them in the air when seen closer; `with_quality` therefore does not use it. With
+  `Reattach` each leaf moves to the point of its nearest kept ancestor nearest to its
+  node (searched within eight internodes of where its lineage grows from that axis), on
+  its surface, so the reach limit bounds how far a leaf moves. With `Drop` the leaves are
+  left out and the others enlarged so that the total leaf area is preserved.
+- **Twig thinning.** `twig_leaf_fraction` keeps fewer leaves on each twig template,
+  spread along its stem and enlarged by `sqrt(n / kept)`.
 - **Leaf prefix.** Leaves are stored in a random order, so any prefix of the leaf buffer
   is an unbiased sample of the crown (the stochastic simplification of Cook et al. 2007,
   used for foliage by Livny et al. 2011 and Pirk et al. 2012). `leaf_fraction = f` keeps
@@ -243,7 +254,10 @@ Detail is reduced from the graph, not by decimating a mesh.
   and the order does not change when the plant is cut at an earlier age.
 
 `mesh_counts` gives the sizes for a set of options at a fraction of the cost of meshing,
-to choose a level that fits a triangle budget.
+to choose a level that fits a triangle budget. `Mesher::lod_chain` uses it to plan a
+whole chain of levels within geometric budgets ([Levels of detail](lod.md)), and
+`Mesher::leaf_instances` gives the leaf part as the transforms of its templates, for
+exporters that instance them.
 
 ## Age
 

@@ -17,7 +17,8 @@
 //! interpolated linearly in screen space, and passes the test when strictly smaller than
 //! the stored value.
 
-use glam::Vec4;
+use crate::texture::AlphaTest;
+use glam::{Mat3, Vec2, Vec3, Vec4};
 
 /// Id stored in samples that no triangle covers.
 pub const NO_TRIANGLE: u32 = u32::MAX;
@@ -87,18 +88,93 @@ pub struct DrawCall<'a> {
     pub cull_back: bool,
     /// Id written for the first triangle; triangle `i` writes `first_id + i`.
     pub first_id: u32,
+    /// When given, only the triangles `i` with `mask[i]` are drawn.
+    pub mask: Option<&'a [bool]>,
+    /// When given, samples where the texture alpha is below the cutoff are not drawn.
+    pub alpha: Option<AlphaTest<'a>>,
 }
 
 /// Draws every triangle of `call` into `target`.
 pub fn rasterize(target: &mut VisibilityBuffer, call: &DrawCall<'_>) {
     let viewport = Viewport::new(target.width, target.height);
     for (index, tri) in call.indices.as_chunks::<3>().0.iter().enumerate() {
+        if call
+            .mask
+            .is_some_and(|mask| !mask.get(index).copied().unwrap_or(false))
+        {
+            continue;
+        }
         let fetch = |i: u32| call.clip.get(i as usize).copied();
         let (Some(a), Some(b), Some(c)) = (fetch(tri[0]), fetch(tri[1]), fetch(tri[2])) else {
             continue;
         };
         let id = call.first_id.wrapping_add(index as u32);
-        draw_clip_triangle(target, &viewport, [a, b, c], call.cull_back, id);
+        let test = call
+            .alpha
+            .and_then(|alpha| Masking::new(alpha, [a, b, c], *tri, &viewport));
+        let triangle = Triangle {
+            clip: [a, b, c],
+            cull_back: call.cull_back,
+            id,
+            test: test.as_ref(),
+        };
+        draw_clip_triangle(target, &viewport, &triangle);
+    }
+}
+
+/// One triangle to draw, in clip space.
+struct Triangle<'a> {
+    clip: [Vec4; 3],
+    cull_back: bool,
+    id: u32,
+    /// Alpha masking, if any.
+    test: Option<&'a Masking<'a>>,
+}
+
+/// Alpha masking of one triangle: the texture coordinates at a sample come from its
+/// perspective-correct barycentric coordinates, as in the shader.
+struct Masking<'a> {
+    inverse: Mat3,
+    uvs: [Vec2; 3],
+    alpha: AlphaTest<'a>,
+    scale: (f32, f32),
+}
+
+impl<'a> Masking<'a> {
+    fn new(
+        alpha: AlphaTest<'a>,
+        clip: [Vec4; 3],
+        tri: [u32; 3],
+        viewport: &Viewport,
+    ) -> Option<Self> {
+        let uv = |i: u32| alpha.uvs.get(i as usize).map(|&uv| Vec2::from(uv));
+        let uvs = [uv(tri[0])?, uv(tri[1])?, uv(tri[2])?];
+        let column = |c: Vec4| Vec3::new(c.x, c.y, c.w);
+        let m = Mat3::from_cols(column(clip[0]), column(clip[1]), column(clip[2]));
+        let det = m.determinant();
+        (det != 0.0 && det.is_finite()).then(|| Self {
+            inverse: m.inverse(),
+            uvs,
+            alpha,
+            scale: (viewport.scale_x, viewport.scale_y),
+        })
+    }
+
+    /// Whether the sample at sub-pixel position `(x, y)` is opaque enough.
+    fn passes(&self, x: i64, y: i64) -> bool {
+        let ndc = Vec3::new(
+            x as f32 / self.scale.0 - 1.0,
+            1.0 - y as f32 / self.scale.1,
+            1.0,
+        );
+        let raw = self.inverse * ndc;
+        let sum = raw.x + raw.y + raw.z;
+        if sum.abs() < f32::MIN_POSITIVE {
+            return false;
+        }
+        let bary = raw / sum;
+        let uv = self.uvs[0] * bary.x + self.uvs[1] * bary.y + self.uvs[2] * bary.z;
+        self.alpha.texture.sample(uv).w >= self.alpha.cutoff
     }
 }
 
@@ -152,19 +228,14 @@ fn outside_frustum(v: &[Vec4; 3]) -> bool {
         || all(|p| p.z > p.w)
 }
 
-fn draw_clip_triangle(
-    target: &mut VisibilityBuffer,
-    viewport: &Viewport,
-    v: [Vec4; 3],
-    cull_back: bool,
-    id: u32,
-) {
+fn draw_clip_triangle(target: &mut VisibilityBuffer, viewport: &Viewport, triangle: &Triangle) {
+    let v = triangle.clip;
     if !v.iter().all(|p| p.is_finite()) || outside_frustum(&v) {
         return;
     }
     if outcode(v[0]) | outcode(v[1]) | outcode(v[2]) == 0 {
         let screen = v.map(|p| viewport.project(p));
-        draw_screen_triangle(target, viewport, screen, cull_back, id);
+        draw_screen_triangle(target, viewport, screen, triangle);
         return;
     }
     let mut polygon = [Vec4::ZERO; MAX_CLIPPED];
@@ -173,7 +244,7 @@ fn draw_clip_triangle(
         let fan = [polygon[0], polygon[i], polygon[i + 1]];
         if fan.iter().all(|p| p.w > 0.0 && p.is_finite()) {
             let screen = fan.map(|p| viewport.project(p));
-            draw_screen_triangle(target, viewport, screen, cull_back, id);
+            draw_screen_triangle(target, viewport, screen, triangle);
         }
     }
 }
@@ -259,9 +330,9 @@ fn draw_screen_triangle(
     target: &mut VisibilityBuffer,
     viewport: &Viewport,
     mut s: [(i64, i64, f32); 3],
-    cull_back: bool,
-    id: u32,
+    triangle: &Triangle,
 ) {
+    let cull_back = triangle.cull_back;
     let area = (s[1].0 - s[0].0) * (s[2].1 - s[0].1) - (s[2].0 - s[0].0) * (s[1].1 - s[0].1);
     if area == 0 || (cull_back && area > 0) {
         return;
@@ -288,7 +359,7 @@ fn draw_screen_triangle(
     ];
     let plane = DepthPlane::new(&s);
     let span = Span { x0, x1, y0, y1 };
-    fill(target, &edges, &plane, span, id);
+    fill(target, &edges, &plane, span, (triangle.id, triangle.test));
 }
 
 /// Depth as an affine function of the sub-pixel position.
@@ -330,7 +401,13 @@ struct Span {
 /// instead of testing every pixel of the box.
 const WIDE_SPAN: i64 = 8;
 
-fn fill(target: &mut VisibilityBuffer, edges: &[Edge; 3], plane: &DepthPlane, span: Span, id: u32) {
+fn fill(
+    target: &mut VisibilityBuffer,
+    edges: &[Edge; 3],
+    plane: &DepthPlane,
+    span: Span,
+    (id, test): (u32, Option<&Masking>),
+) {
     let width = target.width as usize;
     let step_x = edges.map(|e| e.a * SUBPIXEL);
     let step_z = (plane.dx * SUBPIXEL as f64) as f32;
@@ -352,7 +429,9 @@ fn fill(target: &mut VisibilityBuffer, edges: &[Edge; 3], plane: &DepthPlane, sp
         for px in first..=last {
             if (e[0] | e[1] | e[2]) >= 0 {
                 let index = row + px as usize;
-                if z < target.depth[index] && z >= 0.0 {
+                let opaque =
+                    || test.is_none_or(|test| test.passes(px * SUBPIXEL + HALF_SUBPIXEL, sy));
+                if z < target.depth[index] && z >= 0.0 && opaque() {
                     target.depth[index] = z;
                     target.id[index] = id;
                 }
@@ -395,6 +474,8 @@ mod tests {
             indices: &indices,
             cull_back,
             first_id,
+            mask: None,
+            alpha: None,
         };
         rasterize(target, &call);
     }

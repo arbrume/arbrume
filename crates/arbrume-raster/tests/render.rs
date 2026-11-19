@@ -20,6 +20,7 @@ fn material(color: [f32; 4], double_sided: bool) -> Material {
         double_sided,
         alpha_cutoff: None,
         base_color_texture: None,
+        normal_texture: None,
     }
 }
 
@@ -38,6 +39,7 @@ fn quad(center: Vec3, size: f32, color: [f32; 4], kind: PartKind) -> MeshPart {
             normals: vec![[0.0, 1.0, 0.0]; 4],
             uvs: Vec::new(),
             colors: Vec::new(),
+            wind: Vec::new(),
             indices: vec![0, 1, 2, 0, 2, 3],
         },
     }
@@ -149,6 +151,7 @@ fn shadow_of_a_floating_quad_lands_where_the_sun_projects_it() {
             [0.8, 0.1, 0.1, 1.0],
             PartKind::Leaf,
         )],
+        wind: None,
     };
     let sun = Vec3::new(1.0, 1.0, 0.0).normalize();
     let scene = top_down_scene(sun);
@@ -184,6 +187,7 @@ fn nearer_part_hides_farther_part() {
                 PartKind::Leaf,
             ),
         ],
+        wind: None,
     };
     let mut scene = top_down_scene(Vec3::Y);
     scene.ground = None;
@@ -199,7 +203,10 @@ fn nearer_part_hides_farther_part() {
 fn single_sided_quad_seen_from_below_is_culled() {
     let mut part = quad(Vec3::ZERO, 2.0, [0.5; 4], PartKind::Bark);
     part.material.double_sided = false;
-    let mesh = TreeMesh { parts: vec![part] };
+    let mesh = TreeMesh {
+        parts: vec![part],
+        wind: None,
+    };
     let bounds = Bounds::of_mesh(&mesh).unwrap();
     let mut scene = top_down_scene(Vec3::Y);
     scene.ground = None;

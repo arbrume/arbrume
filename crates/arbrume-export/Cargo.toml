@@ -12,6 +12,8 @@ workspace = true
 [dependencies]
 arbrume-core.workspace = true
 bytemuck = "1.23"
+crc32fast = "1.5"
+glam = "0.34.3"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0.21"

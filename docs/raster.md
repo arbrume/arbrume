@@ -18,6 +18,7 @@ let jpeg = image.to_jpeg(85, [255, 255, 255])?;
 | `render_thumbnail(mesh, options)` | one thumbnail as an 8-bit sRGB `Image` |
 | `Renderer::new()`, then `renderer.thumbnail(...)` or `renderer.thumbnail_target(...)` | many thumbnails; the renderer keeps its buffers |
 | `renderer.render(mesh, &scene)` | any camera, lights, ground and background, into a `RenderTarget` |
+| `renderer.render_selected(mesh, &scene, &masks)` | only the triangles selected per part, lit by the whole mesh (billboard baking) |
 | `Camera::frame(bounds, azimuth, elevation, fov)`, `Camera::frame_points(...)` | a camera that shows a box or a point set with a margin |
 | `raster::rasterize(buffer, call)` | the bare triangle rasterizer, into a depth and id `VisibilityBuffer` |
 | `Image::to_png()`, `Image::write_png(path)`, `Image::to_jpeg(quality, matte)` | encoding |
@@ -132,7 +133,11 @@ desktop machine and are only indicative.
 
 ## Limits
 
-- Base-colour textures and alpha cutoff are ignored; leaves are drawn as their geometry.
+- Only PNG textures are drawn (`texture` module): a part with texture coordinates and a
+  PNG base colour texture is alpha-masked at the cutoff of its material and its albedo is
+  multiplied by the texel colour; a PNG normal texture perturbs the shading normal in the
+  tangent frame of each triangle. JPEG textures are ignored. Billboard parts are left out
+  of the sky occlusion grid, since their atlas stands for the whole crown.
 - Geometry thinner than a sample (fine twigs, needles) aliases or vanishes; more
   supersampling helps.
 - Only the plant casts shadows, on itself and on the ground disc.

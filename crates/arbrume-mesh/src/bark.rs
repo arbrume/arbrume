@@ -69,6 +69,48 @@ pub(crate) struct BarkPlan {
     max_sides: u32,
     /// Whether the tubes carry vertex colours.
     colored: bool,
+    /// Reach of each chain: an upper bound of the distance from its origin to any node
+    /// of the chains it bears, itself included. Filled only when it decides a cut.
+    reach: Vec<f32>,
+}
+
+impl BarkPlan {
+    /// First vertex and vertex count of the tube of each chain, indexed by chain id; the
+    /// count is 0 for a chain left out.
+    pub(crate) fn chain_vertices(&self) -> impl ExactSizeIterator<Item = (usize, usize)> + '_ {
+        self.chains
+            .iter()
+            .map(|chain| (chain.vertex_start, chain.vertices))
+    }
+}
+
+/// The tube of one chain as the wind data sees it.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct TubeLayout<'a> {
+    /// Rings of the chain, empty when it is left out.
+    pub rings: &'a [Ring],
+    /// First vertex of the tube in the bark buffers.
+    pub vertex_start: usize,
+    /// Vertices of the tube.
+    pub vertices: usize,
+}
+
+impl BarkPlan {
+    /// Fills `kept` with whether each chain, by chain id, is meshed.
+    pub(crate) fn fill_kept(&self, kept: &mut Vec<bool>) {
+        kept.clear();
+        kept.extend(self.chains.iter().map(|chain| chain.vertices > 0));
+    }
+
+    /// The tube of chain `chain` (by chain id).
+    pub(crate) fn tube(&self, chain: usize) -> TubeLayout<'_> {
+        let plan = &self.chains[chain];
+        TubeLayout {
+            rings: &self.rings[plan.rings.clone()],
+            vertex_start: plan.vertex_start,
+            vertices: plan.vertices,
+        }
+    }
 }
 
 /// Base profile of the chain `view`, sampled as `axis`.
@@ -122,6 +164,30 @@ fn style(species: &Species, view: &ChainView, radius: f32, seed: u64) -> Style {
     }
 }
 
+/// Fills `reach` with the reach of every chain of `graph` (see [`BarkPlan`]), children
+/// before parents.
+fn fill_reach(graph: &PlantGraph, reach: &mut Vec<f32>) {
+    reach.clear();
+    reach.resize(graph.chain_count(), 0.0);
+    for chain in graph.chain_ids().rev() {
+        let Some(view) = graph.chain_view(chain) else {
+            continue;
+        };
+        let own = view
+            .positions
+            .iter()
+            .map(|p| p.distance(view.origin))
+            .fold(0.0, f32::max);
+        let index = chain.index();
+        reach[index] = reach[index].max(own);
+        if let Some(parent) = graph.parent_chain(chain) {
+            let origin = graph.chain_origin(parent);
+            let through = view.origin.distance(origin) + reach[index];
+            reach[parent.index()] = reach[parent.index()].max(through);
+        }
+    }
+}
+
 /// Pass 1: samples every kept chain into `plan` and counts its tube. The buffers of
 /// `plan` are reused.
 pub(crate) fn plan_bark(
@@ -139,6 +205,10 @@ pub(crate) fn plan_bark(
     (plan.vertices, plan.indices) = (0, 0);
     plan.max_sides = sweep.max_sides();
     plan.colored = species.bark.has_vertex_colors();
+    plan.reach.clear();
+    if options.min_radius > 0.0 && options.max_drop_reach.is_finite() {
+        fill_reach(graph, &mut plan.reach);
+    }
     for chain in graph.chain_ids() {
         let view = graph.chain_view(chain).ok_or(MeshError::NotContiguous)?;
         let nodes = options
@@ -157,7 +227,8 @@ pub(crate) fn plan_bark(
             closed_base: false,
             tint: None,
         };
-        if nodes > 0 && parent_kept && view.radii[0] >= options.min_radius {
+        let far = !plan.reach.is_empty() && plan.reach[chain.index()] > options.max_drop_reach;
+        if nodes > 0 && parent_kept && (view.radii[0] >= options.min_radius || far) {
             let mut axis = Axis {
                 origin: view.origin,
                 positions: &view.positions[..nodes],
