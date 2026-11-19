@@ -12,7 +12,7 @@ branching = "monopodial"
 growth_rhythm = "rhythmic"
 branching_pattern = "diffuse"
 branch_timing = "proleptic"
-max_order = 5
+max_order = 4
 phyllotaxis = { leaves_per_node = 1, divergence_deg = 137.5 }
 
 [growth]
@@ -68,7 +68,7 @@ young_radius = 0.04
 color_variation = 0.12
 
 [variation]
-age = [10, 30]
+age = [10, 25]
 scale = [0.85, 1.15]
 
 [variation.jitter]

@@ -64,7 +64,7 @@ young_radius = 0.04
 color_variation = 0.12
 
 [variation]
-age = [14, 50]
+age = [16, 50]
 scale = [0.85, 1.15]
 
 [variation.jitter]

@@ -25,12 +25,12 @@ axis_length = { by_order = [
 shoot_length = { by_order = [[[0.0, 0.45], [1.0, 0.15]], [[0.0, 0.55], [1.0, 0.25]], 0.6, 0.6] }
 length_variation = 0.25
 internode_length = { by_order = [0.3, 0.45, 0.4, 0.34] }
-branch_probability = { by_order = [0.75, [[0.0, 0.0], [0.2, 0.6], [1.0, 0.85]], 0.35] }
+branch_probability = { by_order = [0.75, [[0.0, 0.0], [0.2, 0.6], [1.0, 0.85]], 0.25] }
 bare_base = { by_order = [0.3, 0.0, 0.0] }
 branching_angle = { by_order = [50.0, [[0.0, 70.0], [0.6, 50.0], [1.0, 35.0]], 65.0, 50.0] }
 branching_angle_variation = 10.0
 direction_variation = { by_order = [3.0, 6.0, 4.0, 3.0] }
-gnarl = { by_order = [8.0, 16.0, 8.0, 4.0] }
+gnarl = { by_order = [5.0, 16.0, 8.0, 4.0] }
 # Limbs arch up and over; what they bear falls.
 gravitropic_setpoint = { by_order = [0.0, [[0.0, 40.0], [1.0, 100.0]], 178.0, 180.0] }
 tropism_weight = { by_order = [0.06, 0.05, 0.3, 0.35] }
@@ -45,19 +45,19 @@ tip_radius = 0.007
 flare = 0.7
 
 [foliage]
-length = 0.14
-width_ratio = 0.26
+length = 0.17
+width_ratio = 0.3
 shape = "lanceolate"
 segments = 2
 fold_deg = 10.0
 inclination_deg = 35.0
 retention_cycles = 8
-density = 0.7
+density = 0.6
 per_node = 2
 color = [0.12, 0.27, 0.05]
 hue_variation = 0.12
 brightness_variation = 0.3
-twig = { leaves = 8, length = 0.45, inclination_deg = 40.0, bend_deg = 30.0, stem_radius = 0.0015 }
+twig = { leaves = 9, length = 0.7, inclination_deg = 40.0, bend_deg = 30.0, stem_radius = 0.0015 }
 
 [bark]
 color = [0.13, 0.11, 0.09]
@@ -66,7 +66,7 @@ young_radius = 0.025
 color_variation = 0.15
 
 [variation]
-age = [20, 50]
+age = [24, 50]
 scale = [0.85, 1.15]
 
 [variation.jitter]

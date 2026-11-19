@@ -27,10 +27,10 @@ phyllotaxis = { leaves_per_node = 2, divergence_deg = 180.0 }
 axis_length = { by_order = [14.0, 3.0] }
 shoot_length = { by_order = [[[0.0, 0.3], [1.0, 0.2]], 3.5] }
 length_variation = { by_order = [0.0, 0.12] }
-internode_length = { by_order = [0.05, 0.075] }
+internode_length = { by_order = [0.075, 0.075] }
 branch_probability = 1.0
-# A frond lives four cycles and sinks as it ages.
-branch_lifespan = 4.0
+# A frond lives six cycles and sinks as it ages.
+branch_lifespan = 6.0
 aging_angle = [[0.0, 0.0], [0.5, 45.0], [1.0, 100.0]]
 branching_angle = { by_order = [0.0, 22.0] }
 branching_angle_variation = 8.0

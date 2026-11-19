@@ -17,29 +17,29 @@ Triangles are those of one plant at the stated age and full quality.
 |---|---|---|---|---|---|---|---|
 | `broadleaf` | broadleaf tree | straight trunk carried into a dense egg-shaped crown that starts low, linden-like | 40 | 15 m | 10 m | 0.45 m | 190 k |
 | `maple_like` | broadleaf tree | short clear trunk, ascending scaffold, wide rounded crown of broad leaves | 40 | 13 m | 12 m | 0.4 m | 180 k |
-| `oak_like` | broadleaf tree | stout trunk dividing into heavy crooked limbs, dome wider than tall | 60 | 13 m | 17 m | 0.7 m | 310 k |
+| `oak_like` | broadleaf tree | stout upright trunk dividing into heavy crooked limbs, dome wider than tall | 60 | 14 m | 18 m | 0.7 m | 350 k |
 | `birch_like` | broadleaf tree | slender white trunk, thin rising branches, fine pendulous twigs, light crown | 30 | 15 m | 7 m | 0.25 m | 155 k |
 | `poplar_like` | broadleaf tree | columnar: branches rise close to the trunk in a tall spire | 30 | 19 m | 4.5 m | 0.4 m | 145 k |
-| `willow_like` | broadleaf tree | weeping: arching limbs, long branchlets hanging in curtains of narrow leaves | 30 | 12 m | 12 m | 0.4 m | 170 k |
-| `acacia_like` | broadleaf tree | umbrella: bare trunk, limbs that rise then flatten into a wide flat top | 30 | 11 m | 16 m | 0.45 m | 240 k |
+| `willow_like` | broadleaf tree | weeping: arching limbs, long branchlets hanging in curtains of narrow leaves | 30 | 12 m | 12.5 m | 0.35 m | 140 k |
+| `acacia_like` | broadleaf tree | umbrella: bare trunk, limbs that rise then flatten into a wide flat top of feathery leaves | 30 | 11 m | 17 m | 0.35 m | 180 k |
 | `sapling` | broadleaf tree | a young whip with a few short side branches and large leaves | 5 | 2.5 m | 1.6 m | 3 cm | 2 k |
-| `conifer` | conifer | fir-like: regular whorls of level branches with flat sprays, tidy dense cone | 40 | 16 m | 6.5 m | 0.3 m | 90 k |
-| `spruce_like` | conifer | whorls that sweep down and turn up at the tip, hanging branchlets, narrow cone | 40 | 18 m | 8.5 m | 0.35 m | 140 k |
+| `conifer` | conifer | fir-like: regular whorls of level branches with flat sprays, tidy dense cone | 40 | 16 m | 6.5 m | 0.3 m | 105 k |
+| `spruce_like` | conifer | whorls that sweep down and turn up at the tip, hanging branchlets, narrow cone | 40 | 18 m | 8.5 m | 0.35 m | 160 k |
 | `pine_like` | conifer | cleared trunk, open whorls of upturned limbs, tufts of long needles, rounded top | 45 | 18 m | 12 m | 0.4 m | 260 k |
 | `cypress_like` | conifer | columnar: short upright branches and dense dark sprays in a narrow flame | 30 | 12 m | 3 m | 0.25 m | 100 k |
-| `larch_like` | conifer | level limbs, thin hanging branchlets, soft light-green needles, airy cone | 40 | 18 m | 8 m | 0.4 m | 155 k |
-| `palm_like` | palm | unbranched trunk crowned by arching feather fronds, old ones drooping | 20 | 7 m | 5.5 m | 0.2 m | 27 k |
+| `larch_like` | conifer | level limbs, thin hanging branchlets in soft light-green tufts, open broad cone | 40 | 18 m | 9.5 m | 0.4 m | 200 k |
+| `palm_like` | palm | unbranched trunk crowned by arching feather fronds, old ones drooping | 20 | 7 m | 5.5 m | 0.2 m | 26 k |
 | `shrub` | shrub | rounded dense bush of many stems, small leaves | 8 | 2 m | 3 m | 4 cm | 80 k |
 | `upright_shrub` | shrub | clump of tall canes rising steeply, broad leaves on short side shoots | 10 | 4.5 m | 3.5 m | 6 cm | 90 k |
 | `spreading_shrub` | shrub | stems running out low over the ground, wider than tall, small dark leaves | 8 | 1.1 m | 4 m | 4 cm | 130 k |
-| `bamboo_like` | cane | clump of thin green canes, bare below, whorls of twigs and narrow leaves above | 6 | 8 m | 4 m | 5 cm | 45 k |
-| `fern_like` | herb | shuttlecock of arching fronds with two ranks of feathered pinnae | 2 | 0.8 m | 1.6 m | | 25 k |
-| `rosette_herb` | herb | low clump of large stalked leaves from one point, hosta-like | 1 | 0.4 m | 1 m | | 0.7 k |
-| `open_grown_broadleaf` | broadleaf tree, self-organizing | full crown on every side that keeps its low limbs and thins out inside | 25 | 16 m | 17 m | 0.5 m | 420 k |
-| `forest_grown_broadleaf` | broadleaf tree, self-organizing | tall clean bole under a high narrow crown; shaded limbs are shed | 40 | 27 m | 16 m | 0.7 m | 200 k |
-| `excurrent_conifer` | conifer, self-organizing | one straight leader, whorls shorter towards the top, lowest whorls shed (priority model) | 30 | 18 m | 10 m | 0.3 m | 225 k |
-| `spreading_decurrent` | broadleaf tree, self-organizing | short trunk dissolving into wide level limbs, low dome twice as wide as tall | 25 | 9 m | 20 m | 0.45 m | 120 k |
-| `thicket_shrub` | shrub, self-organizing | several leaning stems, twigs crowded at the lit surface of a rounded bush | 10 | 1.7 m | 2.3 m | 2.5 cm | 17 k |
+| `bamboo_like` | cane | clump of thin green canes, bare below, whorls of twigs and narrow leaves above | 6 | 8 m | 4 m | 5 cm | 75 k |
+| `fern_like` | herb | full shuttlecock of arching fronds with two ranks of feathered pinnae | 2 | 0.8 m | 1.7 m | | 50 k |
+| `rosette_herb` | herb | low clump of large stalked leaves from one point, hosta-like | 1 | 0.45 m | 1 m | | 1.2 k |
+| `open_grown_broadleaf` | broadleaf tree, self-organizing | full crown on every side that keeps its low limbs and thins out inside | 25 | 16 m | 16 m | 0.45 m | 330 k |
+| `forest_grown_broadleaf` | broadleaf tree, self-organizing | tall clean bole under a high narrow crown; shaded limbs are shed | 40 | 27 m | 14 m | 0.65 m | 215 k |
+| `excurrent_conifer` | conifer, self-organizing | one straight leader, whorls shorter towards the top, lowest whorls shed (priority model) | 30 | 17.5 m | 9 m | 0.25 m | 165 k |
+| `spreading_decurrent` | broadleaf tree, self-organizing | short trunk dissolving into wide level limbs, low dome twice as wide as tall | 25 | 9 m | 20 m | 0.45 m | 150 k |
+| `thicket_shrub` | shrub, self-organizing | several leaning stems, twigs crowded at the lit surface of a rounded bush | 10 | 1.7 m | 2.3 m | 2.5 cm | 28 k |
 | `hedge_shrub` | shrub, self-organizing | dense small-leaved bush that fills and stops at a clip volume | 10 | 1.4 m | 2 m | 2.5 cm | 24 k |
 | `envelope_tree` | broadleaf tree, self-organizing | crown that fills an envelope, by default an ellipsoid (markers and light) | 25 | 9.5 m | 8 m | 0.18 m | 130 k |
 
@@ -81,7 +81,7 @@ parameters of `[growth.self_organization]` rather than from length curves:
 | Preset | Sensing | Allocation | What sets the habit |
 |---|---|---|---|
 | `open_grown_broadleaf` | shadow | Borchert-Honda | `axis_bias` 0.52, a low `shedding_threshold` (0.02), no bud on the lowest tenth of the trunk |
-| `forest_grown_broadleaf` | shadow | Borchert-Honda | `axis_bias` 0.55 on the trunk, `shedding_threshold` 0.05, narrow branching angles |
+| `forest_grown_broadleaf` | shadow | Borchert-Honda | `axis_bias` 0.55 on the trunk, `shedding_threshold` 0.05, narrow branching angles, no bud on the lowest tenth of the trunk |
 | `excurrent_conifer` | shadow | priority | apical control on the trunk and the branches, whorls at the end of each growth unit, an `axis_length` of order 1 that shortens towards the top |
 | `spreading_decurrent` | shadow | Borchert-Honda | `axis_bias` 0.42 on the trunk, a set-point near horizontal with a strong `tropism_weight`, a small `environment_weight` |
 | `thicket_shrub` | shadow | Borchert-Honda | seven stems, `axis_bias` 0.47, a light shadow (`shadow_strength` 0.1 over 4 layers) |
@@ -116,21 +116,21 @@ changes. Each preset states the range of ages it is meant for in `[variation]`:
 
 | Preset | Ages | Preset | Ages |
 |---|---|---|---|
-| `acacia_like` | 20 to 45 | `oak_like` | 25 to 70 |
+| `acacia_like` | 24 to 45 | `oak_like` | 30 to 70 |
 | `bamboo_like` | 3 to 10 | `palm_like` | 6 to 30 |
-| `birch_like` | 10 to 45 | `pine_like` | 14 to 60 |
-| `broadleaf` | 14 to 50 | `poplar_like` | 10 to 40 |
+| `birch_like` | 10 to 45 | `pine_like` | 14 to 52 |
+| `broadleaf` | 16 to 50 | `poplar_like` | 10 to 40 |
 | `conifer` | 10 to 50 | `rosette_herb` | 1 to 2 |
 | `cypress_like` | 10 to 40 | `sapling` | 3 to 8 |
 | `fern_like` | 2 to 4 | `shrub` | 4 to 14 |
 | `larch_like` | 15 to 50 | `spreading_shrub` | 4 to 12 |
-| `maple_like` | 15 to 50 | `spruce_like` | 12 to 50 |
-| | | `upright_shrub` | 4 to 16 |
-| | | `willow_like` | 20 to 50 |
-| `envelope_tree` | 10 to 30 | `open_grown_broadleaf` | 10 to 30 |
-| `excurrent_conifer` | 10 to 40 | `spreading_decurrent` | 10 to 30 |
-| `forest_grown_broadleaf` | 15 to 45 | `thicket_shrub` | 5 to 14 |
-| `hedge_shrub` | 5 to 12 | | |
+| `maple_like` | 18 to 50 | `spruce_like` | 12 to 50 |
+| | | `upright_shrub` | 5 to 16 |
+| | | `willow_like` | 24 to 50 |
+| `envelope_tree` | 12 to 22 | `open_grown_broadleaf` | 10 to 25 |
+| `excurrent_conifer` | 12 to 34 | `spreading_decurrent` | 10 to 30 |
+| `forest_grown_broadleaf` | 15 to 45 | `thicket_shrub` | 5 to 11 |
+| `hedge_shrub` | 5 to 10 | | |
 
 Below its range a tree is a thin sapling with little foliage, which is why the ranges of
 the spreading trees start late. Node counts need not grow with age: a `bare_base` and a
@@ -172,7 +172,7 @@ and a scale in its ranges and an individual, all from `(seed, index)`
 The foliage budget of a preset is set by three numbers: `foliage.per_node` and
 `foliage.density` (twigs per node) and `foliage.twig.leaves`. A broadleaf tree of the
 library carries 3 000 to 6 000 twigs of 5 to 8 leaves at the top of its age range, a
-conifer 3 000 to 5 000 branchlets, each with 12 to 20 needles and two or three fins. At
+conifer 3 000 to 5 000 branchlets, each with 8 to 12 needles and two to four fins. At
 full quality that is 100 000 to 300 000 triangles; `MeshOptions::with_quality` and the
 budget of the random sampler bring a plant to a chosen size by keeping a fraction of the
 twigs, enlarged to preserve the leaf area.

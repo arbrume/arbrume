@@ -26,13 +26,13 @@ shoot_length = { by_order = [[[0.0, 0.35], [1.0, 0.1]], [[0.0, 0.4], [1.0, 0.15]
 length_variation = 0.22
 internode_length = { by_order = [0.3, 0.4, 0.28, 0.16] }
 branch_probability = { by_order = [0.7, [[0.0, 0.0], [0.15, 0.55], [1.0, 0.7]], 0.4] }
-bare_base = { by_order = [0.25, 0.0, 0.0] }
-branching_angle = { by_order = [50.0, [[0.0, 85.0], [0.6, 65.0], [1.0, 40.0]], 60.0, 55.0] }
+bare_base = { by_order = [0.3, 0.0, 0.0] }
+branching_angle = { by_order = [50.0, [[0.0, 72.0], [0.6, 62.0], [1.0, 40.0]], 60.0, 55.0] }
 branching_angle_variation = 12.0
-direction_variation = { by_order = [3.0, 6.0, 9.0, 6.0] }
-gnarl = { by_order = [5.0, 18.0, 18.0, 8.0] }
+direction_variation = { by_order = [1.5, 6.0, 9.0, 6.0] }
+gnarl = { by_order = [2.5, 18.0, 18.0, 8.0] }
 gravitropic_setpoint = { by_order = [0.0, 58.0, 70.0, 80.0] }
-tropism_weight = { by_order = [0.06, 0.04, 0.03, 0.02] }
+tropism_weight = { by_order = [0.1, 0.04, 0.03, 0.02] }
 fork_probability = { by_order = [[[0.0, 0.0], [0.5, 0.0], [0.55, 0.25], [0.8, 0.25], [0.85, 0.0]], 0.0] }
 fork_limit = 2
 fork_angle = 30.0
@@ -64,7 +64,7 @@ young_radius = 0.05
 color_variation = 0.2
 
 [variation]
-age = [25, 70]
+age = [30, 70]
 scale = [0.85, 1.2]
 
 [variation.jitter]

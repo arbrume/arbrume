@@ -3,7 +3,7 @@
 #
 # Typical size at age 40: about 18 m tall, crown 8 m wide, trunk 0.4 m across at the
 # base. Every value is a starting point chosen by eye, not a measurement. A twig is one
-# hanging branchlet set with tufts of needles.
+# hanging branchlet set with tufts of needles, with fins for their bulk.
 
 schema_version = 0
 name = "Larch-like conifer"
@@ -17,8 +17,8 @@ max_order = 1
 phyllotaxis = { leaves_per_node = 1, divergence_deg = 137.5 }
 
 [growth]
-axis_length = { by_order = [20.0, 4.2] }
-apical_dominance = 0.88
+axis_length = { by_order = [20.0, 5.2] }
+apical_dominance = 0.85
 shoot_length = { by_order = [[[0.0, 0.6], [1.0, 0.3]], [[0.0, 0.4], [1.0, 0.2]]] }
 length_variation = { by_order = [0.05, 0.15] }
 internode_length = { by_order = [0.3, 0.18] }
@@ -42,7 +42,7 @@ taper = [[0.0, 1.0], [1.0, 0.06]]
 flare = 0.45
 
 [foliage]
-length = 0.1
+length = 0.07
 width_ratio = 0.3
 shape = "needle"
 segments = 1
@@ -58,7 +58,7 @@ hue_variation = 0.12
 brightness_variation = 0.3
 size_variation = 0.25
 orientation_variation_deg = 20.0
-twig = { leaves = 20, length = 0.5, leaves_per_node = 4, divergence_deg = 45.0, inclination_deg = 55.0, bend_deg = 45.0, stem_radius = 0.003, terminal_leaf = false, radial = true, variants = 5 }
+twig = { leaves = 8, length = 0.4, leaves_per_node = 2, divergence_deg = 90.0, inclination_deg = 55.0, bend_deg = 50.0, stem_radius = 0.003, terminal_leaf = false, radial = true, fins = 3, fin_width = 0.038, fin_shade = 0.85, variants = 5 }
 
 [bark]
 color = [0.16, 0.12, 0.1]
