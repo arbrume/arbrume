@@ -1,8 +1,14 @@
 # Builds the abi3 wheels of the Python bindings (crates/arbrume-py) for every platform
-# and uploads them as workflow artifacts. Nothing is published.
+# and the Blender extension zips made from them, and uploads both as workflow artifacts.
+# Nothing is published.
 name: Wheels
 on:
   workflow_dispatch:
+    inputs:
+      extension:
+        description: Also build the Blender extension zips
+        type: boolean
+        default: true
   push:
     tags: ["v*"]
 
@@ -30,4 +36,50 @@ jobs:
         with:
           name: wheels-${{ matrix.name }}
           path: crates/arbrume-py/dist/*.whl
+          if-no-files-found: error
+
+  # Optional: one Blender extension zip per platform (Linux x86_64, Windows x64, macOS
+  # arm64 and x86_64), built and validated by the oldest Blender the extension supports.
+  blender:
+    if: github.event_name == 'push' || inputs.extension
+    needs: wheels
+    runs-on: ubuntu-latest
+    env:
+      BLENDER_SERIES: "4.2"
+      BLENDER_VERSION: "4.2.23"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: wheels
+          merge-multiple: true
+      - name: Download Blender
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libx11-6 libxi6 libxxf86vm1             libxfixes3 libxrender1 libxkbcommon0 libsm6 libgl1 libegl1
+          base="https://download.blender.org/release/Blender${BLENDER_SERIES}"
+          name="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+          curl -fsSLO "${base}/${name}"
+          curl -fsSL "${base}/blender-${BLENDER_VERSION}.sha256" | grep " ${name}$" > blender.sha256
+          sha256sum -c blender.sha256
+          mkdir blender-bin
+          tar -xf "${name}" -C blender-bin --strip-components=1
+      - name: Build and validate the extension zips
+        run: |
+          wheels=(wheels/*manylinux*x86_64*.whl wheels/*win_amd64.whl wheels/*macosx*.whl)
+          args=()
+          for wheel in "${wheels[@]}"; do args+=(--wheel "$wheel"); done
+          python blender/build_extension.py "${args[@]}" --blender "$PWD/blender-bin/blender"
+          for zip in blender/dist/*.zip; do
+            ./blender-bin/blender --factory-startup --command extension validate "$zip"
+          done
+          ls -l blender/dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: blender-extension
+          path: blender/dist/*.zip
           if-no-files-found: error

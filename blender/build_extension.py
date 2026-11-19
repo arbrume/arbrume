@@ -48,9 +48,12 @@ def wheel_platforms(wheel: str) -> list[str]:
     platforms: list[str] = []
     for part in tag.split("."):
         if part.startswith("macosx_"):
-            arch = "universal2" if part.endswith("universal2") else part.rsplit("_", 1)[-1]
-            names = {"universal2": ["macos-x64", "macos-arm64"], "x86_64": ["macos-x64"]}
-            platforms += names.get(arch, ["macos-arm64"] if arch == "arm64" else [])
+            if part.endswith("universal2"):
+                platforms += ["macos-x64", "macos-arm64"]
+            elif part.endswith("_x86_64"):
+                platforms.append("macos-x64")
+            elif part.endswith("_arm64"):
+                platforms.append("macos-arm64")
         elif part in ("win_amd64", "win_arm64"):
             platforms.append("windows-x64" if part == "win_amd64" else "windows-arm64")
         elif part.startswith(("manylinux", "musllinux", "linux")):

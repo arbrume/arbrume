@@ -23,6 +23,11 @@ COLOR_ATTRIBUTE = "Col"
 UV_LAYER = "UVMap"
 MANAGED_KEY = "arbrume_material"
 
+# Test-only switches that force the paths taken where Blender lacks the faster APIs
+# (Blender 4.2 to 4.x); the in-Blender test sets them, users never do.
+FORCE_LOOP_VERTEX_INDEX = False
+FORCE_SPLIT_NORMALS = False
+
 
 @dataclass
 class Preferences:
@@ -100,7 +105,7 @@ def _set_custom_normals(mesh: bpy.types.Mesh, normals) -> None:
     it as free normals (about 1 ms for 300 000 vertices), else the much slower
     ``normals_split_custom_set_from_vertices``."""
     _set_attribute(mesh, "custom_normal", "FLOAT_VECTOR", "POINT", "vector", normals.ravel())
-    if not mesh.has_custom_normals:
+    if FORCE_SPLIT_NORMALS or not mesh.has_custom_normals:
         mesh.attributes.remove(mesh.attributes["custom_normal"])
         mesh.normals_split_custom_set_from_vertices(normals)
 
@@ -121,7 +126,7 @@ def upload(mesh: bpy.types.Mesh, arrays: meshdata.MeshArrays, custom_normals: bo
     mesh.loops.add(len(arrays.corner_verts))
     mesh.polygons.add(arrays.face_count)
     _set_attribute(mesh, "position", "FLOAT_VECTOR", "POINT", "vector", arrays.positions)
-    if mesh.attributes.get(".corner_vert") is not None:
+    if not FORCE_LOOP_VERTEX_INDEX and mesh.attributes.get(".corner_vert") is not None:
         mesh.attributes[".corner_vert"].data.foreach_set("value", arrays.corner_verts)
     else:
         mesh.loops.foreach_set("vertex_index", arrays.corner_verts)

@@ -13,6 +13,12 @@ curve through its widget node, scrubs the age, runs every operator, saves and re
 file, disables and enables the extension, times generation against mesh upload for a
 large tree and renders two stills into ``--out``. The exit code is the number of failed
 checks (0 on success).
+
+With the environment variable ``ARBRUME_TEST_FALLBACKS=1`` the test forces the mesh upload
+paths the extension takes on Blenders without the faster attribute APIs (Blender 4.2 to
+4.x): corners written through ``loops.vertex_index`` and custom normals set with
+``normals_split_custom_set_from_vertices``. It runs them on any Blender; whether they
+are the paths a given older Blender takes is only shown by running the test on it.
 """
 
 from __future__ import annotations
@@ -26,6 +32,7 @@ import tempfile
 import time
 import traceback
 from pathlib import Path
+from typing import ClassVar
 
 try:
     import addon_utils
@@ -37,6 +44,7 @@ except ImportError:
 
 MODULE = "bl_ext.user_default.arbrume"
 FAILURES: list[str] = []
+FALLBACKS = os.environ.get("ARBRUME_TEST_FALLBACKS", "") not in ("", "0")
 
 
 def check(condition: bool, message: str) -> None:
@@ -65,6 +73,7 @@ def launch(argv: list[str]) -> int:
         test += ["--python", __file__, "--", "--out", args.out, "--work", user]
         if not args.ui:
             return subprocess.run(test, env=env, check=False).returncode
+        test.insert(1, "--enable-event-simulate")
         result = subprocess.run(test, env=env, check=False, capture_output=True, text=True)
         output = result.stdout + result.stderr
         print(output)
@@ -77,10 +86,13 @@ def launch(argv: list[str]) -> int:
 
 
 def extension():
-    """The extension package module, enabled."""
+    """The extension package module, enabled, with the fallback switches of the run."""
     if MODULE not in bpy.context.preferences.addons:
         addon_utils.enable(MODULE, default_set=True, handle_error=None)
-    return sys.modules[MODULE]
+    ext = sys.modules[MODULE]
+    ext.plant.FORCE_LOOP_VERTEX_INDEX = FALLBACKS
+    ext.plant.FORCE_SPLIT_NORMALS = FALLBACKS
+    return ext
 
 
 def expected_stats(ext, obj) -> dict:
@@ -160,9 +172,71 @@ def test_live_properties(ext, obj) -> None:
     check(len(obj.data.polygons) != before, "quality changes the mesh")
 
 
-def test_curve_widget(ext, obj) -> None:
-    """The curve node of a widget syncs both ways with the overrides."""
+def curve_points(ext, obj, path: str, order: int) -> list:
+    """Points shown by the widget node of one curve of a plant."""
+    node = ext.curves_ui.find_node(ext.curves_ui.binding_name(obj.name, path, order))
+    if node is None:
+        return []
+    return [tuple(round(v, 4) for v in p.location) for p in node.mapping.curves[0].points]
+
+
+def plant_state(ext, name: str) -> tuple:
+    """Overrides, triangle count and widget points of the plant called ``name``."""
+    obj = bpy.data.objects[name]
+    points = curve_points(ext, obj, "growth.axis_length", 1)
+    return obj.arbrume.overrides, len(obj.data.polygons), points
+
+
+def edit_curve_node(ext, obj):
+    """Edits the order-1 axis length widget node of a plant as a user would."""
+    node = ext.curves_ui.find_node(ext.curves_ui.binding_name(obj.name, "growth.axis_length", 1))
+    points = node.mapping.curves[0].points
+    points.new(0.5, 0.9)
+    points[0].location = (0.0, 0.1)
+    for point in points:
+        point.handle_type = "VECTOR"
+    node.mapping.update()
+
+
+def test_curve_undo(ext, name: str, before: tuple, after: tuple) -> None:
+    """Undo and redo of a widget edit restore the overrides, the mesh and the widget, and
+    syncing after them pushes no step of its own."""
+    check(after[0] != before[0] and after[2] != before[2], "curve edit changed the plant")
+    bpy.ops.ed.undo()
+    check(plant_state(ext, name) == before, "undo restores overrides, mesh and widget")
+    check_counts(ext, bpy.data.objects[name], "after curve undo")
+    bpy.ops.ed.redo()
+    check(plant_state(ext, name) == after, "redo restores overrides, mesh and widget")
+    check_counts(ext, bpy.data.objects[name], "after curve redo")
+    for _ in range(3):
+        ext.curves_ui.sync_bindings()
+    bpy.ops.ed.undo()
+    check(plant_state(ext, name) == before, "sync after redo pushed no undo step")
+
+
+def test_widget_step(ext, name: str, before: tuple, after: tuple) -> None:
+    """A step pushed by the widget before the timer wrote the overrides (what Blender does
+    when a drag ends) is completed from the node when undo or redo reaches it."""
+    ext.curves_ui.sync_bindings()
+    edit_curve_node(ext, bpy.data.objects[name])
+    bpy.ops.ed.undo_push(message="curve widget")
+    bpy.ops.ed.undo()
+    check(plant_state(ext, name) == before, "undo before the widget step")
+    bpy.ops.ed.redo()
+    check(plant_state(ext, name) == after, "redo completes the widget step")
+    check_counts(ext, bpy.data.objects[name], "after widget step redo")
+    for _ in range(3):
+        ext.curves_ui.sync_bindings()
+    bpy.ops.ed.undo()
+    check(plant_state(ext, name) == before, "completing the widget step pushed no step")
+    bpy.ops.ed.redo()
+
+
+def test_curve_widget(ext, obj):
+    """The curve node of a widget syncs both ways with the overrides, and an edit in it is
+    one undo step. Undo replaces the object, so this returns the plant as it is after."""
     curves = ext.curves_ui
+    name = obj.name
     obj.arbrume.curve_order = 1
     bpy.ops.arbrume.curve_mode(path="growth.axis_length", to_curve=True)
     node = curves.request(obj, "growth.axis_length", 1)
@@ -170,22 +244,27 @@ def test_curve_widget(ext, obj) -> None:
     node = curves.request(obj, "growth.axis_length", 1)
     check(node is not None, "curve node created by the timer")
     if node is None:
-        return
-    points = node.mapping.curves[0].points
-    points.new(0.5, 0.9)
-    points[0].location = (0.0, 0.1)
-    for point in points:
-        point.handle_type = "VECTOR"
-    node.mapping.update()
+        return obj
+    bpy.ops.ed.undo_push(message="before curve edit")
+    curves.sync_bindings()
+    before = plant_state(ext, name)
+    edit_curve_node(ext, obj)
     curves.sync_bindings()
     value = json.loads(obj.arbrume.overrides)["growth.axis_length"]
     entry = value["by_order"][1] if isinstance(value, dict) else value
     check(isinstance(entry, list) and len(entry) >= 3, f"widget edit written: {entry}")
     check_counts(ext, obj, "after curve edit")
+    curves.sync_bindings()
+    after = plant_state(ext, name)
+    test_curve_undo(ext, name, before, after)
+    test_widget_step(ext, name, before, after)
+    obj = bpy.data.objects[name]
+    bpy.context.view_layer.objects.active = obj
     bpy.ops.arbrume.reset_param(path="growth.axis_length")
     curves.request(obj, "growth.axis_length", 1)
     curves.sync_bindings()
     check("growth.axis_length" not in json.loads(obj.arbrume.overrides), "curve reset")
+    return obj
 
 
 def test_age_scrub(ext, obj) -> None:
@@ -262,7 +341,7 @@ def test_reregister(ext) -> None:
     addon_utils.disable(MODULE, default_set=True)
     check(not hasattr(bpy.types.Object, "arbrume"), "unregister removes Object.arbrume")
     addon_utils.enable(MODULE, default_set=True)
-    ext = sys.modules[MODULE]
+    ext = extension()
     obj = next(o for o in bpy.data.objects if ext.plant.is_plant(o))
     check(not ext.plant.regenerate(obj), "regenerate after re-register")
     return ext
@@ -312,6 +391,8 @@ def render_stills(ext, out: Path) -> None:
     )
     ground_mat = bpy.data.materials.new("ground")
     ground_mat.diffuse_color = (0.25, 0.22, 0.15, 1)
+    if not ground_mat.use_nodes:
+        ground_mat.use_nodes = True
     ground_mat.node_tree.nodes["Principled BSDF"].inputs[0].default_value = (0.25, 0.22, 0.15, 1)
     ground_mesh.materials.append(ground_mat)
     scene.collection.objects.link(bpy.data.objects.new("ground", ground_mesh))
@@ -352,6 +433,96 @@ def sidebar():
     return window, area, region
 
 
+class ARBRUME_PT_test_curve(bpy.types.Panel if bpy else object):
+    """Test-only panel holding one curve widget, the only thing the drag test clicks."""
+
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "Item"
+    bl_label = "Curve under test"
+    bl_options: ClassVar[set[str]] = {"HIDE_HEADER"}
+
+    def draw(self, context):
+        ext = sys.modules[MODULE]
+        node = ext.curves_ui.request(context.active_object, "growth.axis_length", 1)
+        if node is not None:
+            self.layout.template_curve_mapping(node, "mapping")
+
+
+def simulate_drag(window, x: int, y: int, rise: int) -> None:
+    """Queues a left-button drag of ``rise`` pixels upwards from ``(x, y)``."""
+    window.event_simulate(type="MOUSEMOVE", value="NOTHING", x=x, y=y)
+    window.event_simulate(type="LEFTMOUSE", value="PRESS", x=x, y=y)
+    for step in range(1, 6):
+        window.event_simulate(type="MOUSEMOVE", value="NOTHING", x=x, y=y + rise * step // 5)
+    window.event_simulate(type="LEFTMOUSE", value="RELEASE", x=x, y=y + rise)
+
+
+def find_widget(ext, window, region, name: str):
+    """Drags down the middle of the sidebar until a drag edits the curve; yields timer
+    intervals, then the window position where the edited point ends, or None."""
+    x = region.x + region.width // 2
+    top = region.y + region.height
+    for depth in range(30, min(region.height, 500), 10):
+        before = plant_state(ext, name)[2]
+        simulate_drag(window, x, top - depth, 20)
+        yield 0.6
+        if plant_state(ext, name)[2] != before:
+            yield (x, top - depth + 20)
+            return
+    yield None
+
+
+def drag_steps(ext, panels, window, region, name: str):
+    """A real drag in a curve widget is one undo step that undo and redo restore with the
+    plant; yields timer intervals. Needs ``--enable-event-simulate``."""
+    for cls in panels:
+        bpy.utils.unregister_class(cls)
+    bpy.utils.register_class(ARBRUME_PT_test_curve)
+    region.tag_redraw()
+    yield 1.0
+    position = None
+    for value in find_widget(ext, window, region, name):
+        if isinstance(value, float):
+            yield value
+        else:
+            position = value
+    check(position is not None, "a simulated drag edits the curve widget")
+    if position is not None:
+        yield from undo_drag_steps(ext, window, position, name)
+    bpy.utils.unregister_class(ARBRUME_PT_test_curve)
+    for cls in panels:
+        bpy.utils.register_class(cls)
+
+
+def undo_drag_steps(ext, window, position, name: str):
+    """Drags a widget point, then undoes and redoes it; yields timer intervals."""
+    bpy.data.objects[name].arbrume.seed = 11
+    bpy.ops.ed.undo_push(message="seed 11")
+    bpy.data.objects[name].arbrume.seed = 12
+    bpy.ops.ed.undo_push(message="seed 12")
+    yield 0.6
+    before = plant_state(ext, name)
+    simulate_drag(window, *position, -30)
+    yield 1.0
+    after = plant_state(ext, name)
+    check(after[0] != before[0] and after[2] != before[2], "drag changes overrides and widget")
+    with bpy.context.temp_override(window=window):
+        bpy.ops.ed.undo()
+    yield 0.6
+    check(plant_state(ext, name) == before, "undo of the drag restores plant and widget")
+    with bpy.context.temp_override(window=window):
+        bpy.ops.ed.undo()
+    yield 0.6
+    check(bpy.data.objects[name].arbrume.seed == 11, "the drag is a single undo step")
+    with bpy.context.temp_override(window=window):
+        bpy.ops.ed.redo()
+        bpy.ops.ed.redo()
+    yield 0.6
+    check(plant_state(ext, name) == after, "redo of the drag restores plant and widget")
+    check_counts(ext, bpy.data.objects[name], "after drag redo")
+
+
 def ui_steps(out: Path):
     """Steps of the window test, one per timer tick: add a plant, draw, screenshot, quit."""
     ext = extension()
@@ -388,6 +559,7 @@ def ui_steps(out: Path):
             bpy.ops.view2d.scroll_down(deltax=0, deltay=0, page=True)
         region.tag_redraw()
         yield 1.0
+    yield from drag_steps(ext, panels, window, region, obj.name)
     if not FAILURES:
         print("UI checks passed", flush=True)
     bpy.ops.wm.quit_blender()
@@ -418,9 +590,12 @@ def run_inside(argv: list[str]) -> int | None:
     bpy.ops.wm.read_factory_settings(use_empty=True)
     ext = extension()
     print("Blender", bpy.app.version_string, "arbrume", ext.arbrume.__version__, flush=True)
+    print("fallback upload paths forced:", FALLBACKS, flush=True)
     test_presets(ext)
     obj = add_plant(ext, "broadleaf", seed=1, quality=0.3, use_species_age=False, age=12)
-    for step in (test_live_properties, test_curve_widget, test_age_scrub, test_errors):
+    test_live_properties(ext, obj)
+    obj = test_curve_widget(ext, obj)
+    for step in (test_age_scrub, test_errors):
         step(ext, obj)
     test_operators(ext, obj, work)
     test_save_reload(ext, work)

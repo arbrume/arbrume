@@ -13,7 +13,6 @@ from dataclasses import dataclass, field
 
 from .logic.schema import ParamSpec, Section
 from .logic.species import SpeciesCache
-from .logic.values import CurvePoints
 
 
 @dataclass
@@ -34,9 +33,6 @@ class CurveBinding:
     object_name: str
     path: str
     order: int
-    low: float = 0.0
-    high: float = 1.0
-    last: CurvePoints | None = None
     seen: float = field(default_factory=time.monotonic)
 
 
@@ -53,6 +49,9 @@ class State:
     bindings: dict[str, CurveBinding] = field(default_factory=dict)
     busy: set[int] = field(default_factory=set)
     suspended: int = 0
+    edit_pending: bool = False
+    edit_marker: tuple | None = None
+    undo_marker: tuple | None = None
 
 
 STATE = State()
@@ -65,6 +64,8 @@ def reset() -> None:
     STATE.bindings.clear()
     STATE.busy.clear()
     STATE.suspended = 0
+    STATE.edit_pending = False
+    STATE.edit_marker = STATE.undo_marker = None
 
 
 def status_of(name: str) -> PlantStatus:

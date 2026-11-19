@@ -17,5 +17,9 @@ copyright = ["2026 Arbrume contributors"]
 platforms = ["windows-x64", "windows-arm64", "linux-x64", "linux-arm64", "macos-x64", "macos-arm64"]
 wheels = []
 
+# Species TOML files are loaded and saved through file browsers.
+[permissions]
+files = "Load and save species TOML files chosen in file browsers"
+
 [build]
 paths_exclude_pattern = ["__pycache__/", "/.git/", "*.pyc"]

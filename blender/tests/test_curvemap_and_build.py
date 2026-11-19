@@ -47,6 +47,7 @@ def test_wheel_platforms(build):
     mac = "a-1-cp311-abi3-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl"
     assert build.wheel_platforms(mac) == ["macos-arm64", "macos-x64"]
     assert build.wheel_platforms("a-1-cp311-abi3-macosx_11_0_arm64.whl") == ["macos-arm64"]
+    assert build.wheel_platforms("a-1-cp311-abi3-macosx_10_12_x86_64.whl") == ["macos-x64"]
 
 
 def test_manifest_lists_are_replaced(build):
