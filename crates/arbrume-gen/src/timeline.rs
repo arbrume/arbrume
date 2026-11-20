@@ -10,6 +10,10 @@
 //! The axes keep the position they have in the grown plant, so they do not move from
 //! one frame to the next. With `growth.weight_bending` they carry at every age the sag
 //! of the final weight.
+//!
+//! The frame of the last cycle is the plant [`crate::generate`] makes with the same
+//! parameters, graph and mesh bit for bit: it is meshed without `max_cycle`, the record
+//! giving the grown plant at that cycle (`GrowthRecord::is_last_cycle`).
 
 use std::time::{Duration, Instant};
 
@@ -74,7 +78,8 @@ impl Generator {
 
     /// Writes into `plant` the plant of `timeline` as it stood at the end of growth
     /// cycle `cycle`, meshed with the options of the timeline. `plant.params.mesh`
-    /// records `max_cycle`. Returns the time taken.
+    /// records `max_cycle`. At the last cycle the plant is that of
+    /// [`Generator::generate`]. Returns the time taken.
     ///
     /// # Errors
     ///
@@ -94,7 +99,12 @@ impl Generator {
             max_cycle: Some(cycle),
             ..timeline.params.mesh
         };
-        self.mesh_graph(&graph, species, &options, plant)?;
+        let last = timeline.record.is_last_cycle(cycle);
+        let meshed = MeshOptions {
+            max_cycle: options.max_cycle.filter(|_| !last),
+            ..options
+        };
+        self.mesh_graph(&graph, species, &meshed, plant)?;
         plant.graph = graph;
         plant.params = GenParams {
             mesh: options,
@@ -107,7 +117,8 @@ impl Generator {
 
 #[cfg(test)]
 mod tests {
-    use crate::{GenParams, Generator, Plant, preset};
+    use crate::{GenParams, Generator, Plant, preset, presets};
+    use arbrume_mesh::MeshOptions;
 
     #[test]
     fn frame_cycles_end_on_the_last_cycle() {
@@ -124,13 +135,12 @@ mod tests {
     }
 
     #[test]
-    fn frames_grow_and_the_last_matches_the_plant() {
+    fn frames_grow_with_the_cycles() {
         for name in ["broadleaf", "conifer", "shrub"] {
             let species = preset(name).unwrap();
             let params = GenParams::new(4, 9);
             let mut generator = Generator::new();
             let timeline = generator.timeline(&species, &params).unwrap();
-            let full = generator.generate(&species, &params).unwrap();
             let mut plant = Plant::default();
             let mut heights = Vec::new();
             for cycle in timeline.frame_cycles(3) {
@@ -142,8 +152,26 @@ mod tests {
                 heights.push(plant.stats.height);
             }
             assert!(heights.windows(2).all(|pair| pair[0] <= pair[1]), "{name}");
-            let (last, whole) = (&plant.mesh.parts[0], &full.mesh.parts[0]);
-            assert_eq!(last.buffers.positions.len(), whole.buffers.positions.len());
+        }
+    }
+
+    #[test]
+    fn the_last_frame_is_the_generated_plant_bit_for_bit() {
+        let mut generator = Generator::new();
+        for (&(name, _), quality) in presets().iter().zip([1.0, 0.4].iter().cycle()) {
+            let species = preset(name).unwrap();
+            let mut params = GenParams::new(3, 10);
+            params.mesh = MeshOptions::with_quality(*quality);
+            let timeline = generator.timeline(&species, &params).unwrap();
+            let full = generator.generate(&species, &params).unwrap();
+            let mut plant = Plant::default();
+            let last = *timeline.frame_cycles(4).last().unwrap();
+            generator
+                .frame(&species, &timeline, last, &mut plant)
+                .unwrap();
+            assert_eq!(plant.graph, full.graph, "{name}");
+            assert_eq!(plant.mesh, full.mesh, "{name}");
+            assert_eq!(plant.stats, full.stats, "{name}");
         }
     }
 }

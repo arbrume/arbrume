@@ -18,6 +18,13 @@
 //! an axis does not move from one age to the next. Whether an axis had stopped is read
 //! from the grown plant: an axis that paused and grew again later counts as growing
 //! throughout.
+//!
+//! The leaf sites the grown plant keeps come first in the record, in the order the grown
+//! plant has them, so a site has the same index in every frame and in the grown plant:
+//! the random order of the leaves, drawn from that index, does not change from one frame
+//! to the next. At the last cycle of the growth [`GrowthRecord::at_cycle`] gives the
+//! grown plant itself, bit for bit: its radii, and only the leaf sites it keeps, with
+//! their own births ([`GrowthRecord::is_last_cycle`]).
 
 use arbrume_core::graph::{ChainId, PlantGraph};
 use arbrume_core::species::{RadiusModel, Species};
@@ -32,6 +39,10 @@ pub struct GrowthRecord {
     /// For each organ site of `graph`, the cycle from which it stays leafy for good;
     /// `u16::MAX` for a site that drops its leaves at the retention of the species.
     pub(crate) lasting: Vec<u16>,
+    /// Number of organ sites of the grown plant, the first of `graph`.
+    pub(crate) shown: usize,
+    /// Number of growth cycles of the plant.
+    pub(crate) age: u16,
 }
 
 impl GrowthRecord {
@@ -41,8 +52,21 @@ impl GrowthRecord {
     ///
     /// `species` and `scale` are those the plant was grown with. The lasting leaf sites
     /// get `cycle` as their birth, so that the mesher keeps them.
+    ///
+    /// From the last cycle of the growth on ([`GrowthRecord::is_last_cycle`]) the
+    /// result is the grown plant, as `grow_in` gives it: mesh it without `max_cycle`,
+    /// which would drop the old leaves at the tips of stopped axes.
     #[must_use]
     pub fn at_cycle(&self, species: &Species, scale: f32, cycle: u16) -> PlantGraph {
+        if self.is_last_cycle(cycle) {
+            let mut grown = self.graph.clone();
+            let sites = self.graph.organs()[..self.shown].to_vec();
+            grown.clear_organs();
+            for site in sites {
+                grown.add_organ(site);
+            }
+            return grown;
+        }
         let mut past = self.graph.clone();
         past.restore_shed_after(cycle);
         let mut radii = Vec::new();
@@ -54,6 +78,13 @@ impl GrowthRecord {
             }
         }
         past
+    }
+
+    /// Whether `cycle` is the last growth cycle of the plant or later, where
+    /// [`GrowthRecord::at_cycle`] gives the grown plant.
+    #[must_use]
+    pub const fn is_last_cycle(&self, cycle: u16) -> bool {
+        cycle >= self.age.saturating_sub(1)
     }
 }
 

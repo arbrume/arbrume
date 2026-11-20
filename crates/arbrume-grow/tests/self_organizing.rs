@@ -458,3 +458,42 @@ fn a_crown_leans_away_from_a_shading_wall() {
         assert!(lean > before, "seed {seed}: {lean} is not beyond {before}");
     }
 }
+
+/// Nodes of `graph` inside `shape`, and the largest height of a node.
+fn inside_and_height(graph: &PlantGraph, shape: &Shape) -> (usize, f32) {
+    let inside = graph.positions().iter().filter(|&&p| shape.contains(p));
+    let height = graph.positions().iter().map(|p| p.y).fold(0.0, f32::max);
+    (inside.count(), height)
+}
+
+/// A sphere floating above the ground, as an analytic shape and as a voxel mask whose
+/// grid reaches down to the ground: with the shadow model a trunk rises into both and
+/// fills them alike.
+#[test]
+fn a_trunk_rises_into_a_floating_voxel_envelope_as_into_an_analytic_one() {
+    let (centre, radius) = (Vec3::new(0.0, 4.0, 0.0), 1.5);
+    let sphere = Shape::Sphere {
+        center: centre,
+        radius,
+    };
+    let ball = |p: Vec3| p.distance(centre) < radius;
+    let mask = VoxelMask::from_fn(Vec3::new(-2.0, 0.0, -2.0), 0.1, [40, 60, 40], ball);
+    let voxels = Shape::Voxels(Arc::new(mask));
+    let mut grown = Vec::new();
+    for envelope in [&sphere, &voxels] {
+        let surroundings = Surroundings {
+            envelope: Some(envelope.clone()),
+            occluders: Vec::new(),
+        };
+        let graph = grow_in(&fixture(), &params(5, 16), &surroundings);
+        graph.check_invariants().unwrap();
+        grown.push(inside_and_height(&graph, &sphere));
+    }
+    let [(analytic, analytic_top), (voxel, voxel_top)] = [grown[0], grown[1]];
+    assert!(analytic > 60 && voxel > 60, "{analytic} {voxel}");
+    assert!(
+        voxel.abs_diff(analytic) * 4 < analytic,
+        "{analytic} {voxel}"
+    );
+    assert!(analytic_top > centre.y + 0.5 * radius && voxel_top > centre.y + 0.5 * radius);
+}

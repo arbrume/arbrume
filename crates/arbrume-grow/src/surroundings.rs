@@ -21,10 +21,11 @@
 //! is a coarse rule of this crate with one strength per occluder, not a light
 //! simulation.
 
+use crate::distance_field::DistanceField;
 use arbrume_core::graph::Aabb;
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 /// A volume. Analytic shapes are read from configuration files; [`Shape::Voxels`] is
 /// built in code.
@@ -106,8 +107,8 @@ impl Shape {
     }
 
     /// Signed distance from `point` to the surface, negative inside. See [`Shape::near`]
-    /// for its accuracy. A voxel mask gives minus one voxel edge inside, and outside one
-    /// voxel edge more than the distance to its bounding box.
+    /// for its accuracy. A voxel mask gives minus one voxel edge inside, and outside the
+    /// distance to the centre of its nearest filled voxel ([`VoxelMask::distance`]).
     #[must_use]
     pub fn distance(&self, point: Vec3) -> f32 {
         match *self {
@@ -145,9 +146,7 @@ impl Shape {
                 if mask.contains(point) {
                     return -mask.cell;
                 }
-                let bounds = mask.bounds();
-                let outside = (bounds.min - point).max(point - bounds.max);
-                outside.max(Vec3::ZERO).length() + mask.cell
+                mask.distance(point)
             }
         }
     }
@@ -197,12 +196,27 @@ impl Shape {
 }
 
 /// A volume given as a grid of filled and empty cubic voxels.
-#[derive(Debug, Clone, PartialEq)]
+///
+/// The distance from a point to the mask ([`VoxelMask::distance`]) is read from a
+/// distance field built the first time it is needed and dropped when a voxel changes.
+#[derive(Debug, Clone)]
 pub struct VoxelMask {
     origin: Vec3,
     cell: f32,
     size: [u32; 3],
     bits: Vec<u64>,
+    /// Distance field of the filled voxels, holding `None` when no voxel is filled.
+    field: OnceLock<Option<DistanceField>>,
+}
+
+impl PartialEq for VoxelMask {
+    /// Masks are equal when they have the same grid and filled voxels.
+    fn eq(&self, other: &Self) -> bool {
+        self.origin == other.origin
+            && self.cell.to_bits() == other.cell.to_bits()
+            && self.size == other.size
+            && self.bits == other.bits
+    }
 }
 
 impl VoxelMask {
@@ -216,6 +230,7 @@ impl VoxelMask {
             cell,
             size,
             bits: vec![0; count.div_ceil(64)],
+            field: OnceLock::new(),
         }
     }
 
@@ -263,6 +278,7 @@ impl VoxelMask {
     /// Fills or empties `voxel`. Voxels outside the grid are ignored.
     pub fn set(&mut self, voxel: [u32; 3], filled: bool) {
         if let Some(index) = self.index(voxel) {
+            self.field = OnceLock::new();
             let bit = 1_u64 << (index % 64);
             if filled {
                 self.bits[index / 64] |= bit;
@@ -295,6 +311,23 @@ impl VoxelMask {
             return false;
         }
         self.get([local.x as u32, local.y as u32, local.z as u32])
+    }
+
+    /// Distance from `point` to the centre of the nearest filled voxel: exact at the
+    /// centres of the voxels, interpolated between them, and outside the grid the
+    /// distance to the nearest centre on its boundary added. It falls as `point` comes
+    /// closer to the filled voxels from any side, wherever the mask lies.
+    /// [`f32::MAX`] when no voxel is filled.
+    #[must_use]
+    pub fn distance(&self, point: Vec3) -> f32 {
+        let field = self.field.get_or_init(|| {
+            DistanceField::new(self.size, |index| {
+                self.bits[index / 64] >> (index % 64) & 1 == 1
+            })
+        });
+        field.as_ref().map_or(f32::MAX, |field| {
+            field.sample((point - self.origin) / self.cell) * self.cell
+        })
     }
 
     /// Bounding box of the grid.

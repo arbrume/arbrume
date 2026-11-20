@@ -1,11 +1,12 @@
 //! Snapshot of plants generated alone, which growing stands must not change.
 //!
 //! One line per case: its name, then a hash of the exact `f32` bits of the graph node
-//! positions and one of the mesh vertex positions. With `ARBRUME_REGOLD=1` the test
-//! writes the golden file instead of comparing with it.
+//! positions and one of the mesh vertex positions, compared with the golden file of the
+//! platform (see `golden`).
+
+mod golden;
 
 use std::fmt::Write as _;
-use std::path::PathBuf;
 
 use arbrume_gen::{GenParams, Plant, generate, preset};
 
@@ -61,15 +62,5 @@ fn snapshot() -> String {
 
 #[test]
 fn plants_grown_alone_match_the_golden_file() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/stands_golden.txt");
-    let got = snapshot();
-    if std::env::var("ARBRUME_REGOLD").as_deref() == Ok("1") {
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(&path, &got).unwrap();
-        return;
-    }
-    let want = std::fs::read_to_string(&path)
-        .unwrap()
-        .replace("\r\n", "\n");
-    assert_eq!(got, want);
+    golden::check("stands", &snapshot());
 }

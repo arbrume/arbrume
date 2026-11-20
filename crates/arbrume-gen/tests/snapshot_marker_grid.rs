@@ -1,6 +1,7 @@
 //! The self-organizing presets on open ground, which the way markers are given to buds
 //! must not change.
 
+mod golden;
 mod self_organizing_snapshot;
 
 #[test]

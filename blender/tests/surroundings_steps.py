@@ -78,6 +78,9 @@ def test_envelope(ext, check) -> bpy.types.Object:
     distance = np.linalg.norm(points[crown] - SPHERE_CENTER, axis=1)
     reach = SPHERE_RADIUS + 2.0 * status.cell + 0.3
     check(distance.max() < reach, f"crown inside the sphere: {distance.max():.2f} < {reach:.2f}")
+    check(not plant.arbrume.envelope_ground, "trunk passage off by default")
+    top = points[:, 2].max()
+    check(top > SPHERE_CENTER[2], f"trunk rises into the floating sphere: top {top:.2f}")
     check(np.ptp(alone[:, 2]) > np.ptp(points[:, 2]), "envelope makes the plant smaller")
     start = time.perf_counter()
     plant.arbrume.seed = 2

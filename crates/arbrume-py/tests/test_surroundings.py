@@ -145,17 +145,31 @@ def test_growth_frames_follow_the_timeline() -> None:
     assert arbrume.growth_frames("hedge_shrub", seed=2, age=0, frames=3) == []
     whole = arbrume.generate("hedge_shrub", seed=2, age=8, quality=0.5)
     assert whole.max_cycle is None
-    last = frames[-1]
-    assert last.stats["vertices"] == whole.stats["vertices"]
-    for frame_part, part in zip(last.parts, whole.parts, strict=True):
-        assert np.array_equal(frame_part.indices, part.indices)
-    np.testing.assert_allclose(last.parts[0].vertices, whole.parts[0].vertices, atol=1e-6)
+    assert_same_tree(frames[-1], whole)
+
+
+def assert_same_tree(frame: arbrume.Tree, whole: arbrume.Tree) -> None:
+    """The mesh, skeleton and organ sites of ``frame`` are those of ``whole``, bit for bit."""
+    assert frame.stats == whole.stats
+    for frame_part, part in zip(frame.parts, whole.parts, strict=True):
+        for name in ("vertices", "normals", "uvs", "indices"):
+            assert np.array_equal(getattr(frame_part, name), getattr(part, name)), name
+    assert np.array_equal(frame.skeleton.positions, whole.skeleton.positions)
+    assert np.array_equal(frame.skeleton.radii, whole.skeleton.radii)
+    for name in ("nodes", "kinds", "directions", "normals", "scales", "births"):
+        assert np.array_equal(getattr(frame.organs, name), getattr(whole.organs, name)), name
+
+
+@pytest.mark.parametrize("species", ["broadleaf", "conifer", "hedge_shrub", "palm_like"])
+def test_the_last_growth_frame_is_the_generated_tree(species: str) -> None:
+    frames = arbrume.growth_frames(species, seed=5, age=9, frames=3, quality=0.6)
+    assert_same_tree(frames[-1], arbrume.generate(species, seed=5, age=9, quality=0.6))
 
 
 def test_growth_frames_take_surroundings() -> None:
     frames = arbrume.growth_frames(SPECIES, seed=3, age=10, frames=2, surroundings=SURROUNDINGS)
     whole = arbrume.generate(SPECIES, seed=3, age=10, surroundings=SURROUNDINGS)
-    np.testing.assert_allclose(frames[-1].parts[0].vertices, whole.parts[0].vertices, atol=1e-6)
+    assert_same_tree(frames[-1], whole)
     assert frames[-1].metadata["surroundings"] == whole.metadata["surroundings"]
 
 

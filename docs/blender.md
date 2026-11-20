@@ -67,9 +67,11 @@ active plant:
   crosses, so an open plane still works as a wall. *Voxel Size* 0 (the default) takes
   half the shortest internode of the species times the plant scale, printed under the
   field; the grid of one object is capped at 8 million voxels, the voxels growing to
-  fit. *Trunk Passage* (on by default) opens a column of voxels from the ground up to the
-  envelope under the plant, so a trunk can rise into a crown envelope that floats above
-  the ground. A voxelized object is cached by a hash of its evaluated geometry, its
+  fit. A trunk rises into an envelope that floats above the ground as it does into an
+  analytic one: outside a voxel mask the generator sees the distance to its nearest
+  filled voxel. *Trunk Passage* (off by default) also opens a column of voxels from the
+  ground up to the envelope under the plant, for a crown that should keep a bare stem
+  inside its volume. A voxelized object is cached by a hash of its evaluated geometry, its
   transform relative to the plant and the voxel settings, so dragging a slider of the
   plant reuses it; the panel shows the voxel count, the time spent and how many objects
   came from the cache. Moving an envelope or an obstacle does not regenerate the plant

@@ -88,7 +88,7 @@ def test_cell_from_the_species() -> None:
 
 
 def test_a_voxelized_envelope_keeps_the_plant_inside() -> None:
-    grid = voxels.with_ground_column(voxels.voxelize(uv_sphere((0.0, 2.2, 0.0), 1.2), 0.1))
+    grid = voxels.voxelize(uv_sphere((0.0, 2.2, 0.0), 1.2), 0.1)
     mask = arbrume.voxel_mask(grid.origin, grid.cell, grid.shape, grid.mask)
     tree = arbrume.generate("envelope_tree", seed=1, age=12, surroundings={"envelope": mask})
     nodes = tree.skeleton.positions

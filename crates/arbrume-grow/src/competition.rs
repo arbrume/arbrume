@@ -15,7 +15,11 @@
 //! * **both**: `Q` of the shadow model for the buds that own markers, 0 for the others,
 //!   and `V` of the markers.
 //!
-//! `Q` is finally raised to the `light_exponent` of the species. Blocking is not sensed
+//! `Q` is finally raised to the `light_exponent` `kappa` of the species and multiplied by
+//! the gravimorphism factor `b = cos² tau + d sin² tau` of Longay et al. (2012, eq. 1),
+//! `tau` the angle between the vertical and the internode bearing the bud and `d` the
+//! `gravimorphism` of the species: `Q = b L^kappa` ([`gravimorphism_factor`]). The
+//! default `d = 1` gives `b = 1` exactly. Blocking is not sensed
 //! here: the fate stage cuts the shoots that would leave the envelope or enter an
 //! obstacle ([`crate::ResourceFate`]), and the buds held back keep their exposure, so
 //! the branches pressed against a clip volume are not shed for lack of light.
@@ -118,12 +122,16 @@ pub struct Competition<'a> {
     markers: Option<Markers>,
     perception: Perception,
     exponent: f32,
+    /// Gravimorphism `d` of the species.
+    gravimorphism: f32,
     options: EngineOptions,
     /// Whether the shadow of each node is in the grid.
     cast: Vec<bool>,
     buds: Vec<u32>,
     positions: Vec<Vec3>,
     directions: Vec<Vec3>,
+    /// Gravimorphism factor `b` of each live bud.
+    factors: Vec<f32>,
     sensed: Vec<Sensed>,
 }
 
@@ -159,11 +167,13 @@ impl<'a> Competition<'a> {
                 angle: model.perception_angle_deg.to_radians(),
             },
             exponent: model.light_exponent,
+            gravimorphism: model.gravimorphism,
             options,
             cast: Vec::new(),
             buds: Vec::new(),
             positions: Vec::new(),
             directions: Vec::new(),
+            factors: Vec::new(),
             sensed: Vec::new(),
         }
     }
@@ -248,22 +258,36 @@ impl<'a> Competition<'a> {
         Vec3::new(slope(Vec3::X), slope(Vec3::Y), slope(Vec3::Z))
     }
 
-    /// Fills `positions`, `directions` and `buds` with the live buds of `graph`.
+    /// Fills `positions`, `directions`, `factors` and `buds` with the live buds of
+    /// `graph`.
     fn collect_buds(&mut self, graph: &PlantGraph) {
         self.buds.clear();
         self.positions.clear();
         self.directions.clear();
+        self.factors.clear();
         let (nodes, positions) = (graph.bud_nodes(), graph.positions());
         let directions = graph.bud_directions();
         for (bud, state) in graph.bud_states().iter().enumerate() {
             if *state != BudState::Dead {
+                let node = nodes[bud];
+                let axis = positions[node.index()] - graph.proximal(node);
                 self.buds.push(bud as u32);
-                self.positions
-                    .push(positions[nodes[bud].index()] + self.origin);
+                self.positions.push(positions[node.index()] + self.origin);
                 self.directions.push(directions[bud]);
+                let factor = gravimorphism_factor(axis, self.gravimorphism);
+                self.factors.push(factor);
             }
         }
     }
+}
+
+/// Gravimorphism factor `b = cos² tau + d sin² tau` of Longay et al. (2012, eq. 1), `tau`
+/// the angle between the vertical and `axis`, written `d + (1 - d) cos² tau` so that
+/// `d = 1` gives exactly 1. A zero `axis` counts as vertical.
+#[must_use]
+pub fn gravimorphism_factor(axis: Vec3, d: f32) -> f32 {
+    let cos = axis.try_normalize().map_or(1.0, |unit| unit.y);
+    d + (1.0 - d) * cos * cos
 }
 
 impl Environment for Competition<'_> {
@@ -298,10 +322,70 @@ impl Environment for Competition<'_> {
         }
         let buds = plant.graph.buds_mut();
         buds.exposure.fill(0.0);
-        for (&bud, sensed) in self.buds.iter().zip(&sensed) {
-            buds.exposure[bud as usize] = sensed.exposure.powf(self.exponent);
+        let factors = self.factors.iter();
+        for ((&bud, sensed), factor) in self.buds.iter().zip(&sensed).zip(factors) {
+            buds.exposure[bud as usize] = factor * sensed.exposure.powf(self.exponent);
             buds.preferred[bud as usize] = sensed.preferred;
         }
         self.sensed = sensed;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Competition, EngineOptions, gravimorphism_factor};
+    use crate::plant::Plant;
+    use crate::stage::{Context, Environment};
+    use crate::surroundings::Surroundings;
+    use arbrume_core::graph::{BudKind, Metamer};
+    use arbrume_core::species::Species;
+    use glam::Vec3;
+
+    #[test]
+    fn gravimorphism_is_d_on_horizontal_axes_and_one_on_vertical_ones() {
+        for d in [0.0, 0.3, 0.75, 1.0] {
+            assert!((gravimorphism_factor(Vec3::X * 2.0, d) - d).abs() < 1e-6);
+            assert!((gravimorphism_factor(-Vec3::Z, d) - d).abs() < 1e-6);
+            assert_eq!(gravimorphism_factor(Vec3::Y * 0.5, d), 1.0);
+            assert_eq!(gravimorphism_factor(-Vec3::Y, d), 1.0);
+            let slanted = gravimorphism_factor(Vec3::new(1.0, 1.0, 0.0), d);
+            assert!((slanted - f32::midpoint(1.0, d)).abs() < 1e-6);
+        }
+        for axis in [Vec3::X, Vec3::new(0.3, -0.8, 0.1), Vec3::ZERO] {
+            assert_eq!(gravimorphism_factor(axis, 1.0).to_bits(), 1.0_f32.to_bits());
+        }
+    }
+
+    /// Exposure of the terminal buds of a vertical and of a horizontal stem standing far
+    /// apart, under the shadow model with gravimorphism `d`.
+    fn exposures(d: f32) -> [f32; 2] {
+        let mut species = Species::default();
+        species.growth.self_organization.gravimorphism = d;
+        let mut plant = Plant::new();
+        for (origin, axis) in [(Vec3::ZERO, Vec3::Y), (Vec3::X * 100.0, Vec3::X)] {
+            let metamer = Metamer::new(origin + axis, 0.01, 0);
+            let node = plant.graph.add_root_chain(origin, metamer);
+            plant.graph.add_bud(node, BudKind::Terminal, axis);
+        }
+        let cx = Context {
+            species: &species,
+            seed: 0,
+            age: 1,
+            scale: 1.0,
+        };
+        let open = Surroundings::none();
+        let mut competition = Competition::new(&cx, &open, EngineOptions::default());
+        competition.sense(&mut plant, 0);
+        let exposure = plant.graph.bud_exposures();
+        [exposure[0], exposure[1]]
+    }
+
+    #[test]
+    fn horizontal_buds_sense_d_times_the_light_of_vertical_ones() {
+        let [vertical, horizontal] = exposures(1.0);
+        assert_eq!(vertical, horizontal);
+        let [vertical_d, horizontal_d] = exposures(0.4);
+        assert_eq!(vertical_d, vertical);
+        assert!((horizontal_d - 0.4 * horizontal).abs() < 1e-6);
     }
 }

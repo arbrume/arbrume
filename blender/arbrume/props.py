@@ -199,8 +199,8 @@ class ARBRUME_PG_plant(bpy.types.PropertyGroup):
     )
     envelope_ground: BoolProperty(
         name="Trunk Passage",
-        description="Open a column from the ground up to the envelope, for a floating crown",
-        default=True,
+        description="Open a column of voxels from the ground up to the envelope",
+        default=False,
         update=_changed,
     )
     obstacles: CollectionProperty(type=ARBRUME_PG_obstacle)

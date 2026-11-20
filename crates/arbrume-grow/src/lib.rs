@@ -55,6 +55,7 @@ mod bend;
 pub mod competition;
 pub mod confine;
 mod cycle;
+mod distance_field;
 pub mod history;
 pub mod markers;
 mod math;
@@ -189,8 +190,13 @@ pub fn grow_timeline(
     let cx = params.context(species);
     let plant = grow_plant(&cx, surroundings, EngineOptions::default());
     let mut lasting = Vec::new();
-    let graph = finish_with(plant, &cx, Some(&mut lasting));
-    GrowthRecord { graph, lasting }
+    let (graph, shown) = finish_with(plant, &cx, Some(&mut lasting));
+    GrowthRecord {
+        graph,
+        lasting,
+        shown,
+        age: params.age,
+    }
 }
 
 /// Runs the cycles of the mode of the species.
@@ -228,15 +234,20 @@ where
 /// the species asks for it.
 #[must_use]
 pub fn finish(plant: Plant, cx: &Context) -> PlantGraph {
-    finish_with(plant, cx, None)
+    finish_with(plant, cx, None).0
 }
 
 /// [`finish`]; with `lasting`, every leaf site is kept and described there (see
-/// `retain_leaves`).
-fn finish_with(mut plant: Plant, cx: &Context, lasting: Option<&mut Vec<u16>>) -> PlantGraph {
+/// `retain_leaves`). Also returns the number of leaf sites the grown plant keeps, which
+/// come first.
+fn finish_with(
+    mut plant: Plant,
+    cx: &Context,
+    lasting: Option<&mut Vec<u16>>,
+) -> (PlantGraph, usize) {
     let remap = plant.graph.ensure_contiguous();
-    shoot::retain_leaves(&mut plant, cx, remap.as_deref(), lasting);
+    let shown = shoot::retain_leaves(&mut plant, cx, remap.as_deref(), lasting);
     radii::assign_radii(&mut plant, cx.species, cx.scale);
     bend::bend_under_weight(&mut plant.graph, cx.species.growth.weight_bending);
-    plant.graph
+    (plant.graph, shown)
 }

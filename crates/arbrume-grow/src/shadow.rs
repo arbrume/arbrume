@@ -3,7 +3,10 @@
 //! Space is cut into cubic voxels holding a shadow value `s`, 0 at first. A metamer in
 //! voxel `(I, J, K)` adds `a * b^-q` to the voxels `(I ± p, J - q, K ± p)` for
 //! `q = 0..=q_max` and `p = 0..=q`: a pyramid opening downwards, whose layer `q` is the
-//! full square of `2q + 1` voxels a side. The exposure of a bud in a voxel is
+//! full square of `2q + 1` voxels a side, `|i - I| <= q` and `|k - K| <= q` independently.
+//! The square follows fig. 5 of the paper, which draws every layer filled; the printed
+//! index set, read literally with one `p` for both `I ± p` and `K ± p`, would cover only
+//! the two diagonals of each layer. The exposure of a bud in a voxel is
 //! `Q = max(C - s + a, 0)`, the `+ a` cancelling the shadow of the metamer that bears
 //! the bud. The direction of most light is the negative gradient of `s`, taken by
 //! central differences.
@@ -289,6 +292,8 @@ impl ShadowGrid {
         }
         for (q, weight) in (0_i32..).zip(&self.weights) {
             let amount = sign * weight;
+            // Layer `q` is the full square drawn in fig. 5 of the paper, not only the
+            // diagonals of the printed index set (see the module documentation).
             for z in cell.z - q..=cell.z + q {
                 let (row, span) = ((cell.y - q, z), (cell.x - q, cell.x + q));
                 match &mut self.store {

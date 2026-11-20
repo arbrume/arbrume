@@ -301,17 +301,21 @@ fn start_chain(
 /// that is to be shown at earlier ages, and `lasting` receives one cycle per leaf site
 /// added: the cycle from which the site stays leafy for good (that of the last shoot of
 /// its axis, for the tip of a stopped axis), or `u16::MAX` for a site that drops its
-/// leaves after `r` cycles.
+/// leaves after `r` cycles. The sites the grown plant keeps then come first, in the
+/// order they have without `lasting`, and the others after them.
+///
+/// Returns the number of sites the grown plant keeps.
 pub(crate) fn retain_leaves(
     plant: &mut Plant,
     cx: &Context,
     remap: Option<&[NodeId]>,
     mut lasting: Option<&mut Vec<u16>>,
-) {
+) -> usize {
     let retention = u32::from(cx.species.foliage.retention_cycles);
     let stalls = cx.species.growth.mode == GrowthMode::SelfOrganizing;
     let leafy = std::mem::take(&mut plant.leafy);
     let mut last_shoot = vec![0_u16; plant.meristems.len()];
+    let mut shown = Vec::new();
     for leaf in &leafy {
         let latest = &mut last_shoot[leaf.meristem.index()];
         *latest = (*latest).max(leaf.birth);
@@ -330,16 +334,46 @@ pub(crate) fn retain_leaves(
             let node = remap.map_or(leaf.node, |remap| remap[leaf.node.index()]);
             let before = plant.graph.organs().len();
             add_leaves(plant, cx, leaf, (node, meristem.order));
+            let added = plant.graph.organs().len() - before;
             if let Some(lasting) = lasting.as_deref_mut() {
                 let from = if terminal {
                     last_shoot[leaf.meristem.index()]
                 } else {
                     u16::MAX
                 };
-                lasting.resize(lasting.len() + plant.graph.organs().len() - before, from);
+                lasting.resize(lasting.len() + added, from);
+                shown.resize(shown.len() + added, recent || terminal);
             }
         }
     }
+    match lasting {
+        Some(lasting) => put_shown_first(plant, lasting, &shown),
+        None => plant.graph.organs().len(),
+    }
+}
+
+/// Moves the organ sites whose `shown` flag is set before the others, keeping the order
+/// within each group, and `lasting` with them. Returns the number of shown sites.
+fn put_shown_first(plant: &mut Plant, lasting: &mut [u16], shown: &[bool]) -> usize {
+    let organs = plant.graph.organs_mut();
+    let start = organs.len() - shown.len();
+    let flagged = |keep: bool| {
+        let sites = organs[start..].iter().zip(lasting.iter()).zip(shown);
+        sites
+            .filter(move |(_, flag)| **flag == keep)
+            .map(|(pair, _)| (*pair.0, *pair.1))
+    };
+    let sorted: Vec<(OrganSite, u16)> = flagged(true).chain(flagged(false)).collect();
+    let count = shown.iter().filter(|flag| **flag).count();
+    for ((site, from), (sorted_site, sorted_from)) in organs[start..]
+        .iter_mut()
+        .zip(lasting.iter_mut())
+        .zip(sorted)
+    {
+        *site = sorted_site;
+        *from = sorted_from;
+    }
+    count
 }
 
 /// Adds the leaf sites of one node of an axis of `order` to the graph.

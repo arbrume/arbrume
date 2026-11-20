@@ -325,29 +325,32 @@ machine, not a target; `grow`, `mesh` and `export` are medians in milliseconds):
 
 | species | age | nodes | triangles | grow | mesh | export | file MB | trees/s (1 thread) | trees/s (16 threads) |
 |---|---|---|---|---|---|---|---|---|---|
-| `open_grown_broadleaf` | 10 | 231 | 17 195 | 0.23 | 0.16 | 0.14 | 1.13 | 2488 | 3154 |
-| `open_grown_broadleaf` | 20 | 4 331 | 218 970 | 3.49 | 1.29 | 1.16 | 14.59 | 142 | 322 |
-| `open_grown_broadleaf` | 30 | 16 954 | 590 920 | 15.28 | 3.73 | 3.22 | 40.39 | 41 | 114 |
-| `open_grown_broadleaf` | 40 | 32 499 | 513 149 | 27.54 | 3.27 | 2.99 | 34.57 | 28 | 98 |
-| `forest_grown_broadleaf` | 10 | 329 | 23 241 | 0.17 | 0.15 | 0.15 | 1.51 | 3408 | 5307 |
-| `forest_grown_broadleaf` | 20 | 2 835 | 94 486 | 1.85 | 0.77 | 0.50 | 6.23 | 310 | 679 |
-| `forest_grown_broadleaf` | 30 | 8 222 | 210 141 | 7.23 | 1.82 | 1.22 | 13.66 | 109 | 402 |
-| `forest_grown_broadleaf` | 40 | 15 408 | 200 598 | 15.04 | 1.84 | 1.65 | 12.94 | 55 | 288 |
-| `excurrent_conifer` | 10 | 265 | 10 535 | 0.27 | 0.17 | 0.15 | 1.08 | 1659 | 4347 |
-| `excurrent_conifer` | 20 | 2 066 | 80 250 | 2.69 | 0.94 | 0.73 | 8.41 | 233 | 668 |
-| `excurrent_conifer` | 30 | 6 428 | 222 295 | 5.38 | 2.06 | 1.98 | 23.23 | 96 | 257 |
-| `excurrent_conifer` | 40 | 12 435 | 326 323 | 10.79 | 3.37 | 3.13 | 34.02 | 54 | 165 |
-| `spreading_decurrent` | 10 | 237 | 15 256 | 0.19 | 0.16 | 0.16 | 0.97 | 3041 | 4283 |
-| `spreading_decurrent` | 20 | 2 826 | 95 440 | 1.61 | 0.54 | 0.43 | 6.09 | 353 | 904 |
-| `spreading_decurrent` | 30 | 6 890 | 129 524 | 4.84 | 0.75 | 0.64 | 8.00 | 147 | 511 |
-| `spreading_decurrent` | 40 | 9 867 | 88 143 | 7.90 | 0.56 | 0.46 | 5.49 | 103 | 469 |
-| `thicket_shrub` | 10 | 688 | 17 415 | 0.31 | 0.18 | 0.14 | 1.04 | 1786 | 8460 |
-| `thicket_shrub` | 20 | 2 390 | 23 408 | 1.21 | 0.17 | 0.10 | 1.33 | 608 | 3108 |
-| `hedge_shrub` | 10 | 946 | 23 668 | 0.43 | 0.28 | 0.14 | 2.38 | 975 | 2047 |
-| `hedge_shrub` | 20 | 3 604 | 89 195 | 1.76 | 0.98 | 0.62 | 9.32 | 268 | 709 |
-| `envelope_tree` | 10 | 116 | 7 986 | 1.09 | 0.08 | 0.08 | 0.57 | 419 | 1745 |
-| `envelope_tree` | 20 | 1 905 | 129 090 | 5.24 | 0.86 | 0.87 | 9.42 | 64 | 407 |
-| `envelope_tree` | 30 | 1 943 | 131 936 | 7.38 | 0.91 | 0.97 | 9.63 | 50 | 325 |
+| `open_grown_broadleaf` | 10 | 226 | 16 669 | 0.29 | 0.20 | 0.12 | 1.09 | 2448 | 3937 |
+| `open_grown_broadleaf` | 20 | 3 958 | 193 071 | 3.21 | 1.81 | 0.97 | 12.81 | 152 | 376 |
+| `open_grown_broadleaf` | 30 | 13 805 | 426 636 | 10.89 | 4.06 | 2.27 | 28.89 | 53 | 175 |
+| `open_grown_broadleaf` | 40 | 25 422 | 315 296 | 20.05 | 3.78 | 1.62 | 21.12 | 39 | 182 |
+| `forest_grown_broadleaf` | 10 | 79 | 5 718 | 0.05 | 0.06 | 0.06 | 0.39 | 6222 | 10089 |
+| `forest_grown_broadleaf` | 20 | 1 981 | 99 367 | 1.02 | 0.87 | 0.36 | 6.56 | 464 | 1090 |
+| `forest_grown_broadleaf` | 30 | 7 060 | 190 178 | 4.84 | 1.75 | 0.93 | 12.36 | 134 | 468 |
+| `forest_grown_broadleaf` | 40 | 13 449 | 213 078 | 10.60 | 2.06 | 1.05 | 13.86 | 64 | 341 |
+| `excurrent_conifer` | 10 | 265 | 10 351 | 0.16 | 0.14 | 0.08 | 1.03 | 2074 | 5215 |
+| `excurrent_conifer` | 20 | 1 846 | 66 027 | 1.96 | 1.12 | 0.57 | 6.63 | 237 | 849 |
+| `excurrent_conifer` | 30 | 5 253 | 164 282 | 6.22 | 2.88 | 1.49 | 16.50 | 90 | 341 |
+| `excurrent_conifer` | 40 | 10 167 | 243 272 | 12.11 | 4.39 | 2.30 | 24.52 | 53 | 213 |
+| `spreading_decurrent` | 10 | 237 | 18 714 | 0.21 | 0.40 | 0.18 | 1.26 | 1801 | 7701 |
+| `spreading_decurrent` | 20 | 2 826 | 117 670 | 2.20 | 1.41 | 0.76 | 8.05 | 232 | 781 |
+| `spreading_decurrent` | 30 | 6 890 | 158 176 | 6.90 | 1.97 | 0.96 | 10.52 | 99 | 498 |
+| `spreading_decurrent` | 40 | 9 867 | 105 813 | 10.83 | 1.45 | 0.71 | 7.04 | 76 | 491 |
+| `thicket_shrub` | 10 | 688 | 28 263 | 0.41 | 0.32 | 0.17 | 1.50 | 1303 | 2932 |
+| `thicket_shrub` | 20 | 2 390 | 36 488 | 1.67 | 0.42 | 0.22 | 1.88 | 443 | 2245 |
+| `hedge_shrub` | 10 | 946 | 23 668 | 0.40 | 0.36 | 0.14 | 2.38 | 630 | 3030 |
+| `hedge_shrub` | 20 | 3 604 | 89 195 | 2.58 | 1.98 | 0.85 | 9.32 | 192 | 810 |
+| `envelope_tree` | 10 | 116 | 7 986 | 1.80 | 0.12 | 0.08 | 0.57 | 549 | 4980 |
+| `envelope_tree` | 20 | 1 905 | 129 090 | 5.57 | 1.11 | 0.69 | 9.42 | 71 | 505 |
+| `envelope_tree` | 30 | 1 943 | 131 936 | 7.23 | 1.57 | 0.85 | 9.64 | 48 | 417 |
+
+Measured on an AMD Ryzen 7 9700F (8 cores, 16 logical processors) under Windows 11,
+with no other build or benchmark running.
 
 `arbrume bench --engine` prints another table for the species in the self-organizing
 mode: the growth time of one plant with the default engine options, with a sparse shadow

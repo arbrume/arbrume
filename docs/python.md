@@ -174,7 +174,6 @@ cell, n = 0.1, 40
 centers = (np.arange(n) + 0.5) * cell
 x, y, z = np.meshgrid(centers - 2.0, centers, centers - 2.0, indexing="ij")
 inside = x**2 + (y - 2.0) ** 2 + z**2 < 1.5**2
-inside |= (np.abs(x) < cell) & (np.abs(z) < cell) & (y < 2.0)  # a passage for the trunk
 crown = arbrume.voxel_mask((-2.0, 0.0, -2.0), cell, (n, n, n), inside)
 tree = arbrume.generate("envelope_tree", seed=1, surroundings={"envelope": crown})
 
@@ -189,11 +188,10 @@ is filled where `mask[x, y, z]` is true (`mask` is anything `numpy.asarray` turn
 bool array of that shape). The `VoxelMask` it returns (`origin`, `cell`, `shape`,
 `filled`, `bounds`, `contains(point)`) stands wherever a shape is expected: as the
 `envelope`, as an item of `occluders` (a solid obstacle: blocks, shade 1), or as the
-`shape` of an occluder dict that sets `blocks` and `shade`. A shoot outside an analytic
+`shape` of an occluder dict that sets `blocks` and `shade`. A shoot outside an
 envelope may grow towards it, so a trunk rises into a crown that floats above the
-ground; outside a voxel mask the generator only sees the distance to the mask's grid,
-so a voxel envelope should reach the ground below the plant, as the column of the
-example does.
+ground; outside a voxel mask the distance is that to its nearest filled voxel, so a
+voxel envelope behaves as an analytic one of the same volume.
 
 **Growth frames.** `growth_frames(species, seed=0, age=None, frames=10, **options)`
 grows the plant once and meshes it at `frames` ages spread evenly over its growth
@@ -208,10 +206,10 @@ frames = arbrume.growth_frames("broadleaf", seed=4, age=20, frames=5)
 ```
 
 The axes keep the place they have in the grown plant, so a sequence does not jitter.
-The bark of the last frame is that of `generate` for the same arguments, to float
-rounding. Its leaf mesh has as many vertices but other leaves: a frame keeps the leaf
-sites of every metamer recorded during growth, while `generate` places the leaves of
-the final plant.
+The last frame is the tree `generate` makes with the same arguments, bit for bit: the
+same mesh parts, skeleton and organ sites. A leaf keeps its place in the random leaf
+order from one frame to the next, so with `quality` below 1 the frames thin out the
+same leaves.
 
 ## Arrays without copies
 

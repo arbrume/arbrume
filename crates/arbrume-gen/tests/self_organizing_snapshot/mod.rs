@@ -2,11 +2,12 @@
 //! that must leave those plants unchanged.
 //!
 //! One line per case: its name, then a hash of the exact `f32` bits of the graph node
-//! positions and one of the mesh vertex positions. With `ARBRUME_REGOLD=1` a test
-//! writes its golden file instead of comparing with it.
+//! positions and one of the mesh vertex positions, compared with the golden file of the
+//! platform (see `golden`).
 
 use std::fmt::Write as _;
-use std::path::PathBuf;
+
+use crate::golden;
 
 use arbrume_core::species::GrowthMode;
 use arbrume_gen::{GenParams, Plant, generate, preset, presets};
@@ -56,21 +57,10 @@ fn snapshot() -> String {
     text
 }
 
-/// Compares the snapshot with `tests/fixtures/<name>_golden.txt`, or writes that file
-/// when `ARBRUME_REGOLD=1`.
+/// Compares the snapshot with the golden file `<name>` of the platform
+/// ([`golden::check`]).
 pub fn check(name: &str) {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures")
-        .join(format!("{name}_golden.txt"));
     let got = snapshot();
     assert!(got.lines().count() >= 3, "no self-organizing preset");
-    if std::env::var("ARBRUME_REGOLD").as_deref() == Ok("1") {
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(&path, &got).unwrap();
-        return;
-    }
-    let want = std::fs::read_to_string(&path)
-        .unwrap()
-        .replace("\r\n", "\n");
-    assert_eq!(got, want);
+    golden::check(name, &got);
 }

@@ -93,6 +93,12 @@ pub struct SelfOrganization {
     /// Exponent applied to the exposure of a bud before it is summed (the light
     /// sensitivity of Longay et al. 2012): above 1 penalizes shaded buds more.
     pub light_exponent: f32,
+    /// Gravimorphism `d` of Longay et al. (2012, eq. 1): the exposure of a bud is
+    /// multiplied by `b = cos² tau + d sin² tau`, `tau` the angle between the vertical and
+    /// the internode bearing the bud, after it is raised to `light_exponent`. In
+    /// `[0, 1]`: buds on horizontal axes get `b = d`, buds on vertical axes `b = 1`. The
+    /// default 1 gives `b = 1` everywhere.
+    pub gravimorphism: f32,
     /// Edge of a voxel of the shadow grid, in internode units.
     pub shadow_cell: f32,
     /// Shadow `a` a metamer adds to its own voxel; `a * b^-q` reaches the voxels `q`
@@ -147,6 +153,7 @@ impl Default for SelfOrganization {
             axis_bias: OrderCurve::constant(0.5),
             resource_coefficient: 2.0,
             light_exponent: 1.0,
+            gravimorphism: 1.0,
             shadow_cell: 1.0,
             shadow_strength: 0.2,
             shadow_decay: 2.0,
@@ -433,6 +440,7 @@ impl SelfOrganization {
         check_range(so!("resource_coefficient"), alpha, 0.0, max)?;
         let exponent = self.light_exponent;
         check_range(so!("light_exponent"), exponent, tiny, max)?;
+        check_range(so!("gravimorphism"), self.gravimorphism, 0.0, 1.0)?;
         let cell = self.shadow_cell;
         check_range(so!("shadow_cell"), cell, 1e-3, max)?;
         let strength = self.shadow_strength;

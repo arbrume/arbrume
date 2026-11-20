@@ -1,6 +1,7 @@
 //! The self-organizing presets on open ground, which the shade of occluders must not
 //! change when there is no occluder.
 
+mod golden;
 mod self_organizing_snapshot;
 
 #[test]

@@ -1,0 +1,44 @@
+name: Regold
+# Writes the golden files of the snapshot tests on Linux and macOS, whose float bits differ
+# from those of Windows, and uploads them for review and commit. Run by hand only.
+on:
+  workflow_dispatch:
+
+jobs:
+  regold:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            os: linux
+          - runner: macos-latest
+            os: macos
+    runs-on: ${{ matrix.runner }}
+    env:
+      ARBRUME_REGOLD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: astral-sh/setup-uv@v6
+      - name: Write the golden files of the Rust snapshot tests
+        run: >-
+          cargo test -p arbrume-gen
+          --test snapshot_marker_grid --test snapshot_occluder --test snapshot_stands
+      - name: Build the abi3 wheel
+        working-directory: crates/arbrume-py
+        run: uvx maturin build --release --out "$RUNNER_TEMP/wheels"
+      - name: Write the golden file of the Python snapshot test
+        working-directory: crates/arbrume-py
+        run: |
+          uv venv "$RUNNER_TEMP/venv"
+          uv pip install --python "$RUNNER_TEMP/venv/bin/python" "$RUNNER_TEMP"/wheels/*.whl pytest
+          "$RUNNER_TEMP/venv/bin/python" -m pytest -v tests/test_snapshot_surroundings.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: goldens-${{ matrix.os }}
+          path: |
+            crates/arbrume-gen/tests/fixtures/*_golden.${{ matrix.os }}.txt
+            crates/arbrume-py/tests/fixtures/*_golden.${{ matrix.os }}.txt
+          if-no-files-found: error

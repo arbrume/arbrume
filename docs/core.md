@@ -260,6 +260,18 @@ Rules that keep generation deterministic:
   reproducible as long as the points where it is called do not depend on thread count or
   timing. Bud ids and chain ids never change and are safe keys across compaction.
 
+These rules make a plant bitwise identical for every thread count on one platform, not
+across platforms: functions such as `powf`, `sin` and `cos` come from the math library
+of the platform, which may round the last bit differently. The snapshot tests that hash
+the exact float bits of plants (`snapshot_marker_grid`, `snapshot_occluder` and
+`snapshot_stands` in `arbrume-gen`, `test_snapshot_surroundings.py` in `arbrume-py`)
+therefore keep one golden file per platform, `<name>_golden.<os>.txt` with `<os>` one
+of `windows`, `linux` and `macos`. A missing golden file fails the test; with
+`ARBRUME_REGOLD=1` the test writes the file of the platform it runs on instead. The
+manual workflow `.github/workflows/regold.yml` does that on Linux and macOS and uploads
+the files as the artifacts `goldens-linux` and `goldens-macos`, to be checked and
+committed.
+
 The generator is `SplitMix64` (Steele, Lea and Flood 2014) with a hashed key and a per-key
 increment; the module documentation describes the mixing function.
 

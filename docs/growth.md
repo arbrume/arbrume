@@ -263,7 +263,9 @@ $$
 
 to the voxels $(I \pm p,\ J - q,\ K \pm p)$ for $q = 0 \ldots q_{max}$ and
 $p = 0 \ldots q$: a pyramid opening downwards whose layer $q$ is a full square of
-$2q + 1$ voxels a side. The exposure of a bud is
+$2q + 1$ voxels a side. The square follows fig. 5 of the paper, which draws each layer
+filled; the printed index set, read literally with one $p$ for both $I \pm p$ and
+$K \pm p$, would cover only the two diagonals of each layer. The exposure of a bud is
 
 $$
 Q = \max(C - s + a,\ 0)
@@ -390,6 +392,7 @@ time of every cycle with them.
 | `axis_bias` | 0.5 | $\lambda$, curve over the bearing order and the position of the branching point |
 | `resource_coefficient` | 2 | $\alpha$ |
 | `light_exponent` | 1 | exponent applied to $Q$ before it is summed; above 1 penalizes shaded buds (the light sensitivity of Longay et al. 2012) |
+| `gravimorphism` | 1 | $d$ in $[0, 1]$: $Q$ is multiplied by $b = \cos^2\tau + d \sin^2\tau$, $\tau$ the angle of the internode bearing the bud from the vertical (Longay et al. 2012, eq. 1); 1 for $b = 1$ |
 | `shadow_cell` | 1 | voxel edge, in internode units |
 | `shadow_strength` | 0.2 | $a$ |
 | `shadow_decay` | 2 | $b$, above 1 |
@@ -411,7 +414,11 @@ perception cone (4 to 6 internodes, about 90 degrees), the depth of the shadow (
 layers), $\alpha$ (2), $\lambda$ (0.46 to 0.54) and the priority weights (1, 0.006 and a
 knee of 0.5 or 0.35): the defaults take those. The paper gives no value for $a$, $b$,
 $C$ or the shedding threshold; those defaults, like `light_exponent`, `shadow_cell`,
-`marker_density` and `bud_lifespan`, are starting points of this implementation.
+`marker_density` and `bud_lifespan`, are starting points of this implementation. The
+light sensitivity of Longay et al. (2012) is $Q = b\,L^\kappa$, $\kappa$ `light_exponent`
+and $b$ the gravimorphism factor of their eq. 1; `gravimorphism` = 1 makes $b = 1$, the
+plain $Q$ of Palubicki et al. (2009). Below 1 it favours the buds of upright axes over
+those of horizontal ones.
 
 The parameter set of Stava et al. (2014) is the reference for coverage. Its parameters
 map to species fields as follows; the rules differ (their buds flush with a probability,
@@ -485,9 +492,11 @@ there if that is blocked too. A bud that cannot take one step is left out of the
 allocation, so its share goes to the buds that have room: a plant pressed against a
 clip volume branches behind it, the response to clipping of Prusinkiewicz et al.
 (1994). A step that starts outside the envelope is allowed while it comes closer to
-it, so a trunk can rise into a crown envelope that floats above the ground. A voxel
-envelope should hold the base of the plant, since its distance is only known to within
-a voxel.
+it, so a trunk can rise into a crown envelope that floats above the ground. The
+distance to a voxel mask is that to the centre of its nearest filled voxel, read from
+an exact distance transform of the mask (Felzenszwalb and Huttenlocher 2012) built the
+first time it is needed, interpolated between voxel centres and continued outside the
+grid; a floating voxel envelope is therefore reached as an analytic one is.
 
 **Shade.** An occluder with `shade > 0` darkens the buds near and below it: a bud
 receives `shade * a * b^-q` for every depth `q` in `0..=q_max` such that the volume
@@ -588,6 +597,11 @@ result has the live metamers of the plant grown to that age, with the same pipe 
 Axes keep the position they have in the grown plant, so nothing jumps between frames;
 with `weight_bending` they carry the sag of the final weight at every age, and an axis
 that paused and grew again is treated as growing throughout for its leaves.
+The record lists first the leaf sites the grown plant keeps, in its order, so a leaf has
+the same index, and therefore the same place in the random leaf order of the mesher, in
+every frame. At the last cycle (`is_last_cycle`) `at_cycle` returns the grown plant
+itself, its radii and only its leaf sites, to be meshed without `max_cycle`: the last
+frame is then the plant of `grow_in`, bit for bit.
 `arbrume_gen::Generator::timeline` and `frame` wrap this, and `arbrume gen
 --growth-frames K` writes the sequence ([Command line](cli.md)).
 
@@ -622,14 +636,17 @@ Growth time of one plant, default options (median of 7, milliseconds):
 
 | preset | age | nodes | default | sparse grid | parallel buds | sequential markers |
 |---|---|---|---|---|---|---|
-| `open_grown_broadleaf` | 20 | 4 331 | 3.5 | 6.9 | 3.0 | 3.5 |
-| `open_grown_broadleaf` | 40 | 32 499 | 35.6 | 74.0 | 29.9 | 36.0 |
-| `forest_grown_broadleaf` | 40 | 15 408 | 11.5 | 23.0 | 13.1 | 15.2 |
-| `excurrent_conifer` | 40 | 12 898 | 10.9 | 17.3 | 12.1 | 10.1 |
-| `spreading_decurrent` | 40 | 9 690 | 10.4 | 21.4 | 9.6 | 10.4 |
-| `thicket_shrub` | 20 | 2 511 | 1.8 | 2.9 | 1.7 | 1.7 |
-| `hedge_shrub` | 20 | 3 604 | 2.5 | 3.9 | 2.1 | 2.5 |
-| `envelope_tree` | 20 | 1 905 | 5.6 | 6.7 | 5.9 | 14.1 |
+| `open_grown_broadleaf` | 20 | 3 958 | 3.1 | 4.2 | 3.6 | 3.0 |
+| `open_grown_broadleaf` | 40 | 25 422 | 20.3 | 38.4 | 23.2 | 20.7 |
+| `forest_grown_broadleaf` | 40 | 13 449 | 9.7 | 19.5 | 11.2 | 10.0 |
+| `excurrent_conifer` | 40 | 10 167 | 9.0 | 14.2 | 10.3 | 8.6 |
+| `spreading_decurrent` | 40 | 9 867 | 8.3 | 14.3 | 9.0 | 7.8 |
+| `thicket_shrub` | 20 | 2 390 | 1.1 | 1.8 | 1.1 | 1.1 |
+| `hedge_shrub` | 20 | 3 604 | 1.7 | 2.5 | 2.1 | 1.7 |
+| `envelope_tree` | 20 | 1 905 | 4.6 | 5.8 | 4.9 | 12.9 |
+
+Measured on an AMD Ryzen 7 9700F (8 cores, 16 logical processors) under Windows 11,
+with no other build or benchmark running.
 
 Growth costs about one microsecond per node on these presets, and stays below the cost
 of meshing and export for the smaller plants ([Command line](cli.md) has the stage
@@ -706,6 +723,8 @@ total length against values derived from the published productions and tables.
 
 - Barthélémy and Caraglio 2007, Plant architecture: a dynamic, multilevel and
   comprehensive approach to plant form, structure and ontogeny, Annals of Botany.
+- Felzenszwalb and Huttenlocher 2012, Distance transforms of sampled functions, Theory
+  of Computing.
 - Longay, Runions, Boudon and Prusinkiewicz 2012, TreeSketch, Eurographics SBIM.
 - Palubicki et al. 2009, Self-organizing tree models for image synthesis, ACM TOG.
 - Prusinkiewicz, James and Mech 1994, Synthetic topiary, SIGGRAPH.
