@@ -1,0 +1,26 @@
+[package]
+name = "arbrume-pack"
+description = "Species packs of Arbrume: format, validation, archives and the user pack directory"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+arbrume-core.workspace = true
+arbrume-gen.workspace = true
+arbrume-raster.workspace = true
+arbrume-texture.workspace = true
+crc32fast = "1.5.5"
+flate2 = "1.1.11"
+serde = { version = "1.0.229", features = ["derive"] }
+sha2 = "0.10.9"
+thiserror = "2.0.21"
+toml = "1.2.1"
+
+[dev-dependencies]
+tempfile = "3"

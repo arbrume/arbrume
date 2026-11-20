@@ -10,7 +10,7 @@ use arbrume_core::mesh::TreeMesh;
 use arbrume_core::species::Species;
 use arbrume_grow::{Surroundings, grow_in};
 use arbrume_mesh::{DEFAULT_TOLERANCE, MeshCounts, MeshOptions, Mesher};
-use arbrume_texture::{TextureCache, textured_species};
+use arbrume_texture::{SpeciesTextures, TextureCache, textured_species};
 
 use crate::params::{GenError, GenParams, quality_options};
 use crate::plant::{Plant, Stats, Timings};
@@ -107,13 +107,26 @@ impl Generator {
         }
     }
 
+    /// The textures of `species` (or of the texture base), when the generator has
+    /// textures.
+    pub(crate) fn texture_set(
+        &self,
+        species: &Species,
+    ) -> Result<Option<Arc<SpeciesTextures>>, GenError> {
+        let Some(cache) = &self.textures else {
+            return Ok(None);
+        };
+        let source = self.texture_base.as_deref().unwrap_or(species);
+        Ok(Some(cache.get(source)?))
+    }
+
     /// Puts the textures of `species` (or of the texture base) on `mesh`, a mesh of
     /// `species`, when the generator has textures.
-    pub(crate) fn texture(&self, species: &Species, mesh: &mut TreeMesh) {
-        if let Some(cache) = &self.textures {
-            let source = self.texture_base.as_deref().unwrap_or(species);
-            cache.get(source).apply(mesh, species);
+    pub(crate) fn texture(&self, species: &Species, mesh: &mut TreeMesh) -> Result<(), GenError> {
+        if let Some(textures) = self.texture_set(species)? {
+            textures.apply(mesh, species);
         }
+        Ok(())
     }
 
     /// Moves the texture coordinates of the leaf templates of `leaves`, of `species`, to
@@ -122,14 +135,13 @@ impl Generator {
         &self,
         species: &Species,
         leaves: &mut arbrume_mesh::LeafInstances,
-    ) {
-        if let Some(cache) = &self.textures {
-            let source = self.texture_base.as_deref().unwrap_or(species);
-            let textures = cache.get(source);
+    ) -> Result<(), GenError> {
+        if let Some(textures) = self.texture_set(species)? {
             for template in &mut leaves.templates {
                 textures.remap(species, &mut template.uvs);
             }
         }
+        Ok(())
     }
 
     /// Same as [`generate`], reusing the memory of the generator.
@@ -187,6 +199,7 @@ impl Generator {
         let grown = Instant::now();
         let meshed = self.meshed(species);
         let (textured, species) = (species, meshed.as_ref());
+        let textures = self.texture_set(textured)?;
         let mut options = params.mesh;
         if *budget != Budget::NONE {
             let mut quality = (DEFAULT_TOLERANCE / options.tolerance).sqrt();
@@ -201,7 +214,9 @@ impl Generator {
         }
         self.mesher
             .mesh_into(&graph, species, &options, &mut plant.mesh)?;
-        self.texture(textured, &mut plant.mesh);
+        if let Some(textures) = textures {
+            textures.apply(&mut plant.mesh, textured);
+        }
         let timings = Timings {
             grow: grown - start,
             mesh: grown.elapsed(),
@@ -226,8 +241,7 @@ impl Generator {
         let meshed = self.meshed(species);
         self.mesher
             .mesh_into(graph, &meshed, options, &mut plant.mesh)?;
-        self.texture(species, &mut plant.mesh);
-        Ok(())
+        self.texture(species, &mut plant.mesh)
     }
 
     /// Meshes the graph of `plant` again with `options`, for another level of detail.
@@ -235,8 +249,9 @@ impl Generator {
     ///
     /// # Errors
     ///
-    /// Returns [`GenError::Mesh`] for invalid options or a mesh too large; `plant` is
-    /// then left untouched.
+    /// Returns [`GenError::Mesh`] for invalid options or a mesh too large and
+    /// [`GenError::Texture`] for an image texture that cannot be read; `plant` is then
+    /// left untouched.
     pub fn remesh(
         &mut self,
         plant: &mut Plant,
@@ -244,10 +259,13 @@ impl Generator {
         options: &MeshOptions,
     ) -> Result<Duration, GenError> {
         let start = Instant::now();
+        let textures = self.texture_set(species)?;
         let meshed = self.meshed(species);
         self.mesher
             .mesh_into(&plant.graph, &meshed, options, &mut plant.mesh)?;
-        self.texture(species, &mut plant.mesh);
+        if let Some(textures) = textures {
+            textures.apply(&mut plant.mesh, species);
+        }
         let elapsed = start.elapsed();
         plant.params.mesh = *options;
         plant.stats.set_mesh(&plant.mesh);

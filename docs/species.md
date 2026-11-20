@@ -190,6 +190,10 @@ twigs, enlarged to preserve the leaf area.
 
 ## Adding a preset
 
+To share species without changing Arbrume, put them in a species pack instead
+([Species packs](packs.md)): `arbrume pack add-species` copies a preset or a species
+file into a pack, whose species are then named `pack_id/name`.
+
 Drop `<name>.toml` in `crates/arbrume-gen/species/`, add its line to `PRESETS` in
 `crates/arbrume-gen/src/presets.rs` (kept sorted) and its row to the table above. The
 tests then grow it at three ages of its range, mesh it, export it and check that its

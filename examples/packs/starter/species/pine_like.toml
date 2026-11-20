@@ -1,0 +1,90 @@
+# Pine-like conifer: a tall trunk cleared of its lower branches, open whorls of upturned
+# limbs and tufts of long needles at the branch ends, under a rounded top.
+#
+# Typical size at age 45: about 18 m tall, crown 12 m wide, trunk 0.4 m across at the
+# base. Every value is a starting point chosen by eye, not a measurement. A twig is the
+# tuft of needles of one shoot, drawn larger and fewer than the real ones.
+
+schema_version = 0
+name = "Pine-like conifer"
+
+[architecture]
+branching = "monopodial"
+growth_rhythm = "rhythmic"
+branching_pattern = "rhythmic"
+branch_timing = "proleptic"
+max_order = 2
+phyllotaxis = { leaves_per_node = 1, divergence_deg = 137.5 }
+
+[growth]
+axis_length = { by_order = [
+    18.0,
+    { points = [[0.0, 3.0], [0.5, 5.0], [0.85, 5.4], [1.0, 4.0]], interp = "smooth" },
+    [[0.0, 1.0], [0.5, 2.4], [1.0, 1.8]],
+] }
+shoot_length = { by_order = [[[0.0, 0.6], [0.8, 0.3], [1.0, 0.12]], [[0.0, 0.4], [1.0, 0.2]], 0.26] }
+length_variation = { by_order = [0.05, 0.25, 0.3] }
+internode_length = { by_order = [0.3, 0.2, 0.26] }
+branch_probability = { by_order = [0.85, 0.75] }
+# Branches only in the whorl that ends each growth unit.
+unit_branching = [[0.0, 0.0], [0.99, 0.0], [1.0, 1.0]]
+whorl = { by_order = [4.0, 2.0] }
+# The trunk sheds its old limbs.
+branch_lifespan = { by_order = [24.0, 0.0] }
+bare_base = { by_order = [0.3, 0.3] }
+branching_angle = { by_order = [0.0, [[0.0, 85.0], [0.7, 70.0], [1.0, 45.0]], 55.0] }
+branching_angle_variation = 10.0
+direction_variation = { by_order = [1.0, 4.0, 6.0] }
+gnarl = { by_order = [3.0, 16.0, 18.0] }
+gravitropic_setpoint = { by_order = [0.0, 40.0, 35.0] }
+tropism_weight = { by_order = [0.1, 0.05, 0.06] }
+
+[geometry]
+radius_model = "tapered"
+radius_ratio = 0.0125
+child_radius_exponent = 1.2
+taper = [[0.0, 1.0], [0.7, 0.6], [1.0, 0.1]]
+flare = 0.5
+
+[foliage]
+length = 0.12
+width_ratio = 0.08
+shape = "needle"
+segments = 1
+petiole_length = 0.0
+inclination_deg = 0.0
+retention_cycles = 5
+min_order = 1
+color = [0.05, 0.14, 0.055]
+hue_variation = 0.1
+brightness_variation = 0.4
+size_variation = 0.2
+orientation_variation_deg = 16.0
+twig = { leaves = 18, length = 0.3, inclination_deg = 42.0, bend_deg = 0.0, stem_radius = 0.0, terminal_leaf = false, radial = true, fins = 3, fin_width = 0.045, fin_shade = 0.65, variants = 4 }
+texture_variants = 2
+texture_resolution = 256
+venation = { kind = "none" }
+
+# Grey-brown plates low on the trunk, orange flaky bark on the limbs.
+[bark]
+color = [0.17, 0.11, 0.085]
+young_color = [0.36, 0.17, 0.065]
+young_radius = 0.09
+color_variation = 0.15
+pattern = { kind = "plated", feature_size = 0.09, stretch = 1.6, coverage = 0.3, contrast = 0.5, relief = 0.6 }
+
+[variation]
+age = [14, 52]
+scale = [0.85, 1.15]
+
+[variation.jitter]
+"growth.axis_length" = 0.15
+"growth.internode_length" = 0.08
+"growth.branching_angle" = 0.1
+"growth.gravitropic_setpoint" = 0.08
+"growth.gnarl" = 0.3
+"growth.curvature" = 0.25
+"geometry.radius_ratio" = 0.15
+"foliage.length" = 0.1
+"foliage.color" = 0.1
+"bark.color" = 0.08

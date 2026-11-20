@@ -47,9 +47,15 @@ pub struct Bark {
     pub roughness: f32,
     /// Size in meters of one repeat of the bark texture, as `[around, along]` the axis.
     pub texture_size: [f32; 2],
-    /// Path of the bark texture, relative to the species file.
+    /// Path of an image (PNG or JPEG) used as the bark albedo instead of the synthesized
+    /// one, covering one repeat of `texture_size`. A relative path is resolved against
+    /// `Species::asset_dir` (see `docs/packs.md`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub texture: Option<String>,
+    /// Path of a tangent-space normal map that goes with `texture`; a flat normal when
+    /// absent. Only read with `texture`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub normal_texture: Option<String>,
     /// Width and height in texels of the synthesized bark texture, which covers one
     /// repeat of `texture_size`: a power of two from [`MIN_TEXTURE_RESOLUTION`] to
     /// [`MAX_TEXTURE_RESOLUTION`].
@@ -68,6 +74,7 @@ impl Default for Bark {
             roughness: 0.9,
             texture_size: [0.5, 0.5],
             texture: None,
+            normal_texture: None,
             texture_resolution: 512,
             pattern: BarkPattern::default(),
         }
@@ -210,6 +217,8 @@ impl Bark {
         check_range("bark.texture_size", around, f32::MIN_POSITIVE, f32::MAX)?;
         check_range("bark.texture_size", along, f32::MIN_POSITIVE, f32::MAX)?;
         check_resolution("bark.texture_resolution", self.texture_resolution)?;
+        let normal = self.normal_texture.as_deref();
+        super::check_texture_paths("bark", self.texture.as_deref(), normal)?;
         self.pattern.validate()
     }
 }

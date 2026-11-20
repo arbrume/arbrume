@@ -31,6 +31,9 @@ pub enum GenError {
     /// The mesher rejected the plant or the options.
     #[error(transparent)]
     Mesh(#[from] MeshError),
+    /// An image texture of the species cannot be read or decoded.
+    #[error(transparent)]
+    Texture(#[from] arbrume_texture::TextureError),
 }
 
 /// Everything that defines one plant besides its species.

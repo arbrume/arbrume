@@ -16,9 +16,11 @@ lod
 textures
 wind
 species
+packs
 raster
 cli
 annotations
+fitting
 python
 blender
 research

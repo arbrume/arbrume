@@ -137,6 +137,51 @@ without copying. The `numpy` Rust crate was not used because it needs the full,
 version-specific C API. `part.buffer("vertices")` returns the raw `Buffer`, usable as
 `memoryview(...)` without NumPy.
 
+## Fitting to a skeleton
+
+`arbrume.distance(a, b, *, min_radius=0.0, step=None, smooth=0, up="y")` compares two
+tree skeletons and returns the terms of the distance as a dict; `arbrume.fit(target,
+species, **settings)` fits the parameters of `species` to `target` and returns the fitted
+species file (`toml`), the fitted `age`, `scale` and `factors`, and the `report`. A
+skeleton is a `Tree`, a path (`.ann.npz`, `.glb`, `.csv`, `.json`) or a dict of
+`position`, `radius` and `parent` arrays. Settings, method and file formats are those of
+`arbrume fit` ([Parameter fitting](fitting.md)); both run without the GIL, and `fit`
+gives the same result whatever `threads`.
+
+```python
+result = arbrume.fit("scan.csv", "oak_like", up="z", min_radius=0.02, checkpoint="oak.json")
+tree = arbrume.generate(result["toml"], seed=1, age=result["age"], scale=result["scale"])
+arbrume.distance("scan.csv", tree, up="z", min_radius=0.02)["total"]
+```
+
+## Species packs
+
+Species of packs ([Species packs](packs.md)) are named `"pack_id/name"`, which
+`generate` and `generate_many` accept wherever they accept a preset name. They are found
+among the packs given to `load_pack` in this process, then among the installed packs of
+the pack directory (`ARBRUME_PACKS_DIR`, or the user data directory).
+
+```python
+# a pack directory or a .arbpack file, kept for this process
+pack = arbrume.load_pack("my_trees")
+ids = [s["id"] for s in pack["species"]]  # ['my_trees/field_oak', ...]
+tree = arbrume.generate("my_trees/field_oak", seed=1, textures=True)
+
+# validated, then installed into arbrume.packs_dir()
+arbrume.install_pack("my_trees-0.1.0.arbpack")
+installed = arbrume.packs()
+arbrume.remove_pack("my_trees")
+```
+
+A pack is described by a dict: `id`, `name`, `version`, `authors`, `description`,
+`content_licence`, `licence_file`, `min_schema_version`, `path`, `archive` and `species`,
+a list of dicts with `id`, `name`, `display_name`, `category`, `thumbnail` (a file path or
+`None`) and `preview`. `load_pack` checks the structure of a pack (allowed files, hashes,
+`pack.toml`); `install_pack` validates it fully, species grown included, and raises
+`ValueError` listing every error. A missing pack or species raises `FileNotFoundError`.
+Image textures of a pack are used with `textures=True`. The texture paths of a species
+file given by path are relative to its directory.
+
 ## Blender
 
 The Blender extension will build meshes from these arrays with `foreach_set`, which

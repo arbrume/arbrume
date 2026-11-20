@@ -14,7 +14,7 @@ from bpy.props import PointerProperty
 
 import arbrume
 
-from . import curves_ui, ops, prefs, props, ui
+from . import curves_ui, ops, packs, prefs, props, ui
 from .logic import species
 from .state import STATE, reset
 
@@ -58,8 +58,9 @@ def register() -> None:
     _register(params_class)
     props.attach_params(params_class)
     bpy.types.Object.arbrume = PointerProperty(type=props.ARBRUME_PG_plant)
-    for cls in ops.CLASSES:
+    for cls in (*ops.CLASSES, *packs.CLASSES):
         _register(cls)
+    packs.refresh()
     _register(ui.VIEW3D_PT_arbrume)
     for section in STATE.sections:
         _register(ui.make_section_panel(section))
@@ -84,3 +85,4 @@ def unregister() -> None:
     reset()
     STATE.sections, STATE.specs, STATE.presets = [], {}, []
     props.clear_enum_cache()
+    packs.release()

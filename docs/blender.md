@@ -25,7 +25,17 @@ active plant:
 
 - **Textures.** With *Textures* on (the default), the plant carries the procedural bark
   and leaf textures of its species ([Textures](textures.md)), synthesized once per
-  species and kept by the extension for the session.
+  species and kept by the extension for the session, or the image textures of a pack
+  species.
+- **Species packs.** The species menu lists the built-in presets, then the species of
+  each installed pack ([Species packs](packs.md)) under a heading with the pack name and
+  version, each with its thumbnail as icon. *Edit > Preferences > Add-ons > Arbrume*,
+  box *Species Packs*, shows the pack directory (shared with the command line and the
+  Python module), installs a `.arbpack` file (*Install Pack*, which validates it first),
+  lists the installed packs with their version and content licence, removes one (trash
+  button) and reads the directory again (*Refresh Packs*). A plant stores the id of its
+  pack species; if the pack is removed, the plant keeps its mesh and shows the error at
+  its next regeneration.
 - **Junctions.** *Collar* (the default) starts each branch inside its parent; *Watertight*
   stitches it into its parent, so the bark of each stem is one closed surface
   ([Junctions](junctions.md)). The imported mesh keeps one vertex per side of each
@@ -79,6 +89,7 @@ Blender:
 | `toml_out` | writing a species as TOML that reads back as the same species |
 | `meshdata` | one set of flat arrays for the whole tree: parts concatenated, Y up turned to Z up, per-corner UVs, material index per face |
 | `curvemap` | species curves to and from the points of a curve widget |
+| `packs` | the species of installed packs as groups of the species menu |
 
 Since the parameter panels are built from the species data, a parameter added to the
 species schema appears in Blender without a change to the extension.
@@ -157,8 +168,11 @@ installs the zip into a temporary Blender user directory and runs Blender in bac
 one plant per preset with vertex and triangle counts checked against `tree.stats`, shading
 normals checked against the generator's, property and parameter changes, a curve edited
 through its node with undo and redo of the edit, an age scrub, every operator, saving
-and reopening the file, disabling and enabling the extension, upload timings and two
-EEVEE stills. The third opens a window (with `--enable-event-simulate`), draws the
+and reopening the file, a species pack installed from an archive made by Python's
+`zipfile` (its heading, species and thumbnail in the species menu, the Packs box of the
+preferences drawn through a stand-in layout, a plant of its species with the pack images
+on its materials, then its removal), disabling and enabling the extension, upload
+timings and two EEVEE stills. The third opens a window (with `--enable-event-simulate`), draws the
 panels, saves screenshots of the sidebar, then drags a point of a curve widget with
 simulated mouse events and checks that the drag is one undo step that undo and redo
 restore with the plant.

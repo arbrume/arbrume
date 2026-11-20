@@ -22,6 +22,7 @@ use arbrume_export::{ExtraAttribute, GlbOptions};
 use arbrume_gen::{Budget, Distribution, GENERATOR, GenParams, Generator, Plant};
 use arbrume_gen::{Junctions, Stats, metadata, run_batch};
 use arbrume_gen::{RandomSampler, Sampler, TextureCache, TextureOptions};
+use arbrume_pack::PackStore;
 use arbrume_raster::{Renderer, ThumbnailOptions};
 use clap::{Args, ValueEnum};
 use serde::Serialize;
@@ -32,7 +33,7 @@ use crate::config::{self, Batch, Defaults, Entry, JunctionChoice, Thumb};
 use crate::error::CliError;
 use crate::lods::{self, LodArgs, LodConfig};
 use crate::progress::Progress;
-use crate::source::resolve;
+use crate::source::{pack_label, resolve};
 use crate::textures::{self, TextureChoice};
 
 /// Name of the manifest file in the output directory.
@@ -129,6 +130,10 @@ struct RandomArgs {
     /// Vertex budget of a random plant; 0 for none [default: 55000].
     #[arg(long, requires = "random")]
     max_vertices: Option<usize>,
+    /// Draw from the species of these installed packs, comma-separated; `builtin`
+    /// stands for the built-in presets [default: builtin].
+    #[arg(long, value_name = "LIST", requires = "random")]
+    packs: Option<String>,
 }
 
 /// File format of a thumbnail.
@@ -181,9 +186,40 @@ fn parse_scale(text: &str) -> Result<Distribution, String> {
     Ok(distribution)
 }
 
+/// The candidates of `--packs LIST`: every species of each pack, or the presets for
+/// `builtin`, named as `--species` names them.
+fn pack_candidates(list: &str) -> Result<Vec<(String, Species)>, CliError> {
+    let mut candidates = Vec::new();
+    let mut store = None;
+    for id in list.split(',').map(str::trim).filter(|id| !id.is_empty()) {
+        if id == "builtin" {
+            let presets = RandomSampler::new(0).species().to_vec();
+            candidates.extend(presets);
+            continue;
+        }
+        let store = match &mut store {
+            Some(store) => store,
+            None => store.insert(PackStore::open_default().map_err(CliError::usage)?),
+        };
+        let pack = store.find(id).map_err(CliError::usage)?;
+        for entry in &pack.manifest().species {
+            let species = pack.species(&entry.name).map_err(CliError::usage)?;
+            let parsed = species.species().map_err(CliError::usage)?;
+            candidates.push((species.id, parsed));
+        }
+    }
+    if candidates.is_empty() {
+        return Err(CliError::usage("--packs names no pack"));
+    }
+    Ok(candidates)
+}
+
 /// The batch of `--random`.
 fn random_batch(args: &GenArgs) -> Result<Batch, CliError> {
     let mut sampler = RandomSampler::new(args.seed);
+    if let Some(list) = &args.random.packs {
+        sampler = sampler.with_species(pack_candidates(list)?);
+    }
     if let Some(quality) = args.quality {
         sampler.quality = quality;
     }
@@ -394,12 +430,16 @@ impl Batch {
         let pick = sampler
             .pick(index)
             .map_err(|e| format!("random plant {index}: {e}"))?;
-        let texture_base = arbrume_gen::preset(&pick.preset).map(Arc::new);
+        let base = sampler
+            .species()
+            .iter()
+            .find(|(name, _)| *name == pick.preset);
+        let texture_base = base.map(|(_, species)| Arc::new(species.clone()));
         let mut params = pick.params;
         params.mesh.junctions = self.junction_mode();
         Ok(Job {
             texture_base,
-            label: Cow::Owned(pick.preset),
+            label: Cow::Owned(pack_label(&pick.preset)),
             species: Cow::Owned(pick.species),
             params,
             base_seed: sampler.seed,

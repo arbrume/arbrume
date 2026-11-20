@@ -9,6 +9,9 @@
 //!   needle spray of its fins (modules `atlas`, `leaf`, `venation`, `open`, `spray`).
 //! * [`synthesize`] makes both and encodes them as PNG ([`SpeciesTextures`]);
 //!   [`SpeciesTextures::apply`] puts them on the materials of a mesh.
+//! * [`load_textures`] does the same for a species that names image files
+//!   (`bark.texture`, `foliage.texture`, module `asset`), using them in place of the
+//!   synthesized bark albedo and leaves; [`textures_with_images`] takes them decoded.
 //! * [`TextureCache`] synthesizes the textures of each species once per batch and
 //!   shares them between threads.
 //! * [`textured_species`] is the species as it is meshed for textured leaves: outline
@@ -51,6 +54,7 @@
 
 #![forbid(unsafe_code)]
 
+mod asset;
 mod atlas;
 mod bark;
 mod image;
@@ -61,6 +65,7 @@ mod spray;
 mod surface;
 mod venation;
 
+pub use asset::{TextureError, TextureImages, check_texture_size, decode_image, read_images};
 pub use atlas::{LeafMaps, leaf_maps};
 pub use bark::{BarkMaps, bark_maps};
 pub use image::Image;
@@ -164,12 +169,60 @@ fn fnv(text: &str) -> u64 {
     })
 }
 
-/// Synthesizes and encodes the bark maps and the leaf atlas of `species`.
+/// Synthesizes and encodes the bark maps and the leaf atlas of `species`, ignoring the
+/// image files it may name.
 #[must_use]
 pub fn synthesize(species: &Species, options: &TextureOptions) -> SpeciesTextures {
-    let seed = mix64(options.seed ^ fnv(&species.name));
-    let mut timings = SynthesisTimings::default();
+    textures_with_images(species, options, &TextureImages::default())
+}
+
+/// The textures of `species`: its image files where it names some, read with
+/// [`read_images`], synthesized otherwise.
+///
+/// # Errors
+///
+/// Returns a [`TextureError`] for an image file that cannot be read or decoded.
+pub fn load_textures(
+    species: &Species,
+    options: &TextureOptions,
+) -> Result<SpeciesTextures, TextureError> {
+    if species.texture_paths().is_empty() {
+        return Ok(synthesize(species, options));
+    }
+    Ok(textures_with_images(
+        species,
+        options,
+        &read_images(species)?,
+    ))
+}
+
+/// The bark textures of `species`: synthesized, or from the bark image of `images`.
+fn bark_textures(
+    species: &Species,
+    options: &TextureOptions,
+    images: &TextureImages,
+    seed: u64,
+    timings: &mut SynthesisTimings,
+) -> MaterialTextures {
     let start = Instant::now();
+    if let Some(albedo) = &images.bark {
+        let albedo = asset::fit(albedo, options.max_resolution, true);
+        let normal = images
+            .bark_normal
+            .as_ref()
+            .map_or_else(asset::flat_normal, |map| {
+                asset::rgb(&asset::fit(map, options.max_resolution, false), false)
+            });
+        let textures = MaterialTextures {
+            base_color: asset::rgb(&albedo, true).to_png(),
+            normal: normal.to_png(),
+            roughness: None,
+            resolution: albedo.width,
+            mean: asset::mean_color(&albedo),
+        };
+        timings.encode += start.elapsed();
+        return textures;
+    }
     let bark_size = resolution(species.bark.texture_resolution, options);
     let maps = bark_maps(&species.bark, bark_size, seed);
     timings.bark = start.elapsed();
@@ -181,12 +234,32 @@ pub fn synthesize(species: &Species, options: &TextureOptions) -> SpeciesTexture
         resolution: bark_size,
         mean: maps.mean,
     };
-    timings.encode = start.elapsed();
+    timings.encode += start.elapsed();
+    bark
+}
+
+/// The textures of `species` with the decoded `images` in place of the synthesized
+/// bark albedo and leaves (see the module `asset`); what `images` leaves out is
+/// synthesized.
+#[must_use]
+pub fn textures_with_images(
+    species: &Species,
+    options: &TextureOptions,
+    images: &TextureImages,
+) -> SpeciesTextures {
+    let seed = mix64(options.seed ^ fnv(&species.name));
+    let mut timings = SynthesisTimings::default();
+    let bark = bark_textures(species, options, images, seed, &mut timings);
     let mut atlas = None;
     let leaf = species.foliage.enabled.then(|| {
         let start = Instant::now();
         let size = resolution(species.foliage.texture_resolution, options);
-        let maps = leaf_maps(&species.foliage, &species.bark, size, mix64(seed));
+        let image = images.leaf.as_ref().map(|albedo| asset::LeafImage {
+            albedo,
+            normal: images.leaf_normal.as_ref(),
+            stem: glam::Vec3::from(species.bark.color_at(0.0)),
+        });
+        let maps = atlas::leaf_maps_with(&species.foliage, &species.bark, size, mix64(seed), image);
         timings.leaf = start.elapsed();
         let start = Instant::now();
         atlas = Some(maps.atlas);
@@ -306,16 +379,20 @@ pub fn textured_species(species: &Species) -> Cow<'_, Species> {
     }
 }
 
+/// What the cache keeps for one species.
+type CacheEntry = Result<Arc<SpeciesTextures>, TextureError>;
+
 /// Textures of each species, synthesized once and shared between the threads of a
 /// batch.
 ///
-/// Species are told apart by their name and their bark and foliage parameters, so a
-/// species changed by overrides gets its own textures. When several threads ask for
+/// Species are told apart by their name, their bark and foliage parameters and their
+/// asset directory, so a species changed by overrides gets its own textures. A species
+/// whose image files cannot be read keeps its error, which every later call returns. When several threads ask for
 /// the same species at once, one synthesizes and the others wait for it.
 #[derive(Debug, Default)]
 pub struct TextureCache {
     options: TextureOptions,
-    entries: Mutex<HashMap<String, Arc<OnceLock<Arc<SpeciesTextures>>>>>,
+    entries: Mutex<HashMap<String, Arc<OnceLock<CacheEntry>>>>,
 }
 
 impl TextureCache {
@@ -334,17 +411,22 @@ impl TextureCache {
         &self.options
     }
 
-    /// The textures of `species`, synthesized on first use.
-    pub fn get(&self, species: &Species) -> Arc<SpeciesTextures> {
+    /// The textures of `species`, made by [`load_textures`] on first use.
+    ///
+    /// # Errors
+    ///
+    /// The error of [`load_textures`] for this species.
+    pub fn get(&self, species: &Species) -> Result<Arc<SpeciesTextures>, TextureError> {
         let key = format!(
-            "{}\u{0}{:?}\u{0}{:?}",
-            species.name, species.bark, species.foliage
+            "{}\u{0}{:?}\u{0}{:?}\u{0}{:?}",
+            species.name, species.bark, species.foliage, species.asset_dir
         );
         let slot = {
             let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
             Arc::clone(entries.entry(key).or_default())
         };
-        Arc::clone(slot.get_or_init(|| Arc::new(synthesize(species, &self.options))))
+        let entry = slot.get_or_init(|| load_textures(species, &self.options).map(Arc::new));
+        entry.clone()
     }
 
     /// Number of species asked for so far.
@@ -367,7 +449,7 @@ impl TextureCache {
         let entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
         entries
             .values()
-            .filter_map(|slot| slot.get().cloned())
+            .filter_map(|slot| slot.get().and_then(|entry| entry.clone().ok()))
             .collect()
     }
 }

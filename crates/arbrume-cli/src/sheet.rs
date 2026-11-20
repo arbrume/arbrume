@@ -138,7 +138,8 @@ fn species_cells(args: &SheetArgs) -> Result<(Vec<Cell>, u32), CliError> {
     let mut cells = Vec::new();
     for spec in &args.species {
         let source = resolve(spec, std::path::Path::new(""))?;
-        let species = Species::from_toml_str(&source.text).map_err(CliError::usage)?;
+        let mut species = Species::from_toml_str(&source.text).map_err(CliError::usage)?;
+        species.asset_dir.clone_from(&source.asset_dir);
         for seed in 0..args.seeds {
             for &azimuth in &args.azimuths {
                 for &(age, variant) in &columns {

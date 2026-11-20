@@ -101,7 +101,7 @@ fn main() {
         let mut textured = Generator::new();
         textured.set_textures(Some(Arc::clone(&cache)));
         let start = std::time::Instant::now();
-        let synthesized = cache.get(&species);
+        let synthesized = cache.get(&species).expect("synthesized textures");
         println!(
             "{name}: textures {:.1} ms (bark {:.1}, leaf {:.1}, encode {:.1}), {} KiB",
             start.elapsed().as_secs_f64() * 1e3,

@@ -1,0 +1,28 @@
+[package]
+name = "arbrume-fit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Tree distance and parameter fitting of species to target skeletons"
+
+[lints]
+workspace = true
+
+[dependencies]
+arbrume-core.workspace = true
+arbrume-export.workspace = true
+arbrume-gen.workspace = true
+arbrume-grow.workspace = true
+arbrume-metrics.workspace = true
+glam = "0.34.3"
+rayon = "1.10"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0", features = ["float_roundtrip"] }
+thiserror = "2.0.21"
+toml = "1.2.1"
+
+[dev-dependencies]
+arbrume-mesh.workspace = true
+arbrume-raster.workspace = true

@@ -100,7 +100,7 @@ fn varied_individuals_share_the_textures_of_their_species() {
         leaf(&meshes[1]).base_color,
         "own colours"
     );
-    let atlas = cache.get(&species).atlas.unwrap();
+    let atlas = cache.get(&species).unwrap().atlas.unwrap();
     let rects: Vec<[f32; 4]> = (0..atlas.leaf_cells).map(|c| atlas.cell_rect(c)).collect();
     for mesh in &meshes {
         let uvs = &part(mesh, PartKind::Leaf).buffers.uvs;

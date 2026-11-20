@@ -88,7 +88,7 @@ impl Generator {
         for level in &levels {
             let start = Instant::now();
             let mut mesh = self.mesher.mesh(&plant.graph, species, &level.options)?;
-            self.texture(textured, &mut mesh);
+            self.texture(textured, &mut mesh)?;
             let mut leaves = settings
                 .leaf_instances
                 .then(|| {
@@ -97,7 +97,7 @@ impl Generator {
                 })
                 .transpose()?;
             if let Some(leaves) = &mut leaves {
-                self.remap_templates(textured, leaves);
+                self.remap_templates(textured, leaves)?;
             }
             out.push(LodMesh {
                 leaves,

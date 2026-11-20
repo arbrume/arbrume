@@ -1,0 +1,37 @@
+# Species pack (docs/packs.md).
+format = 1
+id = "starter"
+name = "Arbrume starter pack"
+version = "0.1.0"
+authors = ["Arbrume contributors"]
+description = "Four species of the built-in library, as a sample of the pack format: no image assets, procedural textures."
+
+# Licence of the content of the pack (not of Arbrume): replace this placeholder
+# and the text of the licence file before publishing.
+content_licence = "PLACEHOLDER: content licence terms to be written"
+licence_file = "LICENCE-CONTENT.txt"
+
+# Species schema version the species files need.
+min_schema_version = 0
+
+# Species are added with `arbrume pack add-species`.
+
+[[species]]
+name = "oak_like"
+display_name = "Oak-like tree"
+category = "broadleaf tree"
+
+[[species]]
+name = "birch_like"
+display_name = "Birch-like tree"
+category = "broadleaf tree"
+
+[[species]]
+name = "pine_like"
+display_name = "Pine-like tree"
+category = "conifer"
+
+[[species]]
+name = "shrub"
+display_name = "Shrub"
+category = "shrub"

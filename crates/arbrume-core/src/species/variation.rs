@@ -127,16 +127,21 @@ impl Variation {
     }
 }
 
-/// The random factors of one jittered parameter.
-struct Factors {
-    rng: Rng,
-    amount: f32,
+/// The factors of one parameter: random ones for a jitter, or one fixed factor.
+enum Factors {
+    /// Uniform in `[1 - amount, 1 + amount)`, drawn from `rng`.
+    Random { rng: Rng, amount: f32 },
+    /// The same factor every time.
+    Fixed(f32),
 }
 
 impl Factors {
-    /// Next factor, uniform in `[1 - amount, 1 + amount)`.
+    /// Next factor.
     fn next(&mut self) -> f32 {
-        self.amount.mul_add(self.rng.signed(), 1.0)
+        match self {
+            Self::Random { rng, amount } => amount.mul_add(rng.signed(), 1.0),
+            Self::Fixed(factor) => *factor,
+        }
     }
 
     /// `value` times the next factor, clamped to `[lo, hi]`.
@@ -168,17 +173,35 @@ impl Species {
                 continue;
             };
             let stream = Stream::custom(0x100 + position as u16);
-            let mut factors = Factors {
+            let mut factors = Factors::Random {
                 rng: Rng::new(seed, index, stream),
                 amount,
             };
-            let done = individual.jitter_growth(name, &mut factors)
-                || individual.jitter_competition(name, &mut factors);
-            if !done {
-                individual.jitter_appearance(name, &mut factors);
-            }
+            individual.apply_factors(name, &mut factors);
         }
         individual
+    }
+
+    /// A copy with the parameter `name` (one of [`JITTERABLE`]) multiplied by `factor`,
+    /// clamped to its domain as a jitter is: every order of a curve and every channel of
+    /// a colour take the same factor (for `bark.color`, the shade and then each
+    /// channel). `None` when `name` is not in [`JITTERABLE`] or `factor` is not finite.
+    #[must_use]
+    pub fn with_factor(&self, name: &str, factor: f32) -> Option<Self> {
+        if !JITTERABLE.contains(&name) || !factor.is_finite() {
+            return None;
+        }
+        let mut copy = self.clone();
+        copy.apply_factors(name, &mut Factors::Fixed(factor));
+        Some(copy)
+    }
+
+    /// Multiplies the jitterable parameter `name` by `factors`.
+    fn apply_factors(&mut self, name: &str, factors: &mut Factors) {
+        let done = self.jitter_growth(name, factors) || self.jitter_competition(name, factors);
+        if !done {
+            self.jitter_appearance(name, factors);
+        }
     }
 
     /// Jitters the growth parameter `name`; `false` when it is not one.
@@ -335,6 +358,26 @@ mod tests {
             spread = spread.max((ratios[0] - ratios[1]).abs());
         }
         assert!(spread > 0.05);
+    }
+
+    #[test]
+    fn a_fixed_factor_scales_every_order() {
+        let species = Species::default();
+        let doubled = species.with_factor("growth.axis_length", 2.0).unwrap();
+        for order in 0..4 {
+            let (before, after) = (
+                species.growth.axis_length.eval(order, 0.5),
+                doubled.growth.axis_length.eval(order, 0.5),
+            );
+            assert!((after - 2.0 * before).abs() < 1e-5);
+        }
+        let capped = species
+            .with_factor("growth.branch_probability", 10.0)
+            .unwrap();
+        assert!(capped.growth.branch_probability.bounds().1 <= 1.0);
+        assert_eq!(species.with_factor("growth.max_order", 2.0), None);
+        assert_eq!(species.with_factor("growth.gnarl", f32::NAN), None);
+        assert_eq!(species.with_factor("growth.gnarl", 1.0).unwrap(), species);
     }
 
     #[test]

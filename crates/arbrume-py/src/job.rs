@@ -2,7 +2,9 @@
 //! generation parameters.
 //!
 //! A species argument is, in this order: a preset name, a path to an existing species
-//! file (a `str` or an `os.PathLike`), or the TOML text of a species. Text that is not a
+//! file (a `str` or an `os.PathLike`), a species `pack_id/name` of a loaded or
+//! installed pack (see `packs`), or the TOML text of a species. Texture paths of a
+//! species file are relative to its directory, those of a pack species to the pack. Text that is not a
 //! preset nor a file and looks like neither TOML (no `=`, no `[`, no newline) is reported
 //! as an unknown preset or a missing file.
 //!
@@ -153,8 +155,28 @@ pub fn params(seed: u64, age: u16, options: &Options) -> GenParams {
     params
 }
 
+/// A species argument resolved: its TOML text and the directory its texture paths
+/// are relative to.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SpeciesArg {
+    /// TOML text of the species.
+    pub text: String,
+    /// Directory of the species file or pack, if any.
+    pub asset_dir: Option<PathBuf>,
+}
+
+impl SpeciesArg {
+    /// A species given by its text alone.
+    fn text(text: String) -> Self {
+        Self {
+            text,
+            asset_dir: None,
+        }
+    }
+}
+
 /// The TOML text of a species argument (see the module documentation).
-pub fn species_text(species: &Bound<'_, PyAny>) -> PyResult<String> {
+pub fn species_text(species: &Bound<'_, PyAny>) -> PyResult<SpeciesArg> {
     if let Ok(text) = species.cast::<PyString>() {
         let text = text.to_cow()?;
         return text_of_str(&text);
@@ -168,16 +190,22 @@ pub fn species_text(species: &Bound<'_, PyAny>) -> PyResult<String> {
 }
 
 /// [`species_text`] of a `str`.
-fn text_of_str(text: &str) -> PyResult<String> {
+fn text_of_str(text: &str) -> PyResult<SpeciesArg> {
     if let Some(preset) = preset_toml(text) {
-        return Ok(preset.to_owned());
+        return Ok(SpeciesArg::text(preset.to_owned()));
     }
     let path = Path::new(text);
     if !text.contains('\n') && path.is_file() {
         return read(path);
     }
+    if let Some(species) = crate::packs::resolve(text)? {
+        return Ok(SpeciesArg {
+            text: species.text,
+            asset_dir: species.asset_dir,
+        });
+    }
     if text.contains(['=', '[', '\n']) {
-        return Ok(text.to_owned());
+        return Ok(SpeciesArg::text(text.to_owned()));
     }
     let names: Vec<&str> = presets().iter().map(|(name, _)| *name).collect();
     let message = format!(
@@ -194,32 +222,39 @@ fn text_of_str(text: &str) -> PyResult<String> {
     })
 }
 
-/// The contents of the species file `path`.
-fn read(path: &Path) -> PyResult<String> {
-    std::fs::read_to_string(path).map_err(|error| {
+/// The contents of the species file `path`, its texture paths relative to its
+/// directory.
+fn read(path: &Path) -> PyResult<SpeciesArg> {
+    let text = std::fs::read_to_string(path).map_err(|error| {
         let message = format!("species file {}: {error}", path.display());
         match error.kind() {
             std::io::ErrorKind::NotFound => PyFileNotFoundError::new_err(message),
             _ => PyErr::from(error),
         }
+    })?;
+    Ok(SpeciesArg {
+        text,
+        asset_dir: path.parent().map(Path::to_path_buf),
     })
 }
 
-/// Parsed species, keyed by their text and overrides, so that a batch parses each
-/// distinct species once.
+/// Parsed species, keyed by their text, asset directory and overrides, so that a batch
+/// parses each distinct species once.
 #[derive(Debug, Default)]
 pub struct SpeciesCache {
-    parsed: HashMap<(String, String), Arc<Species>>,
+    parsed: HashMap<(SpeciesArg, String), Arc<Species>>,
 }
 
 impl SpeciesCache {
-    /// The species of `text` with `overrides` applied.
-    pub fn get(&mut self, text: String, overrides: &toml::Table) -> PyResult<Arc<Species>> {
-        let key = (text, overrides.to_string());
+    /// The species of `arg` with `overrides` applied.
+    pub fn get(&mut self, arg: SpeciesArg, overrides: &toml::Table) -> PyResult<Arc<Species>> {
+        let key = (arg, overrides.to_string());
         if let Some(species) = self.parsed.get(&key) {
             return Ok(Arc::clone(species));
         }
-        let species = species_with_overrides(&key.0, overrides).map_err(|e| gen_error(&e))?;
+        let mut species =
+            species_with_overrides(&key.0.text, overrides).map_err(|e| gen_error(&e))?;
+        species.asset_dir.clone_from(&key.0.asset_dir);
         let species = Arc::new(species);
         self.parsed.insert(key, Arc::clone(&species));
         Ok(species)

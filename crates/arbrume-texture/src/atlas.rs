@@ -8,6 +8,7 @@
 //! tints in the vertex colours expect. Transparent texels take the mean colour of the
 //! leaves, so that filtering does not darken the edges, and a flat normal.
 
+use crate::asset::LeafImage;
 use crate::image::Image;
 use crate::leaf::{CellImage, Painter};
 use crate::spray::spray_cell;
@@ -68,6 +69,17 @@ fn to_ratios(cells: &mut [CellImage]) {
 /// `bark` gives the colour of the twig stems.
 #[must_use]
 pub fn leaf_maps(foliage: &Foliage, bark: &Bark, resolution: u32, seed: u64) -> LeafMaps {
+    leaf_maps_with(foliage, bark, resolution, seed, None)
+}
+
+/// [`leaf_maps`], with the leaf cells filled from `image` when given.
+pub(crate) fn leaf_maps_with(
+    foliage: &Foliage,
+    bark: &Bark,
+    resolution: u32,
+    seed: u64,
+    image: Option<LeafImage<'_>>,
+) -> LeafMaps {
     let atlas = foliage.atlas();
     let side = resolution as usize;
     let spray = atlas.spray_cell();
@@ -79,6 +91,8 @@ pub fn leaf_maps(foliage: &Foliage, bark: &Bark, resolution: u32, seed: u64) -> 
             let size = [x1 - x0, y1 - y0];
             if Some(cell) == spray {
                 spray_cell(foliage, bark, size, seed ^ 0x5EED)
+            } else if let Some(image) = &image {
+                image.cell(size)
             } else {
                 Painter::new(foliage, size, seed).cell(cell)
             }

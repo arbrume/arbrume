@@ -212,9 +212,16 @@ pub struct Foliage {
     pub color: [f32; 3],
     /// Surface roughness in `[0, 1]`.
     pub roughness: f32,
-    /// Path of the leaf texture, relative to the species file.
+    /// Path of an image (PNG or JPEG, its alpha cutting the outline) of one leaf, used
+    /// in the leaf atlas instead of the synthesized leaves: the image covers the
+    /// rectangle of the leaf, stalk at the bottom centre. A relative path is resolved
+    /// against `Species::asset_dir` (see `docs/packs.md`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub texture: Option<String>,
+    /// Path of a tangent-space normal map that goes with `texture`; a flat normal when
+    /// absent. Only read with `texture`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub normal_texture: Option<String>,
     /// Kind of geometry built for each leaf.
     pub geometry: LeafGeometry,
     /// Outline of the blade.
@@ -281,6 +288,7 @@ impl Default for Foliage {
             color: [0.12, 0.3, 0.06],
             roughness: 0.6,
             texture: None,
+            normal_texture: None,
             geometry: LeafGeometry::default(),
             shape: BladeShape::default(),
             segments: 4,
@@ -335,6 +343,8 @@ impl Foliage {
         self.twig.validate()?;
         self.validate_blade()?;
         self.validate_variation()?;
+        let normal = self.normal_texture.as_deref();
+        super::check_texture_paths("foliage", self.texture.as_deref(), normal)?;
         validate_texture(self)
     }
 

@@ -9,6 +9,10 @@
 //!   results as `generate` on each job whatever the number of threads.
 //! * A `Tree` exposes its mesh parts, skeleton and organ sites as read-only `NumPy`
 //!   arrays over the Rust memory, through the buffer protocol (see [`buffer`]).
+//! * `fit` fits species parameters to a target skeleton and `distance` compares two
+//!   skeletons, without the GIL (see [`fit`]).
+//! * `load_pack`, `packs`, `install_pack`, `remove_pack` and `packs_dir` handle species
+//!   packs, whose species `generate` accepts as `"pack_id/name"` (see [`packs`]).
 //!
 //! The module is tested from Python (`tests/`, pytest) and documented in
 //! `docs/python.md`.
@@ -16,7 +20,9 @@
 mod buffer;
 mod convert;
 mod data;
+mod fit;
 mod job;
+mod packs;
 mod tree;
 
 use std::sync::Arc;
@@ -254,6 +260,13 @@ fn arbrume_module(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(presets, module)?)?;
     module.add_function(wrap_pyfunction!(preset_toml, module)?)?;
     module.add_function(wrap_pyfunction!(plant_seed, module)?)?;
+    module.add_function(wrap_pyfunction!(fit::fit, module)?)?;
+    module.add_function(wrap_pyfunction!(fit::distance, module)?)?;
+    module.add_function(wrap_pyfunction!(packs::load_pack, module)?)?;
+    module.add_function(wrap_pyfunction!(packs::packs, module)?)?;
+    module.add_function(wrap_pyfunction!(packs::install_pack, module)?)?;
+    module.add_function(wrap_pyfunction!(packs::remove_pack, module)?)?;
+    module.add_function(wrap_pyfunction!(packs::packs_dir, module)?)?;
     module.add_class::<Tree>()?;
     module.add_class::<MeshPart>()?;
     module.add_class::<Skeleton>()?;

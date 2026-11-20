@@ -10,7 +10,9 @@ zip there with ``blender --command extension install-file``, then runs itself in
 Blender in background mode. There it creates one plant per preset and checks its vertex
 and triangle counts against ``tree.stats``, changes properties and parameters, edits a
 curve through its widget node, scrubs the age, runs every operator, saves and reopens the
-file, disables and enables the extension, times generation against mesh upload for a
+file, installs a species pack with image textures from an archive (checking the species
+menu, its thumbnails, the Packs preferences and the images on the materials) and removes
+it, disables and enables the extension, times generation against mesh upload for a
 large tree and renders two stills into ``--out``. The exit code is the number of failed
 checks (0 on success).
 
@@ -24,13 +26,17 @@ are the paths a given older Blender takes is only shown by running the test on i
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import struct
 import subprocess
 import sys
 import tempfile
 import time
 import traceback
+import zipfile
+import zlib
 from pathlib import Path
 from typing import ClassVar
 
@@ -325,6 +331,130 @@ def test_errors(ext, obj) -> None:
     check(not ext.state.status_of(obj.name).error, "error cleared")
 
 
+def png(side: int, rgba: tuple[int, int, int, int]) -> bytes:
+    """A square 8-bit RGBA PNG of one colour."""
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        body = kind + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
+
+    header = struct.pack(">IIBBBBB", side, side, 8, 6, 0, 0, 0)
+    rows = (b"\x00" + bytes(rgba) * side) * side
+    idat = chunk(b"IDAT", zlib.compress(rows))
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + idat + chunk(b"IEND", b"")
+
+
+def write_test_pack(ext, path: Path) -> None:
+    """A pack archive made with ``zipfile``: one herb with a red bark and green leaf image."""
+    species = ext.arbrume.preset_toml("rosette_herb")
+    species = species.replace("[bark]", '[bark]\ntexture = "textures/bark.png"')
+    species = species.replace("[foliage]", '[foliage]\ntexture = "textures/leaf.png"')
+    files = {
+        "pack.toml": 'format = 1\nid = "bltest"\nname = "Blender test pack"\n'
+        'version = "0.3.0"\ncontent_licence = "PLACEHOLDER"\n'
+        'licence_file = "LICENCE-CONTENT.txt"\n'
+        '[[species]]\nname = "barked"\ndisplay_name = "Barked herb"\ncategory = "herb"\n',
+        "LICENCE-CONTENT.txt": "PLACEHOLDER\n",
+        "species/barked.toml": species,
+        "textures/bark.png": png(32, (220, 20, 20, 255)),
+        "textures/leaf.png": png(32, (20, 200, 20, 255)),
+    }
+    files = {name: d.encode() if isinstance(d, str) else d for name, d in files.items()}
+    hashes = "".join(f"{hashlib.sha256(d).hexdigest()}  {n}\n" for n, d in sorted(files.items()))
+    files["MANIFEST.sha256"] = hashes.encode()
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, data in files.items():
+            archive.writestr(name, data)
+
+
+class FakeLayout:
+    """Stands in for a UI layout, to run a draw function in background mode."""
+
+    def __init__(self, labels: list[str]) -> None:
+        self.labels = labels
+
+    def box(self):
+        return self
+
+    def row(self):
+        return self
+
+    def label(self, text: str = "", **_kwargs) -> None:
+        self.labels.append(text)
+
+    def operator(self, *_args, **_kwargs):
+        return type("Op", (), {})()
+
+
+def image_colours(material) -> list[tuple[float, ...]]:
+    """First texel of every image texture node of a material."""
+    nodes = material.node_tree.nodes
+    images = [node.image for node in nodes if node.type == "TEX_IMAGE" and node.image]
+    return [tuple(round(v, 2) for v in image.pixels[:4]) for image in images]
+
+
+def check_leaf_image(ext, obj) -> None:
+    """The leaf atlas on the material is the one made from the pack image.
+
+    The atlas holds the colour of the image relative to its mean (the material colour
+    brings it back), so the check compares bytes with the generator, by image name.
+    """
+    settings = obj.arbrume
+    args = ext.plant.generation_args(settings)
+    tree = ext.logic.species.generate(ext.plant.source_of(settings), None, **args)
+    plain = ext.arbrume.generate("rosette_herb", **args)
+
+    def leaf_png(tree) -> bytes:
+        return next(p for p in tree.parts if p.kind == "leaf").material["base_color_texture"]
+
+    expected = leaf_png(tree)
+    check(expected != leaf_png(plain), "the pack image replaces the procedural leaves")
+    nodes = obj.data.materials[1].node_tree.nodes
+    names = [n.image.name for n in nodes if n.type == "TEX_IMAGE" and n.image]
+    digest = hashlib.sha1(expected).hexdigest()[:10]
+    check(any(digest in name for name in names), f"leaf image of the pack: {names}")
+
+
+def test_packs(ext, work: Path) -> None:
+    """Install a pack from an archive, use its species and images, remove it."""
+    os.environ["ARBRUME_PACKS_DIR"] = str(work / "packs")
+    archive = work / "bltest.arbpack"
+    write_test_pack(ext, archive)
+    result = bpy.ops.arbrume.install_pack(filepath=str(archive))
+    check(result == {"FINISHED"}, "install_pack operator")
+    items = ext.props.preset_items(None, None)
+    headings = [item[1] for item in items if item[0] == ""]
+    check("Blender test pack 0.3.0" in headings, f"pack heading in the species menu: {headings}")
+    entry = next((item for item in items if item[0] == "bltest/barked"), None)
+    check(entry is not None and entry[1] == "Barked herb", f"pack species in the menu: {entry}")
+    group = next(g for g in ext.state.STATE.pack_groups if g.pack_id == "bltest")
+    thumbnail = group.species[0].thumbnail
+    check(thumbnail is not None and Path(thumbnail).is_file(), f"thumbnail rendered: {thumbnail}")
+    check("bltest/barked" in ext.packs._previews(), "thumbnail loaded as a preview icon")
+    labels: list[str] = []
+    ext.packs.draw_preferences(FakeLayout(labels))
+    check(any("Blender test pack" in label for label in labels), f"Packs preferences: {labels}")
+    obj = add_plant(ext, "bltest/barked", quality=0.5)
+    check(obj.name.startswith("Barked herb"), f"plant named after the species: {obj.name}")
+    check(obj.arbrume.preset == "bltest/barked", "the plant keeps its pack species")
+    check_counts(ext, obj, "pack species")
+    bark = image_colours(obj.data.materials[0])
+    check(any(c[0] > 0.6 and c[1] < 0.3 for c in bark), f"bark image of the pack: {bark}")
+    check_leaf_image(ext, obj)
+    discard_object(obj)
+    result = bpy.ops.arbrume.remove_pack(pack_id="bltest")
+    check(result == {"FINISHED"}, "remove_pack operator")
+    ids = [item[0] for item in ext.props.preset_items(None, None)]
+    check("bltest/barked" not in ids, "removed pack leaves the menu")
+
+
+def discard_object(obj) -> None:
+    """Deletes a plant object and its mesh."""
+    mesh = obj.data
+    bpy.data.objects.remove(obj)
+    bpy.data.meshes.remove(mesh)
+
+
 def test_save_reload(ext, work: Path) -> None:
     """A saved file reopens with editable plants."""
     path = str(work / "plants.blend")
@@ -603,6 +733,7 @@ def run_inside(argv: list[str]) -> int | None:
     for step in (test_age_scrub, test_errors):
         step(ext, obj)
     test_operators(ext, obj, work)
+    test_packs(ext, work)
     test_save_reload(ext, work)
     ext = test_reregister(ext)
     start = time.perf_counter()

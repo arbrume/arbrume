@@ -55,6 +55,20 @@ jobs:
               --age-range 8..20 --lods 2 --out "$RUNNER_TEMP/presets" --quiet
           done
       - run: node tools/validate_glb.mjs "$RUNNER_TEMP/presets"
+      - name: Validate, build twice, install and use the starter pack
+        env:
+          ARBRUME_PACKS_DIR: ${{ runner.temp }}/packs
+        run: |
+          target/debug/arbrume pack validate examples/packs/starter
+          target/debug/arbrume pack build examples/packs/starter -o "$RUNNER_TEMP/starter.arbpack"
+          target/debug/arbrume pack build examples/packs/starter -o "$RUNNER_TEMP/again.arbpack"
+          cmp "$RUNNER_TEMP/starter.arbpack" "$RUNNER_TEMP/again.arbpack"
+          target/debug/arbrume pack validate "$RUNNER_TEMP/starter.arbpack"
+          target/debug/arbrume pack install "$RUNNER_TEMP/starter.arbpack"
+          target/debug/arbrume pack list
+          target/debug/arbrume gen --random --packs starter --count 4 --seed 1 \
+            --out "$RUNNER_TEMP/starter" --quiet
+      - run: node tools/validate_glb.mjs "$RUNNER_TEMP/starter"
 
   python:
     runs-on: ubuntu-latest

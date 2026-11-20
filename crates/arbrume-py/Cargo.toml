@@ -22,7 +22,9 @@ doctest = false
 [dependencies]
 arbrume-core.workspace = true
 arbrume-export.workspace = true
+arbrume-fit.workspace = true
 arbrume-gen.workspace = true
+arbrume-pack.workspace = true
 bytemuck = "1.23"
 pyo3 = { version = "0.30.1", features = ["abi3-py311"] }
 rayon = "1.10"

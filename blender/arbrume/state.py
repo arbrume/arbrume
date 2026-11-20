@@ -11,6 +11,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 
+from .logic.packs import PackGroup, species_ids
 from .logic.schema import ParamSpec, Section
 from .logic.species import SpeciesCache
 
@@ -45,6 +46,10 @@ class State:
     specs: dict[str, ParamSpec] = field(default_factory=dict)
     schema_error: str = ""
     presets: list[str] = field(default_factory=list)
+    packs: list[dict] = field(default_factory=list)
+    pack_groups: list[PackGroup] = field(default_factory=list)
+    pack_icons: dict[str, int] = field(default_factory=dict)
+    pack_error: str = ""
     status: dict[str, PlantStatus] = field(default_factory=dict)
     bindings: dict[str, CurveBinding] = field(default_factory=dict)
     busy: set[int] = field(default_factory=set)
@@ -52,6 +57,10 @@ class State:
     edit_pending: bool = False
     edit_marker: tuple | None = None
     undo_marker: tuple | None = None
+
+    def species_ids(self) -> list[str]:
+        """Every species of the species menu in order: presets, then pack species."""
+        return species_ids(self.presets, self.pack_groups)
 
 
 STATE = State()

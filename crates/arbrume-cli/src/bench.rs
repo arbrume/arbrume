@@ -194,8 +194,9 @@ fn selected_species(specs: &[String]) -> Result<Vec<(String, Species)>, CliError
         .iter()
         .map(|spec| {
             let source = resolve(spec, std::path::Path::new(""))?;
-            let species = Species::from_toml_str(&source.text)
+            let mut species = Species::from_toml_str(&source.text)
                 .map_err(|e| CliError::usage(format!("{spec}: {e}")))?;
+            species.asset_dir.clone_from(&source.asset_dir);
             Ok((source.label, species))
         })
         .collect()

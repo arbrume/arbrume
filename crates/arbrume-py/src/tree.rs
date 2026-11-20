@@ -37,6 +37,11 @@ impl Tree {
         }
     }
 
+    /// The generated data.
+    pub fn data(&self) -> &TreeData {
+        &self.data
+    }
+
     /// The glb bytes of the tree, root node named `name`, `extras` added to the
     /// metadata.
     fn glb(&self, name: String, extras: Option<&Bound<'_, PyDict>>) -> PyResult<Vec<u8>> {

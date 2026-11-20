@@ -243,11 +243,11 @@ fn textures_do_not_depend_on_the_thread_count_or_the_run() {
 fn the_cache_synthesizes_each_species_once_and_apply_sets_the_materials() {
     let cache = Arc::new(TextureCache::new(TextureOptions::default()));
     let species = species(BarkKind::Fibrous);
-    let first = cache.get(&species);
+    let first = cache.get(&species).unwrap();
     let threads: Vec<_> = (0..4)
         .map(|_| {
             let (cache, species) = (Arc::clone(&cache), species.clone());
-            std::thread::spawn(move || cache.get(&species))
+            std::thread::spawn(move || cache.get(&species).unwrap())
         })
         .collect();
     for thread in threads {

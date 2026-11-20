@@ -1,8 +1,9 @@
-//! Resolving a species argument to a preset or a file.
+//! Resolving a species argument to a preset, a species of an installed pack or a file.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use arbrume_gen::{preset_toml, presets};
+use arbrume_pack::{PackStore, split_species_id};
 
 use crate::error::CliError;
 
@@ -13,17 +14,31 @@ pub struct SpeciesSource {
     pub label: String,
     /// TOML text of the species.
     pub text: String,
+    /// Directory the texture paths of the species are relative to: the pack, or the
+    /// directory of the species file.
+    pub asset_dir: Option<PathBuf>,
 }
 
-/// Resolves `spec`: a preset name, else a path to a species file, relative to `base`.
+/// Resolves `spec`: a preset name, a species `pack_id/name` of an installed pack (when
+/// no file of that name exists), else a path to a species file, relative to `base`.
 pub fn resolve(spec: &str, base: &Path) -> Result<SpeciesSource, CliError> {
     if let Some(text) = preset_toml(spec) {
         return Ok(SpeciesSource {
             label: spec.to_owned(),
             text: text.to_owned(),
+            asset_dir: None,
         });
     }
     let path = base.join(spec);
+    if split_species_id(spec).is_some() && !path.exists() {
+        let store = PackStore::open_default().map_err(CliError::usage)?;
+        let species = store.species(spec).map_err(CliError::usage)?;
+        return Ok(SpeciesSource {
+            label: pack_label(spec),
+            text: species.text,
+            asset_dir: species.asset_dir,
+        });
+    }
     let text = std::fs::read_to_string(&path).map_err(|error| {
         let names: Vec<&str> = presets().iter().map(|(name, _)| *name).collect();
         CliError::usage(format!(
@@ -37,7 +52,14 @@ pub fn resolve(spec: &str, base: &Path) -> Result<SpeciesSource, CliError> {
     Ok(SpeciesSource {
         label: sanitize(&stem),
         text,
+        asset_dir: path.parent().map(Path::to_path_buf),
     })
+}
+
+/// Label of the pack species `pack_id/name` in file names: `pack_id-name`, which no
+/// preset and no other pack species can have, since names hold no `-`.
+pub fn pack_label(id: &str) -> String {
+    id.replace('/', "-")
 }
 
 /// `name` with every character other than ASCII letters, digits, `-` and `_` replaced by

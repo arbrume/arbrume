@@ -13,8 +13,11 @@ workspace = true
 [dependencies]
 arbrume-core.workspace = true
 glam = "0.34.3"
+jpeg-decoder = { version = "0.3.2", default-features = false }
 png = "0.18.1"
 rayon = "1.10"
+thiserror = "2.0.21"
 
 [dev-dependencies]
 png = "0.18.1"
+tempfile = "3"

@@ -35,6 +35,9 @@ arbrume bench
 | `arbrume info <file.toml>` | validate a species file, then generate one plant with the default parameters and print its statistics |
 | `arbrume bench` | time each stage of the pipeline and the batch throughput, print a Markdown table |
 | `arbrume metrics <dir>` or `arbrume metrics --presets all` | summarise the ICTree realism features of skeletons per species ([ML annotations](annotations.md#realism-metric-v0)) |
+| `arbrume fit --target FILE --from PRESET ...` | fit the parameters of a species to a target skeleton and write a species file ([Parameter fitting](fitting.md)) |
+| `arbrume distance A B` | the distance between two tree skeletons, term by term ([Parameter fitting](fitting.md#the-distance)) |
+| `arbrume pack new/add-species/validate/thumbs/build/install/list/remove` | author, check, package and install species packs ([Species packs](packs.md)) |
 
 Exit codes: 0 on success, 1 when generating or writing a plant failed (the other plants
 are still generated, the failures are listed on stderr), 2 for invalid arguments,
@@ -44,7 +47,7 @@ configuration or species files.
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--species S` | | preset name, else path to a species TOML file |
+| `--species S` | | preset name, species `pack_id/name` of an installed pack ([Species packs](packs.md)), else path to a species TOML file |
 | `--count N` | 1 | number of plants, indexed `0..N` |
 | `--seed S` | 0 | base seed of the batch |
 | `--age A` | 10 | age in growth cycles |
@@ -54,6 +57,7 @@ configuration or species files.
 | `--random` | | draw each plant from a random preset; excludes `--species`, the age and scale options and `--config` |
 | `--max-triangles N` | 60000 | with `--random`: triangle budget of a plant, 0 for none |
 | `--max-vertices N` | 55000 | with `--random`: vertex budget of a plant, 0 for none |
+| `--packs LIST` | `builtin` | with `--random`: draw from the species of these installed packs, comma-separated; `builtin` is the built-in presets |
 | `--thumb [SIZE]` | 256 when given | write a thumbnail of `SIZE` by `SIZE` pixels next to each plant |
 | `--thumb-format F` | `jpg` | `jpg` or `png` |
 | `--lods N` | 1 | mesh levels of detail per plant, each within a triangle budget ([Levels of detail](lod.md)) |

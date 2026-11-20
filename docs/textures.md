@@ -1,10 +1,11 @@
 # Textures
 
 Arbrume synthesizes the textures of a species from its parameters: tileable bark maps and
-a leaf atlas, on the CPU, with no photographed or downloaded image. A species pack is
-therefore only TOML files. This page describes what is synthesized, the species fields
-that drive it, how the textures reach the materials, files and Blender, and what they
-cost. The crate is `arbrume-texture`.
+a leaf atlas, on the CPU, with no photographed or downloaded image, unless the species
+names image files for its bark or leaves ([Species packs](packs.md#species-and-images)).
+This page describes what is synthesized, the species fields that drive it, how the
+textures reach the materials, files and Blender, and what they cost. The crate is
+`arbrume-texture`.
 
 ```rust
 use arbrume_gen::{GenParams, Generator, TextureCache, TextureOptions, preset};
@@ -259,8 +260,10 @@ whole plant, the base of the trunk and a twig at the edge of the crown.
   changes its colour).
 * The bark repeat is visible on long straight trunks at close range; the random `v`
   offset of each branch hides it between branches only.
-* The `bark.texture` and `foliage.texture` paths of the schema are not read; textures are
-  always synthesized.
+* Image textures (`bark.texture`, `foliage.texture`, see
+  [Species packs](packs.md#species-and-images)) replace the bark albedo and the leaves
+  only: the bark roughness stays constant, and the needle spray of conifer twigs stays
+  synthesized.
 * Card leaves are cut by alpha: they need alpha testing in the renderer, and their
   rectangle draws more fragments than the outline polygon.
 * The margin is parametric: it does not grow teeth and lobes as Runions et al. (2017) do,

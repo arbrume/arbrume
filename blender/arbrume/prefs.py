@@ -8,6 +8,7 @@ from bpy.props import BoolProperty, FloatProperty, IntProperty
 
 import arbrume
 
+from . import packs
 from .state import STATE
 
 LICENSE = "GPL-3.0-or-later"
@@ -55,6 +56,7 @@ class ARBRUME_AP_preferences(bpy.types.AddonPreferences):
         col.prop(self, "default_quality")
         col.prop(self, "threads")
         col.prop(self, "custom_normals")
+        packs.draw_preferences(layout)
         box = layout.box()
         box.label(text="About Arbrume", icon="INFO")
         box.label(text=f"Extension {extension_version()}, generator {arbrume.__version__}")

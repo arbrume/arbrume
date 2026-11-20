@@ -56,6 +56,7 @@ use crate::error::CliError;
 use crate::lods::{LodConfig, LodFile};
 use crate::source::{SpeciesSource, resolve, sanitize};
 use crate::textures::TextureChoice;
+use arbrume_pack::split_species_id;
 
 /// One species of a batch.
 #[derive(Debug, Clone)]
@@ -202,8 +203,9 @@ pub fn entry(
     count: u32,
     sampler: Sampler,
 ) -> Result<Entry, CliError> {
-    let species = species_with_overrides(&source.text, overrides)
+    let mut species = species_with_overrides(&source.text, overrides)
         .map_err(|error| CliError::usage(format!("species `{}`: {error}", source.label)))?;
+    species.asset_dir.clone_from(&source.asset_dir);
     sampler
         .validate()
         .map_err(|error| CliError::usage(format!("species `{}`: {error}", source.label)))?;
@@ -290,7 +292,8 @@ fn load_entry(file: &EntryFile, base: &Path, defaults: &Defaults) -> Result<Entr
             ));
         }
     };
-    if file.preset.is_some() && arbrume_gen::preset_toml(spec).is_none() {
+    let known = arbrume_gen::preset_toml(spec).is_some() || split_species_id(spec).is_some();
+    if file.preset.is_some() && !known {
         return Err(CliError::usage(format!("no preset `{spec}`")));
     }
     let mut source = resolve(spec, base)?;

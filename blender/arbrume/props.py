@@ -28,6 +28,7 @@ from bpy.props import (
 
 from . import plant
 from .logic import schema
+from .logic.packs import display_name
 from .logic.species import readable_name
 from .logic.values import (
     MISSING,
@@ -46,13 +47,28 @@ _ENUM_CACHE: dict[str, list] = {}
 
 
 def preset_items(_self, _context) -> list:
-    """Enum items of the species presets (the list object is kept alive for Blender)."""
+    """Enum items of the species presets, then one headed group per installed pack, its
+    species with their thumbnails as icons (the list object is kept alive for Blender).
+    The number of an item is its index in ``STATE.species_ids()``."""
     if not _ENUM_CACHE.get("presets"):
-        _ENUM_CACHE["presets"] = [
-            (name, readable_name(name), f"Species preset {name}", index)
+        items: list = [
+            (name, readable_name(name), f"Species preset {name}", "NONE", index)
             for index, name in enumerate(STATE.presets)
-        ] or [("NONE", "No presets", "The arbrume module did not load", 0)]
+        ]
+        index = len(items)
+        for group in STATE.pack_groups:
+            items.append(("", group.title, ""))
+            for entry in group.species:
+                icon = STATE.pack_icons.get(entry.id, "NONE")
+                items.append((entry.id, entry.name, entry.description, icon, index))
+                index += 1
+        _ENUM_CACHE["presets"] = items or [("NONE", "No presets", "The module did not load", 0)]
     return _ENUM_CACHE["presets"]
+
+
+def species_display_name(species_id: str) -> str:
+    """Display name of a preset or pack species."""
+    return display_name(species_id, STATE.pack_groups) or readable_name(species_id)
 
 
 def clear_enum_cache() -> None:
@@ -66,15 +82,16 @@ def _changed(self, _context) -> None:
 
 def _get_preset(self) -> int:
     try:
-        return STATE.presets.index(self.preset_name)
+        return STATE.species_ids().index(self.preset_name)
     except ValueError:
         return 0
 
 
 def _set_preset(self, value: int) -> None:
-    if 0 <= value < len(STATE.presets):
+    ids = STATE.species_ids()
+    if 0 <= value < len(ids):
         with suspended():
-            self.preset_name = STATE.presets[value]
+            self.preset_name = ids[value]
             self.custom_toml = ""
             self.custom_name = ""
         plant.regenerate_if_live(self.id_data)

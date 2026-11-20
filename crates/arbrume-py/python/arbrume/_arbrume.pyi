@@ -25,7 +25,7 @@ def generate(
     overrides: dict[str, Any] | None = None,
     **dotted_overrides: Any,
 ) -> Tree:
-    """Generate one tree from a preset name, a species file or TOML text."""
+    """Generate one tree from a preset, a species file, a pack species or TOML text."""
 
 def generate_many(
     species: _Species | Sequence[dict[str, Any]],
@@ -50,6 +50,55 @@ def preset_toml(name: str) -> str:
 
 def plant_seed(seed: int, index: int) -> int:
     """Seed of plant ``index`` of a dataset with base seed ``seed``."""
+
+def load_pack(path: str | os.PathLike[str]) -> dict[str, Any]:
+    """Open a pack directory or ``.arbpack`` file and keep it for ``generate``."""
+
+def packs(dir: str | os.PathLike[str] | None = None) -> list[dict[str, Any]]:
+    """Installed packs, then packs loaded with ``load_pack``, as dicts."""
+
+def install_pack(
+    path: str | os.PathLike[str], dir: str | os.PathLike[str] | None = None
+) -> dict[str, Any]:
+    """Validate a pack and install it into the user pack directory or ``dir``."""
+
+def remove_pack(id: str, dir: str | os.PathLike[str] | None = None) -> None:
+    """Remove an installed pack."""
+
+def distance(
+    a: Tree | str | os.PathLike[str] | dict[str, Any],
+    b: Tree | str | os.PathLike[str] | dict[str, Any],
+    *,
+    min_radius: float = 0.0,
+    step: float | None = None,
+    smooth: int = 0,
+    up: Literal["y", "z"] = "y",
+) -> dict[str, float]:
+    """Distance between two tree skeletons: its terms and their weighted ``total``."""
+
+def fit(
+    target: Tree | str | os.PathLike[str] | dict[str, Any],
+    species: _Species,
+    *,
+    params: Sequence[str] | None = None,
+    seeds: int = 4,
+    budget: int = 1200,
+    seed: int = 0,
+    holdout: int = 16,
+    max_factor: float = 3.0,
+    min_radius: float = 0.0,
+    step: float | None = None,
+    smooth: int = 0,
+    up: Literal["y", "z"] = "y",
+    checkpoint: str | os.PathLike[str] | None = None,
+    resume: bool = False,
+    threads: int | None = None,
+) -> dict[str, Any]:
+    """Fit species parameters to a target skeleton: ``toml``, ``age``, ``scale``,
+    ``factors`` and ``report``."""
+
+def packs_dir() -> str:
+    """The user pack directory."""
 
 @final
 class Buffer:

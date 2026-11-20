@@ -13,6 +13,11 @@
 //! | `[bark]` | [`Bark`] | bark appearance |
 //! | `[variation]` | [`Variation`] | how individuals differ: age and scale ranges, jitter |
 //!
+//! `bark.texture`, `bark.normal_texture`, `foliage.texture` and `foliage.normal_texture`
+//! name image files that replace the synthesized textures; relative paths are resolved
+//! against [`Species::asset_dir`], which is set by whoever loads the file (a species
+//! pack, see `docs/packs.md`) and is not part of the file.
+//!
 //! Every field has a default, so a species file lists only what differs. The defaults
 //! describe a plain generic tree. They are starting points chosen to produce a plausible
 //! shape, not measurements of any species. Unknown keys are rejected, so a misspelt
@@ -64,7 +69,7 @@ pub use variation::{JITTERABLE, Variation};
 
 use crate::curve::OrderCurve;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 /// Version of the species schema written by this crate.
@@ -118,6 +123,11 @@ pub struct Species {
     pub bark: Bark,
     /// How individuals of the species vary.
     pub variation: Variation,
+    /// Directory against which relative texture paths are resolved: the directory of
+    /// the species pack or file the species was loaded from. Not read from nor written
+    /// to the file; `None` resolves them against the current directory.
+    #[serde(skip)]
+    pub asset_dir: Option<PathBuf>,
 }
 
 impl Default for Species {
@@ -131,6 +141,7 @@ impl Default for Species {
             foliage: Foliage::default(),
             bark: Bark::default(),
             variation: Variation::default(),
+            asset_dir: None,
         }
     }
 }
@@ -165,6 +176,32 @@ impl Species {
     /// Returns [`SpeciesError::Serialize`] when a value cannot be represented in TOML.
     pub fn to_toml_string(&self) -> Result<String, SpeciesError> {
         Ok(toml::to_string(self)?)
+    }
+
+    /// The image files the species names, as `(field, path)` pairs, in the order
+    /// `bark.texture`, `bark.normal_texture`, `foliage.texture`, `foliage.normal_texture`.
+    #[must_use]
+    pub fn texture_paths(&self) -> Vec<(&'static str, &str)> {
+        [
+            ("bark.texture", &self.bark.texture),
+            ("bark.normal_texture", &self.bark.normal_texture),
+            ("foliage.texture", &self.foliage.texture),
+            ("foliage.normal_texture", &self.foliage.normal_texture),
+        ]
+        .into_iter()
+        .filter_map(|(field, path)| path.as_deref().map(|path| (field, path)))
+        .collect()
+    }
+
+    /// Where the image file `path` of the species is: `path` itself when absolute,
+    /// else `path` under [`Species::asset_dir`] (or the current directory).
+    #[must_use]
+    pub fn resolve_asset(&self, path: &str) -> PathBuf {
+        let path = Path::new(path);
+        match &self.asset_dir {
+            Some(dir) if path.is_relative() => dir.join(path),
+            _ => path.to_path_buf(),
+        }
     }
 
     /// Checks the schema version and the domain of every parameter.
@@ -209,6 +246,34 @@ fn check_curve(
     let (curve_lo, curve_hi) = curve.bounds();
     check_range(field, curve_lo, lo, hi)?;
     check_range(field, curve_hi, lo, hi)
+}
+
+/// Fails with [`SpeciesError::Invalid`] for an empty texture path of the table `table`
+/// (`"bark"` or `"foliage"`), or a normal map without a texture.
+fn check_texture_paths(
+    table: &'static str,
+    texture: Option<&str>,
+    normal: Option<&str>,
+) -> Result<(), SpeciesError> {
+    let (texture_field, normal_field) = if table == "bark" {
+        ("bark.texture", "bark.normal_texture")
+    } else {
+        ("foliage.texture", "foliage.normal_texture")
+    };
+    let invalid = |field, reason: &str| SpeciesError::Invalid {
+        field,
+        reason: reason.to_owned(),
+    };
+    if texture.is_some_and(str::is_empty) {
+        return Err(invalid(texture_field, "is an empty path"));
+    }
+    if normal.is_some_and(str::is_empty) {
+        return Err(invalid(normal_field, "is an empty path"));
+    }
+    if normal.is_some() && texture.is_none() {
+        return Err(invalid(normal_field, "is only read with a texture"));
+    }
+    Ok(())
 }
 
 /// Fails with [`SpeciesError::Invalid`] unless every component is in `[0, 1]`.
@@ -313,6 +378,12 @@ mod tests {
                 "[architecture]\nphyllotaxis = { leaves_per_node = 0 }",
                 "architecture.phyllotaxis",
             ),
+            ("[bark]\ntexture = \"\"", "bark.texture"),
+            ("[bark]\nnormal_texture = \"n.png\"", "bark.normal_texture"),
+            (
+                "[foliage]\ntexture = \"a.png\"\nnormal_texture = \"\"",
+                "foliage.normal_texture",
+            ),
         ];
         for (text, expected) in cases {
             match Species::from_toml_str(text) {
@@ -341,6 +412,28 @@ mod tests {
             let result = Species::from_toml_str(text);
             assert!(matches!(result, Err(SpeciesError::Parse(_))), "{text}");
         }
+    }
+
+    #[test]
+    fn texture_paths_are_listed_and_resolved_against_the_asset_dir() {
+        let mut species = Species::from_toml_str(
+            "[bark]\ntexture = \"textures/bark.png\"\n[foliage]\n\
+             texture = \"textures/leaf.png\"\nnormal_texture = \"textures/n.png\"",
+        )
+        .unwrap();
+        let fields: Vec<&str> = species.texture_paths().iter().map(|p| p.0).collect();
+        assert_eq!(
+            fields,
+            ["bark.texture", "foliage.texture", "foliage.normal_texture"]
+        );
+        let relative = std::path::Path::new("textures/bark.png");
+        assert_eq!(species.resolve_asset("textures/bark.png"), relative);
+        species.asset_dir = Some("packs/demo".into());
+        let resolved = species.resolve_asset("textures/bark.png");
+        assert_eq!(resolved, std::path::Path::new("packs/demo").join(relative));
+        let text = species.to_toml_string().unwrap();
+        assert!(!text.contains("packs/demo"));
+        assert_eq!(Species::from_toml_str(&text).unwrap().asset_dir, None);
     }
 
     #[test]

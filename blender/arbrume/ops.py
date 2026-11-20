@@ -13,7 +13,7 @@ import arbrume
 
 from . import plant, props
 from .logic import toml_out
-from .logic.species import Source, full_species, readable_name
+from .logic.species import Source, full_species
 from .logic.values import (
     CurvePoints,
     dump_overrides,
@@ -140,7 +140,7 @@ class ARBRUME_OT_add_plant(bpy.types.Operator):
     def execute(self, context):
         source = Source(preset=self.preset)
         age = species_age(source) if self.use_species_age else None
-        obj = new_plant_object(context, readable_name(self.preset))
+        obj = new_plant_object(context, props.species_display_name(self.preset))
         with suspended():
             settings = obj.arbrume
             settings.preset_name = self.preset
