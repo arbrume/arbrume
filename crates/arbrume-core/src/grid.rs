@@ -109,10 +109,21 @@ impl HashGrid {
 
     /// Calls `visit(index, point, squared_distance)` for every point within `radius` of
     /// `center` (boundary included).
-    pub fn for_each_in_radius(
+    pub fn for_each_in_radius(&self, center: Vec3, radius: f32, visit: impl FnMut(u32, Vec3, f32)) {
+        self.for_each_in_kept_cells(center, radius, |_, _| true, visit);
+    }
+
+    /// Calls `visit(index, point, squared_distance)` for the points within `radius` of
+    /// `center` (boundary included), skipping the cells for which `keep(cell_center,
+    /// cell_size)` is `false`.
+    ///
+    /// `keep` only prunes work: when the query scans the points directly (see the
+    /// [module documentation](self)), points of skipped cells may still be visited.
+    pub fn for_each_in_kept_cells(
         &self,
         center: Vec3,
         radius: f32,
+        mut keep: impl FnMut(Vec3, f32) -> bool,
         mut visit: impl FnMut(u32, Vec3, f32),
     ) {
         let radius_sq = radius * radius;
@@ -132,18 +143,16 @@ impl HashGrid {
             (0..self.points.len()).for_each(test);
             return;
         }
-        for z in low.z..=high.z {
-            for y in low.y..=high.y {
-                for x in low.x..=high.x {
-                    let cell = IVec3::new(x, y, z);
-                    let bucket = self.bucket(cell);
-                    let slots =
-                        self.bucket_start[bucket] as usize..self.bucket_start[bucket + 1] as usize;
-                    slots
-                        .filter(|&slot| self.cells[slot] == cell)
-                        .for_each(&mut test);
-                }
-            }
+        let size = self.inverse_cell.recip();
+        let cells = (low.z..=high.z).flat_map(|z| {
+            (low.y..=high.y).flat_map(move |y| (low.x..=high.x).map(move |x| IVec3::new(x, y, z)))
+        });
+        for cell in cells.filter(|cell| keep((cell.as_vec3() + 0.5) * size, size)) {
+            let bucket = self.bucket(cell);
+            let slots = self.bucket_start[bucket] as usize..self.bucket_start[bucket + 1] as usize;
+            slots
+                .filter(|&slot| self.cells[slot] == cell)
+                .for_each(&mut test);
         }
     }
 

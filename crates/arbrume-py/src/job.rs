@@ -10,9 +10,9 @@
 //!
 //! The keyword options are `scale`, `quality`, `textures` (a bool: procedural textures,
 //! see `docs/textures.md`), `junctions` (`"tier-a"` or `"tier-b"`, see
-//! `docs/junctions.md`) and `overrides` (a dict of dotted paths); every other keyword
-//! is one more override, so `**{"foliage.length": 0.2}` and
-//! `overrides={"foliage.length": 0.2}` are the same.
+//! `docs/junctions.md`), `surroundings` (see [`crate::surroundings`]) and `overrides`
+//! (a dict of dotted paths); every other keyword is one more override, so
+//! `**{"foliage.length": 0.2}` and `overrides={"foliage.length": 0.2}` are the same.
 //!
 //! Textures come from one cache for the whole process, so that regenerating a plant of
 //! the same species does not synthesize them again; it is emptied when it holds more
@@ -25,7 +25,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use arbrume_core::species::Species;
 use arbrume_gen::{
-    GenParams, Junctions, TextureCache, TextureOptions, preset_toml, presets,
+    GenParams, Junctions, Surroundings, TextureCache, TextureOptions, preset_toml, presets,
     species_with_overrides,
 };
 use pyo3::exceptions::{PyFileNotFoundError, PyTypeError, PyValueError};
@@ -34,7 +34,7 @@ use pyo3::types::{PyDict, PyString};
 
 use crate::convert::{dict_to_toml, gen_error};
 
-/// Keyword options shared by `generate` and `generate_many`.
+/// Keyword options shared by `generate`, `generate_many` and `growth_frames`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Options {
     /// Scale factor.
@@ -47,6 +47,8 @@ pub struct Options {
     pub textures: bool,
     /// How branches are joined.
     pub junctions: Junctions,
+    /// What stands around the plant.
+    pub surroundings: Option<Arc<Surroundings>>,
 }
 
 /// Largest number of species in the texture cache before it is emptied.
@@ -67,7 +69,8 @@ pub fn texture_cache() -> Arc<TextureCache> {
 }
 
 impl Options {
-    /// Reads `kwargs`: `scale`, `quality`, `overrides` and dotted overrides.
+    /// Reads `kwargs`: `scale`, `quality`, `textures`, `junctions`, `surroundings`,
+    /// `overrides` and dotted overrides.
     pub fn parse(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
         let mut options = Self {
             scale: 1.0,
@@ -75,6 +78,7 @@ impl Options {
             overrides: toml::Table::new(),
             textures: false,
             junctions: Junctions::TierA,
+            surroundings: None,
         };
         let Some(kwargs) = kwargs else {
             return Ok(options);
@@ -91,6 +95,7 @@ impl Options {
                 "quality" => options.quality = number(&value, "quality")?,
                 "overrides" => {}
                 "junctions" => options.junctions = junctions(&value)?,
+                "surroundings" => options.surroundings = crate::surroundings::parse(&value)?,
                 "textures" => {
                     options.textures = value.extract::<bool>().map_err(|_| {
                         PyTypeError::new_err("`textures` must be a bool".to_owned())
@@ -152,6 +157,7 @@ pub fn params(seed: u64, age: u16, options: &Options) -> GenParams {
         .with_scale(options.scale)
         .with_quality(options.quality);
     params.mesh.junctions = options.junctions;
+    params.surroundings.clone_from(&options.surroundings);
     params
 }
 

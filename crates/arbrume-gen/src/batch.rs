@@ -197,6 +197,23 @@ impl Generator {
         let surroundings = params.surroundings.as_deref().unwrap_or(&open);
         let graph = grow_in(species, &params.grow_params(), surroundings);
         let grown = Instant::now();
+        self.mesh_grown(species, params, budget, graph, plant)?;
+        Ok(Timings {
+            grow: grown - start,
+            mesh: grown.elapsed(),
+        })
+    }
+
+    /// Meshes `graph`, grown from `species` and `params`, into `plant` within `budget`
+    /// (see [`Generator::generate_within`]) and fills in the rest of `plant`.
+    pub(crate) fn mesh_grown(
+        &mut self,
+        species: &Species,
+        params: &GenParams,
+        budget: &Budget,
+        graph: PlantGraph,
+        plant: &mut Plant,
+    ) -> Result<(), GenError> {
         let meshed = self.meshed(species);
         let (textured, species) = (species, meshed.as_ref());
         let textures = self.texture_set(textured)?;
@@ -217,17 +234,13 @@ impl Generator {
         if let Some(textures) = textures {
             textures.apply(&mut plant.mesh, textured);
         }
-        let timings = Timings {
-            grow: grown - start,
-            mesh: grown.elapsed(),
-        };
         plant.graph = graph;
         plant.params = GenParams {
             mesh: options,
             ..params.clone()
         };
         plant.stats = Stats::of(&plant.graph, &plant.mesh);
-        Ok(timings)
+        Ok(())
     }
 
     /// Meshes `graph` into the mesh of `plant` with `options`.

@@ -1,4 +1,5 @@
-"""Operators: adding, regenerating, varying, scattering, LODs, resets and species files."""
+"""Operators: adding, regenerating, varying, scattering, LODs, growth frames, obstacles,
+resets and species files."""
 
 import math
 import random
@@ -11,8 +12,8 @@ from bpy_extras.io_utils import ExportHelper, ImportHelper
 
 import arbrume
 
-from . import plant, props
-from .logic import toml_out
+from . import plant, props, surroundings
+from .logic import frames, toml_out
 from .logic.species import Source, full_species
 from .logic.values import (
     CurvePoints,
@@ -39,6 +40,9 @@ SETTINGS_FIELDS = (
     "junctions",
     "overrides",
     "live_update",
+    "envelope",
+    "envelope_ground",
+    "voxel_size",
 )
 
 
@@ -61,6 +65,10 @@ def copy_settings(source, target, **changes) -> None:
         target.is_plant = True
         for name in SETTINGS_FIELDS:
             setattr(target, name, changes.get(name, getattr(source, name)))
+        target.obstacles.clear()
+        for item in source.obstacles:
+            copy = target.obstacles.add()
+            copy.obj, copy.blocks, copy.shade = item.obj, item.blocks, item.shade
 
 
 def new_plant_object(context, name: str, collection=None) -> bpy.types.Object:
@@ -519,6 +527,133 @@ class ARBRUME_OT_import_species(bpy.types.Operator, ImportHelper):
         return {"FINISHED"}
 
 
+class ARBRUME_OT_add_obstacle(bpy.types.Operator):
+    """Add the selected mesh objects as obstacles of the active plant, or an empty slot"""
+
+    bl_idname = "arbrume.add_obstacle"
+    bl_label = "Add Obstacle"
+    bl_options: ClassVar[set[str]] = UNDO
+
+    @classmethod
+    def poll(cls, context):
+        return active_plant(context) is not None
+
+    def execute(self, context):
+        obj = active_plant(context)
+        settings = obj.arbrume
+        known = {item.obj for item in settings.obstacles} | {settings.envelope}
+        chosen = [
+            o
+            for o in context.selected_objects
+            if o != obj and surroundings.is_volume(o) and o not in known
+        ]
+        with suspended():
+            for other in chosen or [None]:
+                settings.obstacles.add().obj = other
+        if chosen:
+            plant.regenerate_if_live(obj)
+        return {"FINISHED"}
+
+
+class ARBRUME_OT_remove_obstacle(bpy.types.Operator):
+    """Remove one obstacle of the active plant"""
+
+    bl_idname = "arbrume.remove_obstacle"
+    bl_label = "Remove Obstacle"
+    bl_options: ClassVar[set[str]] = UNDO
+
+    index: IntProperty(name="Index", min=0)
+
+    @classmethod
+    def poll(cls, context):
+        return active_plant(context) is not None
+
+    def execute(self, context):
+        obj = active_plant(context)
+        if self.index >= len(obj.arbrume.obstacles):
+            return {"CANCELLED"}
+        with suspended():
+            obj.arbrume.obstacles.remove(self.index)
+        plant.regenerate_if_live(obj)
+        return {"FINISHED"}
+
+
+def key_visibility(obj: bpy.types.Object, keys: list[tuple[int, bool]]) -> None:
+    """Keyframes the viewport and render visibility of ``obj``."""
+    for frame, hidden in keys:
+        obj.hide_viewport = obj.hide_render = hidden
+        obj.keyframe_insert("hide_viewport", frame=frame)
+        obj.keyframe_insert("hide_render", frame=frame)
+
+
+class ARBRUME_OT_growth_frames(bpy.types.Operator):
+    """Create one object per growth stage of the active plant in a new collection, each
+    shown in turn on the timeline"""
+
+    bl_idname = "arbrume.growth_frames"
+    bl_label = "Growth Frames"
+    bl_options: ClassVar[set[str]] = UNDO
+
+    stages: IntProperty(
+        name="Stages",
+        description="Growth stages, spread evenly over the age of the plant",
+        default=10,
+        min=1,
+        max=500,
+        soft_max=60,
+    )
+    step: IntProperty(
+        name="Frames per Stage", description="Timeline frames each stage is shown", default=5, min=1
+    )
+    hide_source: BoolProperty(name="Hide Plant", description="Hide the plant itself", default=True)
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode == "OBJECT" and active_plant(context) is not None
+
+    def grow(self, source) -> list:
+        """The trees of the growth stages of the plant ``source``."""
+        settings = source.arbrume
+        around, _ = plant.surroundings_of(source)
+        return arbrume.growth_frames(
+            plant.source_of(settings).argument,
+            frames=self.stages,
+            overrides=load_overrides(settings.overrides) or None,
+            surroundings=around,
+            **plant.generation_args(settings),
+        )
+
+    def execute(self, context):
+        source = active_plant(context)
+        try:
+            trees = self.grow(source)
+        except (ValueError, TypeError, OSError, RuntimeError) as error:
+            self.report({"ERROR"}, str(error))
+            return {"CANCELLED"}
+        if not trees:
+            self.report({"ERROR"}, "The plant has no growth cycle (age 0)")
+            return {"CANCELLED"}
+        scene = context.scene
+        collection = bpy.data.collections.new(f"{source.name} growth")
+        scene.collection.children.link(collection)
+        start = scene.frame_start
+        schedule = frames.visibility_keys(len(trees), start, self.step)
+        for index, (tree, keys) in enumerate(zip(trees, schedule, strict=True)):
+            name = f"{source.name} growth {index + 1:02d}"
+            obj = bpy.data.objects.new(name, plant.mesh_from_tree(name, tree))
+            collection.objects.link(obj)
+            obj.matrix_world = source.matrix_world
+            obj["arbrume_growth_cycle"] = tree.max_cycle
+            key_visibility(obj, keys)
+        scene.frame_end = max(scene.frame_end, frames.last_frame(len(trees), start, self.step))
+        if self.hide_source:
+            source.hide_set(True)
+            source.hide_render = True
+        scene.frame_set(scene.frame_current)
+        self.report({"INFO"}, f"{len(trees)} growth stages in {collection.name}")
+        return {"FINISHED"}
+
+
 CLASSES = (
     ARBRUME_OT_add_plant,
     ARBRUME_OT_regenerate,
@@ -530,4 +665,7 @@ CLASSES = (
     ARBRUME_OT_curve_mode,
     ARBRUME_OT_export_species,
     ARBRUME_OT_import_species,
+    ARBRUME_OT_add_obstacle,
+    ARBRUME_OT_remove_obstacle,
+    ARBRUME_OT_growth_frames,
 )

@@ -14,7 +14,7 @@ from bpy.props import PointerProperty
 
 import arbrume
 
-from . import curves_ui, ops, packs, prefs, props, ui
+from . import curves_ui, ops, packs, prefs, props, surroundings, ui
 from .logic import species
 from .state import STATE, reset
 
@@ -25,6 +25,7 @@ _REGISTERED: list[type] = []
 def arbrume_on_load(_scene) -> None:
     """Forgets the session state of the previous file."""
     reset()
+    surroundings.clear_cache()
 
 
 def _load_schema() -> None:
@@ -53,6 +54,7 @@ def register() -> None:
     """Registers classes, properties, the Add menu entry, the load handler and the timer."""
     _load_schema()
     _register(prefs.ARBRUME_AP_preferences)
+    _register(props.ARBRUME_PG_obstacle)
     _register(props.ARBRUME_PG_plant)
     params_class = props.build_params_class(STATE.sections)
     _register(params_class)
@@ -64,6 +66,7 @@ def register() -> None:
     _register(ui.VIEW3D_PT_arbrume)
     for section in STATE.sections:
         _register(ui.make_section_panel(section))
+    _register(ui.VIEW3D_PT_arbrume_surroundings)
     _register(ui.VIEW3D_PT_arbrume_tools)
     bpy.types.VIEW3D_MT_mesh_add.append(ui.menu_add)
     _remove_handlers()
@@ -83,6 +86,7 @@ def unregister() -> None:
         bpy.utils.unregister_class(cls)
     _REGISTERED.clear()
     reset()
+    surroundings.clear_cache()
     STATE.sections, STATE.specs, STATE.presets = [], {}, []
     props.clear_enum_cache()
     packs.release()

@@ -16,11 +16,14 @@ from arbrume._arbrume import (
     Organs,
     Skeleton,
     Tree,
+    VoxelMask,
     __version__,
     distance,
     fit,
     generate,
     generate_many,
+    generate_stand,
+    growth_frames,
     install_pack,
     load_pack,
     packs,
@@ -29,6 +32,7 @@ from arbrume._arbrume import (
     preset_toml,
     presets,
     remove_pack,
+    voxel_mask,
 )
 
 __all__ = [
@@ -38,11 +42,14 @@ __all__ = [
     "Organs",
     "Skeleton",
     "Tree",
+    "VoxelMask",
     "__version__",
     "distance",
     "fit",
     "generate",
     "generate_many",
+    "generate_stand",
+    "growth_frames",
     "install_pack",
     "load_pack",
     "packs",
@@ -51,4 +58,5 @@ __all__ = [
     "preset_toml",
     "presets",
     "remove_pack",
+    "voxel_mask",
 ]

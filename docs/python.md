@@ -108,6 +108,111 @@ Every tree of the batch is held in memory; split very large datasets into chunks
 use the command line. `generate` releases the GIL too, so Python threads may call it
 concurrently.
 
+### Stands
+
+```python
+trees = arbrume.generate_stand(
+    [
+        {"species": "open_grown_broadleaf", "seed": 1, "age": 14, "position": [-3, 0, 0]},
+        {"species": "excurrent_conifer", "seed": 2, "age": 16, "position": [3, 0, 0]},
+        {"species": "hedge_shrub", "seed": 3, "age": 8, "position": [0, 0, 2.5]},
+    ],
+    quality=0.5,  # default for the plants that set none
+)
+```
+
+`generate_stand` grows the plants together, so that they shade one another (see
+[Several plants](growth.md#several-plants-stands)), then meshes each, without the GIL.
+Each plant is a dict with the keys of a job of `generate_many` (`species` required;
+`seed`, `age`, `scale`, `quality`, `textures`, `junctions`, `overrides`, dotted
+overrides) plus `position`, three numbers in meters, Y up. Keyword options are defaults
+for every plant; `surroundings` are those of the whole stand, in its frame, and
+`textures` on any plant textures them all. `threads` works as for `generate_many`.
+
+The trees come back in the order of the plants, each in its own frame with its base at
+the origin: place tree `i` at `plants[i]["position"]`. They do not depend on the order
+of the plants nor on the number of threads, and a stand of one plant at the origin is
+the tree `generate` gives. Errors raise `ValueError` (invalid species, parameter or
+position, a position missing or not three numbers, plants with different
+surroundings) or `TypeError` (a plant that is not a dict).
+
+## Surroundings, voxel masks and growth frames
+
+Species in the self-organizing mode grow in response to what stands around them
+([Growth](growth.md#surroundings)): a crown envelope the shoots stay inside, and
+occluders that block growth, cast shade, or both. `generate`, `generate_many` and
+`growth_frames` take them as the `surroundings` keyword, with the keys of a
+`--surroundings` file of the command line ([Command line](cli.md)), in meters around
+the plant standing at the origin, Y up:
+
+```python
+wall = {"shape": "box", "min": [1.5, 0.0, -8.0], "max": [2.0, 9.0, 8.0]}
+tree = arbrume.generate(
+    "open_grown_broadleaf",
+    seed=1,
+    age=25,
+    surroundings={
+        "envelope": {"shape": "ellipsoid", "center": [0, 5, 0], "radii": [2.5, 5, 2.5]},
+        "occluders": [wall, {**wall, "blocks": False, "shade": 3.0}],
+    },
+)
+tree = arbrume.generate("open_grown_broadleaf", seed=1, age=25, surroundings="wall.toml")
+```
+
+`surroundings` is a dict with `envelope` (a shape, or `None`) and `occluders` (a list),
+or the path of a surroundings TOML file. A shape dict has a `shape` key (`sphere`,
+`ellipsoid`, `box`, `cylinder`, `cone`) and its sizes; an occluder dict adds `blocks`
+(default `True`) and `shade` (default 1). The same surroundings given as a dict and as
+a file to `arbrume gen --surroundings` give the same plant. A parametric species ignores
+them. In a job dict of `generate_many`, `surroundings` applies to that job. They are
+written to the metadata (`tree.metadata["surroundings"]`), except a voxel mask.
+
+**Voxel masks.** Any volume, such as a voxelized mesh, is passed as a voxel mask:
+
+```python
+cell, n = 0.1, 40
+centers = (np.arange(n) + 0.5) * cell
+x, y, z = np.meshgrid(centers - 2.0, centers, centers - 2.0, indexing="ij")
+inside = x**2 + (y - 2.0) ** 2 + z**2 < 1.5**2
+inside |= (np.abs(x) < cell) & (np.abs(z) < cell) & (y < 2.0)  # a passage for the trunk
+crown = arbrume.voxel_mask((-2.0, 0.0, -2.0), cell, (n, n, n), inside)
+tree = arbrume.generate("envelope_tree", seed=1, surroundings={"envelope": crown})
+
+wall = arbrume.voxel_mask((1.0, 0.0, -3.0), cell, (3, 40, 60), np.ones((3, 40, 60), bool))
+tree = arbrume.generate("envelope_tree", seed=1, surroundings={"occluders": [wall]})
+shade = {"shape": wall, "blocks": False, "shade": 2.0}
+```
+
+`voxel_mask(origin, cell, shape, mask)` builds `shape = (nx, ny, nz)` cubic voxels of
+edge `cell` meters, the corner of smallest coordinates at `origin`; voxel `[x, y, z]`
+is filled where `mask[x, y, z]` is true (`mask` is anything `numpy.asarray` turns into a
+bool array of that shape). The `VoxelMask` it returns (`origin`, `cell`, `shape`,
+`filled`, `bounds`, `contains(point)`) stands wherever a shape is expected: as the
+`envelope`, as an item of `occluders` (a solid obstacle: blocks, shade 1), or as the
+`shape` of an occluder dict that sets `blocks` and `shade`. A shoot outside an analytic
+envelope may grow towards it, so a trunk rises into a crown that floats above the
+ground; outside a voxel mask the generator only sees the distance to the mask's grid,
+so a voxel envelope should reach the ground below the plant, as the column of the
+example does.
+
+**Growth frames.** `growth_frames(species, seed=0, age=None, frames=10, **options)`
+grows the plant once and meshes it at `frames` ages spread evenly over its growth
+(fewer when the plant has fewer cycles, none at age 0), with the options of `generate`,
+`surroundings` included. It returns one `Tree` per frame, youngest first;
+`tree.max_cycle` is the last growth cycle the frame shows (`None` for a tree of
+`generate`):
+
+```python
+frames = arbrume.growth_frames("broadleaf", seed=4, age=20, frames=5)
+[frame.max_cycle for frame in frames]  # [3, 7, 11, 15, 19]
+```
+
+The axes keep the place they have in the grown plant, so a sequence does not jitter.
+The bark of the last frame is that of `generate` for the same arguments, to float
+rounding. Its leaf mesh has as many vertices but other leaves: a frame keeps the leaf
+sites of every metamer recorded during growth, while `generate` places the leaves of
+the final plant.
+
 ## Arrays without copies
 
 | Object | Array | Shape | dtype |

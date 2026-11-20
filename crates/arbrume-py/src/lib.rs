@@ -13,6 +13,9 @@
 //!   skeletons, without the GIL (see [`fit`]).
 //! * `load_pack`, `packs`, `install_pack`, `remove_pack` and `packs_dir` handle species
 //!   packs, whose species `generate` accepts as `"pack_id/name"` (see [`packs`]).
+//! * `voxel_mask` builds a voxel volume, the `surroundings` keyword places a plant in an
+//!   envelope and among obstacles, and `growth_frames` meshes one plant at several ages
+//!   (see [`surroundings`]).
 //!
 //! The module is tested from Python (`tests/`, pytest) and documented in
 //! `docs/python.md`.
@@ -23,6 +26,8 @@ mod data;
 mod fit;
 mod job;
 mod packs;
+mod stand;
+mod surroundings;
 mod tree;
 
 use std::sync::Arc;
@@ -92,7 +97,9 @@ fn run_detached(py: Python<'_>, jobs: &[Job], threads: Option<i64>) -> PyResult<
 /// the growth and the mesh; `age` is in growth cycles (default 10). Keyword options:
 /// `scale` (default 1), `quality` (mesh quality, default 1), `textures` (procedural
 /// bark and leaf textures on the materials, default `False`), `junctions` (`"tier-a"`,
-/// the default, or `"tier-b"` for one closed bark surface), `overrides` (a dict of
+/// the default, or `"tier-b"` for one closed bark surface), `surroundings` (a dict with
+/// `envelope` and `occluders`, or the path of a surroundings TOML file; read by species
+/// in the self-organizing mode), `overrides` (a dict of
 /// dotted species paths to values), and any other keyword is one more override, e.g.
 /// `**{"foliage.length": 0.2}`. Raises `ValueError` for an invalid species or parameter.
 #[pyfunction]
@@ -194,7 +201,7 @@ fn take<'py>(dict: &Bound<'py, PyDict>, key: &str) -> PyResult<Option<Bound<'py,
 /// Either `generate_many(species, seeds, age=None, **options)`, one tree per seed, or
 /// `generate_many(jobs, **defaults)` where `jobs` is a list of dicts with the keys of
 /// `generate` (`species` required; `seed`, `age`, `scale`, `quality`, `textures`, `junctions`,
-/// `overrides`, dotted overrides). `threads` sets the number of worker threads (default: the global
+/// `surroundings`, `overrides`, dotted overrides). `threads` sets the number of worker threads (default: the global
 /// `rayon` pool, all cores or `RAYON_NUM_THREADS`). The trees are in input order and
 /// equal those of `generate` on each job, whatever the number of threads.
 #[pyfunction]
@@ -257,6 +264,7 @@ fn arbrume_module(module: &Bound<'_, PyModule>) -> PyResult<()> {
     )?;
     module.add_function(wrap_pyfunction!(generate, module)?)?;
     module.add_function(wrap_pyfunction!(generate_many, module)?)?;
+    module.add_function(wrap_pyfunction!(stand::generate_stand, module)?)?;
     module.add_function(wrap_pyfunction!(presets, module)?)?;
     module.add_function(wrap_pyfunction!(preset_toml, module)?)?;
     module.add_function(wrap_pyfunction!(plant_seed, module)?)?;
@@ -267,6 +275,9 @@ fn arbrume_module(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(packs::install_pack, module)?)?;
     module.add_function(wrap_pyfunction!(packs::remove_pack, module)?)?;
     module.add_function(wrap_pyfunction!(packs::packs_dir, module)?)?;
+    module.add_function(wrap_pyfunction!(surroundings::voxel_mask, module)?)?;
+    module.add_function(wrap_pyfunction!(surroundings::growth_frames, module)?)?;
+    module.add_class::<surroundings::PyVoxelMask>()?;
     module.add_class::<Tree>()?;
     module.add_class::<MeshPart>()?;
     module.add_class::<Skeleton>()?;

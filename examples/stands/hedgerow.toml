@@ -1,0 +1,45 @@
+# A hedgerow: six shrubs of two species 1 m apart along X, with a young tree in the row.
+quality = 0.6
+stand_file = true
+
+[[stand]]
+species = "hedge_shrub"
+position = [-3.5, 0.0, 0.0]
+age = 9
+seed = 21
+
+[[stand]]
+species = "thicket_shrub"
+position = [-2.5, 0.0, 0.2]
+age = 9
+seed = 22
+
+[[stand]]
+species = "hedge_shrub"
+position = [-1.5, 0.0, -0.1]
+age = 10
+seed = 23
+
+[[stand]]
+species = "open_grown_broadleaf"
+position = [0.0, 0.0, 0.0]
+age = 12
+seed = 24
+
+[[stand]]
+species = "hedge_shrub"
+position = [1.5, 0.0, 0.1]
+age = 9
+seed = 25
+
+[[stand]]
+species = "thicket_shrub"
+position = [2.5, 0.0, -0.2]
+age = 10
+seed = 26
+
+[[stand]]
+species = "hedge_shrub"
+position = [3.5, 0.0, 0.0]
+age = 8
+seed = 27

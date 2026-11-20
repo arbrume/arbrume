@@ -54,6 +54,7 @@ def test_glb_equals_the_command_line(tmp_path: Path) -> None:
     base_seed, age, quality = 5, 6, 0.5
     command = [os.environ["ARBRUME_CLI"], "gen", "--species", "shrub", "--count", "2"]
     command += ["--seed", str(base_seed), "--age", str(age), "--quality", str(quality)]
+    command += ["--textures", "none"]
     subprocess.run([*command, "--out", str(tmp_path), "--quiet"], check=True)
     for index in range(2):
         seed = arbrume.plant_seed(base_seed, index)

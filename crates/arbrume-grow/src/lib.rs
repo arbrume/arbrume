@@ -31,8 +31,8 @@
 //! [`Surroundings`]), [`ResourceFate`] (extended Borchert-Honda or priority
 //! allocation), [`TropismBlend`] kept out of obstacles by [`Confined`], and
 //! [`ExposureShedding`]. [`grow`] grows a plant on
-//! open ground, [`grow_in`] in given surroundings, [`grow_together`] several plants
-//! that share their light, and [`grow_with`] runs any other combination of stages.
+//! open ground, [`grow_in`] in given surroundings, [`grow_together`] a stand of
+//! several plants that share their light ([`stand`]), and [`grow_with`] runs any other combination of stages.
 //!
 //! A grown plant can be shown as it was at an earlier age: see [`grow_timeline`] and
 //! [`GrowthRecord`].
@@ -46,7 +46,9 @@
 //! that may use the `rayon` pool is the sensing of the buds
 //! ([`EngineOptions`]), which writes one independent result per bud and sums
 //! in a fixed order. Growing several plants in parallel is safe, since nothing is
-//! shared between two calls.
+//! shared between two calls. The plants of a stand share one shadow grid; their casts
+//! are summed in an order fixed by the entries, and they grow on the pool once sensed,
+//! each on its own.
 
 pub mod allocation;
 mod bend;
@@ -63,6 +65,7 @@ pub mod shadow;
 pub mod shedding;
 mod shoot;
 pub mod stage;
+pub mod stand;
 pub mod surroundings;
 
 pub use allocation::{ResourceFate, borchert_honda, priority_weight};
@@ -79,11 +82,11 @@ pub use stage::{
     BudFate, BudSite, Context, Environment, Flush, HeadingInput, NoEnvironment, NoShedding,
     Shedding, ShootOrientation, Stages, Straight,
 };
+pub use stand::{Standing, grow_together, grow_together_with};
 pub use surroundings::{Occluder, Shape, Surroundings, VoxelMask};
 
 use arbrume_core::graph::PlantGraph;
-use arbrume_core::species::{GrowthMode, Sensing, Species};
-use glam::Vec3;
+use arbrume_core::species::{GrowthMode, Species};
 
 /// Open ground, the surroundings of [`grow`].
 static OPEN: Surroundings = Surroundings::none();
@@ -206,71 +209,6 @@ fn grow_plant(cx: &Context, surroundings: &Surroundings, options: EngineOptions)
             run_cycles(cx, &mut self_organizing_stages(cx, surroundings, options))
         }
     }
-}
-
-/// One plant of a group grown by [`grow_together`].
-#[derive(Debug, Clone, Copy)]
-pub struct Standing<'a> {
-    /// Its species.
-    pub species: &'a Species,
-    /// Its seed, age and scale.
-    pub params: GrowParams,
-    /// Where it stands, in the frame of the surroundings.
-    pub position: Vec3,
-}
-
-/// Grows several plants that shade one another, in lockstep: all the self-organizing
-/// plants that sense light write to one shadow grid and read it.
-///
-/// A plant younger than the oldest starts later, so that all end together. Each graph
-/// is returned in the frame of its own plant, standing at the origin. The grid takes
-/// the shadow coefficients of the first plant that senses light. Parametric plants are
-/// grown as by [`grow`] and neither cast nor sense shade. Within a cycle the plants
-/// are grown in the order given, each seeing the shadows cast up to the previous cycle.
-#[must_use]
-pub fn grow_together(plants: &[Standing], surroundings: &Surroundings) -> Vec<PlantGraph> {
-    let oldest = plants.iter().map(|p| p.params.age).max().unwrap_or(0);
-    let contexts: Vec<Context> = plants.iter().map(|p| p.params.context(p.species)).collect();
-    let mut runs: Vec<Option<(SelfOrganizingStages, Plant)>> = plants
-        .iter()
-        .zip(&contexts)
-        .map(|(standing, cx)| {
-            (standing.species.growth.mode == GrowthMode::SelfOrganizing).then(|| {
-                let mut stages = self_organizing_stages(cx, surroundings, EngineOptions::default());
-                stages.environment = stages.environment.at(standing.position);
-                stages.fate = stages.fate.at(standing.position);
-                stages.orientation = stages.orientation.at(standing.position);
-                let plant = seed_plant(cx, &mut stages.fate);
-                (stages, plant)
-            })
-        })
-        .collect();
-    let mut shared: Option<ShadowGrid> = None;
-    for step in 0..oldest {
-        for (run, cx) in runs.iter_mut().zip(&contexts) {
-            let Some((stages, plant)) = run else {
-                continue;
-            };
-            let Some(cycle) = (step + cx.age).checked_sub(oldest) else {
-                continue;
-            };
-            let senses_light = cx.species.growth.self_organization.sensing != Sensing::Markers;
-            if senses_light && shared.is_some() {
-                *stages.environment.shadow_mut() = shared.take();
-            }
-            run_cycle(plant, cx, stages, cycle);
-            if senses_light {
-                shared = stages.environment.shadow_mut().take();
-            }
-        }
-    }
-    runs.into_iter()
-        .zip(plants.iter().zip(&contexts))
-        .map(|(run, (standing, cx))| match run {
-            Some((_, plant)) => finish(plant, cx),
-            None => grow(standing.species, &standing.params),
-        })
-        .collect()
 }
 
 /// Grows a plant with the given stages, then finishes it like [`grow`].

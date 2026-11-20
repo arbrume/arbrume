@@ -17,6 +17,7 @@ from dataclasses import dataclass
 
 import bpy
 
+from . import surroundings
 from .logic import meshdata
 from .logic.species import Source, generate
 from .logic.values import load_overrides
@@ -85,6 +86,22 @@ def generation_args(settings: bpy.types.PropertyGroup) -> dict:
         "textures": bool(getattr(settings, "textures", False)),
         "junctions": str(getattr(settings, "junctions", "tier-a")),
     }
+
+
+def surroundings_of(obj: bpy.types.Object) -> tuple[dict | None, surroundings.Report]:
+    """The ``surroundings`` argument of a plant (its envelope and obstacle objects, for a
+    self-organizing species) and what building it took."""
+    settings = obj.arbrume
+    species = STATE.cache.effective_text(source_of(settings), settings.overrides)
+    return surroundings.build(obj, species)
+
+
+def _record(status, report: surroundings.Report) -> None:
+    """Copies what building the surroundings took into the status of a plant."""
+    status.surroundings_ms = report.milliseconds
+    status.voxelized, status.cached = report.voxelized, report.cached
+    status.filled, status.cell = report.filled, report.cell
+    status.warning = "; ".join(report.errors)
 
 
 def own_mesh(obj: bpy.types.Object) -> bpy.types.Mesh:
@@ -322,9 +339,14 @@ def regenerate(obj: bpy.types.Object) -> str:
     settings = obj.arbrume
     STATE.busy.add(key)
     try:
+        around, report = surroundings_of(obj)
+        _record(status, report)
         start = time.perf_counter()
         tree = generate(
-            source_of(settings), load_overrides(settings.overrides), **generation_args(settings)
+            source_of(settings),
+            load_overrides(settings.overrides),
+            surroundings=around,
+            **generation_args(settings),
         )
         status.generate_ms = (time.perf_counter() - start) * 1e3
         status.upload_ms, status.vertices, status.triangles = apply_tree(obj, tree)

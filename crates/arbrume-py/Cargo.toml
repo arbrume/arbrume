@@ -26,6 +26,7 @@ arbrume-fit.workspace = true
 arbrume-gen.workspace = true
 arbrume-pack.workspace = true
 bytemuck = "1.23"
+glam = "0.34.3"
 pyo3 = { version = "0.30.1", features = ["abi3-py311"] }
 rayon = "1.10"
 serde_json = "1.0"

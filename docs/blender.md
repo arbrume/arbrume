@@ -57,6 +57,34 @@ active plant:
   widget cannot show angles in degrees directly). Vector handles are linear segments,
   automatic handles the smooth interpolation of the generator. A curve edit is one undo
   step: undo and redo bring back the curve and the plant together.
+- **Surroundings.** For a species in the self-organizing mode
+  ([Growth](growth.md#surroundings)), the *Surroundings* sub-panel names an *Envelope*
+  object the crown grows inside and a list of *Obstacles* (*+* adds the selected mesh
+  objects, or an empty slot to pick one in), each blocking growth, casting shade of a
+  given strength, or both. They can be any mesh object; their modifiers are applied and
+  they are read in world space, relative to the plant. On regeneration each is voxelized
+  into the frame of the plant: the inside of a closed mesh plus every voxel its surface
+  crosses, so an open plane still works as a wall. *Voxel Size* 0 (the default) takes
+  half the shortest internode of the species times the plant scale, printed under the
+  field; the grid of one object is capped at 8 million voxels, the voxels growing to
+  fit. *Trunk Passage* (on by default) opens a column of voxels from the ground up to the
+  envelope under the plant, so a trunk can rise into a crown envelope that floats above
+  the ground. A voxelized object is cached by a hash of its evaluated geometry, its
+  transform relative to the plant and the voxel settings, so dragging a slider of the
+  plant reuses it; the panel shows the voxel count, the time spent and how many objects
+  came from the cache. Moving an envelope or an obstacle does not regenerate the plant
+  by itself: press *Regenerate* or change a setting. For a parametric species the panel
+  says the volumes have no effect, and nothing is voxelized.
+- **Growth Frames.** *Batch and Files > Growth Frames* grows the active plant once and
+  makes one object per growth stage (*Stages*, spread evenly over its age, with its
+  surroundings) in a new collection `<plant> growth`. Their viewport and render
+  visibility are keyframed so that one stage shows at a time, each for *Frames per
+  Stage* frames from the scene start, the last staying to the end; the scene is made
+  long enough. Scrub the timeline to watch the plant grow. The plant itself is hidden
+  (*Hide Plant*). The stages are separate meshes because the number of vertices changes
+  from one stage to the next, which shape keys cannot hold; each stage object records
+  its last growth cycle in the custom property `arbrume_growth_cycle`. The stages are
+  plain meshes: editing the plant does not change them.
 - **Batch and Files.** *Duplicate with New Seed*; *Scatter Variations* makes N plants in a
   grid next to the active one or at the other selected objects, with a number of distinct
   seeds: plants with the same seed share one mesh. *Create LODs* makes copies at
@@ -65,7 +93,8 @@ active plant:
   TOML file; *Load Species File* uses such a file for the active plant or a new one.
 
 A plant is one mesh object. What it is made from is stored on the object (preset name or
-species file text, seed, age, scale, quality and the changed parameters as JSON), so a
+species file text, seed, age, scale, quality, the changed parameters as JSON, and the
+envelope and obstacle objects), so a
 saved file reopens editable and a plant can be duplicated or relinked like any object.
 Editing the mesh by hand is overwritten at the next regeneration.
 
@@ -90,6 +119,8 @@ Blender:
 | `meshdata` | one set of flat arrays for the whole tree: parts concatenated, Y up turned to Z up, per-corner UVs, material index per face |
 | `curvemap` | species curves to and from the points of a curve widget |
 | `packs` | the species of installed packs as groups of the species menu |
+| `voxels` | meshes voxelized in the frame of a plant (parity fill of the inside, surface shell, trunk passage), the voxel size from the species, the cache key of an object |
+| `frames` | the visibility keys of growth frames |
 
 Since the parameter panels are built from the species data, a parameter added to the
 species schema appears in Blender without a change to the extension.
@@ -171,8 +202,14 @@ through its node with undo and redo of the edit, an age scrub, every operator, s
 and reopening the file, a species pack installed from an archive made by Python's
 `zipfile` (its heading, species and thumbnail in the species menu, the Packs box of the
 preferences drawn through a stand-in layout, a plant of its species with the pack images
-on its materials, then its removal), disabling and enabling the extension, upload
-timings and two EEVEE stills. The third opens a window (with `--enable-event-simulate`), draws the
+on its materials, then its removal), a plant grown in a sphere envelope (the crown stays
+inside it, a seed change reuses the cached voxels, moving the sphere voxelizes it
+again), growth frames of that plant (as many objects as stages, one visible at each
+frame of the timeline), a plant next to a cube obstacle (no skeleton node inside the
+cube, where the same plant without it grows through) and the same obstacle ignored by a
+parametric species (`blender/tests/surroundings_steps.py`), disabling and enabling the
+extension, upload timings and three EEVEE stills, the last a plant in a sphere envelope
+next to a wall. The third opens a window (with `--enable-event-simulate`), draws the
 panels, saves screenshots of the sidebar, then drags a point of a curve widget with
 simulated mouse events and checks that the drag is one undo step that undo and redo
 restore with the plant.

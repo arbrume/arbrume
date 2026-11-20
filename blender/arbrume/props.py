@@ -2,9 +2,9 @@
 
 ``Object.arbrume`` (:class:`ARBRUME_PG_plant`) holds what a plant is made from: the species
 (a preset name or the text of a species file), seed, age, scale, quality, whether the
-plant carries procedural textures, how its branches are joined, and the overrides as JSON
-text. Those are saved with the
-file, so a plant reopens editable.
+plant carries procedural textures, how its branches are joined, the overrides as JSON
+text, and the envelope and obstacle objects it grows among (:mod:`.surroundings`).
+Those are saved with the file, so a plant reopens editable.
 
 ``Object.arbrume.params`` is a property group built at registration from the species
 schema (:func:`build_params_class`): one property per species parameter, with ``get`` and
@@ -17,6 +17,7 @@ from typing import Any
 import bpy
 from bpy.props import (
     BoolProperty,
+    CollectionProperty,
     EnumProperty,
     FloatProperty,
     FloatVectorProperty,
@@ -26,7 +27,7 @@ from bpy.props import (
     StringProperty,
 )
 
-from . import plant
+from . import plant, surroundings
 from .logic import schema
 from .logic.packs import display_name
 from .logic.species import readable_name
@@ -97,6 +98,33 @@ def _set_preset(self, value: int) -> None:
         plant.regenerate_if_live(self.id_data)
 
 
+def _volume_poll(self, obj) -> bool:
+    return surroundings.is_volume(obj) and obj != self.id_data
+
+
+class ARBRUME_PG_obstacle(bpy.types.PropertyGroup):
+    """One obstacle object of a plant."""
+
+    obj: PointerProperty(
+        name="Obstacle",
+        description="Mesh object that blocks growth or casts shade",
+        type=bpy.types.Object,
+        poll=_volume_poll,
+        update=_changed,
+    )
+    blocks: BoolProperty(
+        name="Blocks", description="No shoot grows into the object", default=True, update=_changed
+    )
+    shade: FloatProperty(
+        name="Shade",
+        description="Strength of the shade the object casts, 0 for none",
+        default=1.0,
+        min=0.0,
+        soft_max=5.0,
+        update=_changed,
+    )
+
+
 class ARBRUME_PG_plant(bpy.types.PropertyGroup):
     """What an Arbrume plant is generated from."""
 
@@ -161,6 +189,30 @@ class ARBRUME_PG_plant(bpy.types.PropertyGroup):
     )
     live_update: BoolProperty(
         name="Live update", description="Regenerate on every change", default=True
+    )
+    envelope: PointerProperty(
+        name="Envelope",
+        description="Mesh object the crown grows inside (self-organizing species)",
+        type=bpy.types.Object,
+        poll=_volume_poll,
+        update=_changed,
+    )
+    envelope_ground: BoolProperty(
+        name="Trunk Passage",
+        description="Open a column from the ground up to the envelope, for a floating crown",
+        default=True,
+        update=_changed,
+    )
+    obstacles: CollectionProperty(type=ARBRUME_PG_obstacle)
+    voxel_size: FloatProperty(
+        name="Voxel Size",
+        description="Edge of the voxels of the envelope and obstacles, 0 for half the "
+        "shortest internode of the species times the scale",
+        default=0.0,
+        min=0.0,
+        soft_max=0.5,
+        subtype="DISTANCE",
+        update=_changed,
     )
     curve_order: IntProperty(
         name="Order",

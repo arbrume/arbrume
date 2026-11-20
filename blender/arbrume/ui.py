@@ -11,8 +11,8 @@ from typing import ClassVar
 
 import bpy
 
-from . import curves_ui, plant, props
-from .logic import schema
+from . import curves_ui, plant, props, surroundings
+from .logic import schema, voxels
 from .logic.values import entry_at, entry_points, f32_text, load_overrides
 from .ops import active_plant
 from .state import STATE, status_of
@@ -97,6 +97,67 @@ class VIEW3D_PT_arbrume(bpy.types.Panel):
             op.path = ""
 
 
+def _surroundings_status(layout, obj) -> None:
+    status = status_of(obj.name)
+    if status.warning:
+        box = layout.box()
+        box.alert = True
+        box.label(text=status.warning, icon="ERROR")
+    if status.voxelized or status.cached:
+        layout.label(
+            text=f"{status.filled:,} voxels of {status.cell * 100:.1f} cm, "
+            f"{status.surroundings_ms:.0f} ms ({status.cached} cached)",
+            icon="INFO",
+        )
+
+
+class VIEW3D_PT_arbrume_surroundings(bpy.types.Panel):
+    """Crown envelope and obstacles of the plant"""
+
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = CATEGORY
+    bl_label = "Surroundings"
+    bl_parent_id = MAIN_PANEL
+    bl_options: ClassVar[set[str]] = {"DEFAULT_CLOSED"}
+
+    @classmethod
+    def poll(cls, context):
+        return active_plant(context) is not None
+
+    def draw(self, context):
+        obj = active_plant(context)
+        settings = obj.arbrume
+        layout = self.layout
+        layout.enabled = plant.is_editable(obj)
+        species = props.effective_species(settings)
+        if not voxels.is_self_organizing(species):
+            layout.label(text="Envelope and obstacles shape", icon="INFO")
+            layout.label(text="self-organizing species only", icon="BLANK1")
+        col = layout.column()
+        col.use_property_split = True
+        col.use_property_decorate = False
+        col.prop(settings, "envelope")
+        sub = col.row()
+        sub.enabled = settings.envelope is not None
+        sub.prop(settings, "envelope_ground")
+        col.prop(settings, "voxel_size")
+        if settings.voxel_size == 0.0:
+            cell = surroundings.cell_size(settings, species)
+            col.label(text=f"Automatic voxel size: {cell * 100:.1f} cm")
+        header = layout.row()
+        header.label(text="Obstacles")
+        header.operator("arbrume.add_obstacle", text="", icon="ADD")
+        for index, item in enumerate(settings.obstacles):
+            row = layout.row(align=True)
+            row.prop(item, "obj", text="")
+            row.prop(item, "blocks", text="", icon="MOD_PHYSICS")
+            row.prop(item, "shade")
+            op = row.operator("arbrume.remove_obstacle", text="", icon="X")
+            op.index = index
+        _surroundings_status(layout, obj)
+
+
 class VIEW3D_PT_arbrume_tools(bpy.types.Panel):
     """Variations, batches, levels of detail and species files"""
 
@@ -116,6 +177,7 @@ class VIEW3D_PT_arbrume_tools(bpy.types.Panel):
         col.operator("arbrume.duplicate_new_seed", icon="DUPLICATE")
         col.operator("arbrume.scatter", icon="GRID")
         col.operator("arbrume.make_lods", icon="MOD_DECIM")
+        col.operator("arbrume.growth_frames", icon="TIME")
         col = self.layout.column(align=True)
         col.operator("arbrume.export_species", icon="EXPORT")
         col.operator("arbrume.import_species", icon="IMPORT")
@@ -213,4 +275,4 @@ def menu_add(self, _context) -> None:
     self.layout.operator("arbrume.add_plant", icon="OUTLINER_OB_POINTCLOUD")
 
 
-CLASSES = (VIEW3D_PT_arbrume, VIEW3D_PT_arbrume_tools)
+CLASSES = (VIEW3D_PT_arbrume, VIEW3D_PT_arbrume_surroundings, VIEW3D_PT_arbrume_tools)

@@ -1,0 +1,45 @@
+# A small grove of seven trees of three species, 5 to 6 m apart, so that the crowns meet.
+quality = 0.5
+stand_file = true
+
+[[stand]]
+species = "open_grown_broadleaf"
+position = [0.0, 0.0, 0.0]
+age = 16
+seed = 11
+
+[[stand]]
+species = "open_grown_broadleaf"
+position = [5.5, 0.0, 1.0]
+age = 15
+seed = 12
+
+[[stand]]
+species = "excurrent_conifer"
+position = [-5.0, 0.0, 2.0]
+age = 18
+seed = 13
+
+[[stand]]
+species = "excurrent_conifer"
+position = [2.0, 0.0, -5.5]
+age = 17
+seed = 14
+
+[[stand]]
+species = "spreading_decurrent"
+position = [-3.0, 0.0, -5.0]
+age = 14
+seed = 15
+
+[[stand]]
+species = "spreading_decurrent"
+position = [3.5, 0.0, 6.0]
+age = 13
+seed = 16
+
+[[stand]]
+species = "open_grown_broadleaf"
+position = [-2.5, 0.0, 5.5]
+age = 14
+seed = 17

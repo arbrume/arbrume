@@ -34,6 +34,7 @@ use crate::error::CliError;
 use crate::lods::{self, LodArgs, LodConfig};
 use crate::progress::Progress;
 use crate::source::{pack_label, resolve};
+use crate::stand;
 use crate::textures::{self, TextureChoice};
 
 /// Name of the manifest file in the output directory.
@@ -113,9 +114,20 @@ pub struct GenArgs {
     /// or tier-b (one closed bark surface) [default: tier-a] (docs/junctions.md).
     #[arg(long, value_enum, value_name = "TIER")]
     junctions: Option<JunctionChoice>,
+    /// Options of the `[[stand]]` of a config file.
+    #[command(flatten)]
+    stand: StandArgs,
     /// Print nothing but errors.
     #[arg(long, short)]
     quiet: bool,
+}
+
+/// The stand options of `arbrume gen`.
+#[derive(Debug, Args)]
+struct StandArgs {
+    /// Also write the `[[stand]]` of the config file as one file, stand.glb.
+    #[arg(long, requires = "config")]
+    stand_file: bool,
 }
 
 /// The `--random` options of `arbrume gen`.
@@ -148,7 +160,7 @@ pub enum ThumbFormat {
 
 impl ThumbFormat {
     /// File extension, without the dot.
-    const fn extension(self) -> &'static str {
+    pub const fn extension(self) -> &'static str {
         match self {
             Self::Jpg => "jpg",
             Self::Png => "png",
@@ -247,6 +259,8 @@ fn random_batch(args: &GenArgs) -> Result<Batch, CliError> {
         random: Some((sampler, args.count)),
         textures: None,
         junctions: None,
+        stand: Vec::new(),
+        stand_file: false,
     })
 }
 
@@ -290,6 +304,8 @@ fn batch_from_flags(args: &GenArgs) -> Result<Batch, CliError> {
         random: None,
         textures: None,
         junctions: None,
+        stand: Vec::new(),
+        stand_file: false,
     })
 }
 
@@ -341,6 +357,8 @@ pub fn run(args: &GenArgs) -> Result<(), CliError> {
     if args.jobs == Some(0) {
         return Err(CliError::usage("--jobs must be at least 1"));
     }
+    batch.stand_file |= args.stand.stand_file;
+    check_stand(&batch)?;
     let options = RunOptions {
         out,
         jobs: args.jobs,
@@ -348,7 +366,33 @@ pub fn run(args: &GenArgs) -> Result<(), CliError> {
         manifest: args.manifest || batch.manifest,
         quiet: args.quiet,
     };
-    execute(&batch, &options)
+    if batch.stand.is_empty() || !batch.entries.is_empty() {
+        execute(&batch, &options)?;
+    }
+    if batch.stand.is_empty() {
+        return Ok(());
+    }
+    let out = options.out.as_path();
+    fs::create_dir_all(out)
+        .map_err(|e| CliError::failed(format!("cannot create {}: {e}", out.display())))?;
+    stand::write(&batch, out, options.quiet)
+}
+
+/// Rejects the options a stand does not support.
+fn check_stand(batch: &Batch) -> Result<(), CliError> {
+    let chained = batch.lod.wind.is_some() || batch.lod.billboard.is_some();
+    let unsupported = batch.lods > 1 || batch.growth_frames > 0 || chained;
+    if !batch.stand.is_empty() && (unsupported || batch.annotations.any()) {
+        return Err(CliError::usage(
+            "a [[stand]] is written at one level of detail, without growth sequences, wind, billboards or annotations",
+        ));
+    }
+    if batch.stand_file && batch.stand.is_empty() {
+        return Err(CliError::usage(
+            "--stand-file needs a [[stand]] in the config file",
+        ));
+    }
+    Ok(())
 }
 
 /// Options of a run, from the command line.

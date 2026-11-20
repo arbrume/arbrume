@@ -256,6 +256,52 @@ others. Elements of arrays such as `[[architecture.axes]]` cannot be addressed; 
 the whole array. The result is validated like any species file, so a misspelt path is an
 error.
 
+### Stands
+
+A config file may also list the plants of one stand: plants of any species, each at
+its place, grown together so that they shade one another (see
+[Several plants](growth.md#several-plants-stands)). `docs/stand.toml` is a stand of three,
+and `examples/stands/` holds a grove of seven trees and a hedgerow of seven plants.
+
+```toml
+quality = 0.5                   # mesh quality of every plant of the stand
+stand_file = true               # also write stand.glb, like --stand-file (default false)
+
+[[stand]]
+species = "open_grown_broadleaf" # preset, pack species `pack_id/name`, or species file
+position = [-3.0, 0.0, 0.0]     # meters, Y up
+age = 14                        # growth cycles
+seed = 1                        # seed of this plant, used as is
+scale = 1.0                     # optional (default 1)
+name = "big_tree"               # optional label in file names (default the species)
+
+[[stand]]
+species = "excurrent_conifer"
+position = [3.0, 0.0, 0.0]
+age = 16
+seed = 2
+```
+
+```sh
+arbrume gen --config docs/stand.toml --out stand --stand-file --thumb 512
+```
+
+Plant `i` is written as `stand_<i>_<label>_<seed>.glb`, in its own frame with its base
+at the origin; its node `extras` hold the usual metadata plus `stand_index` and
+`position`. `stand_file = true` or `--stand-file` writes the whole stand as `stand.glb`
+too: a root node (`extras`: generator, version, number of plants) with one child node
+per plant, translated to its position, each with its own mesh and `extras`. Textures
+shared by several plants are stored once. With `--thumb`, `stand.<format>` shows the
+whole stand.
+
+The top-level `quality`, `textures`, `junctions` and `[surroundings]` apply to the
+stand; the surroundings are in the frame of the stand, not of a plant. A stand is
+written at one level of detail: `lods > 1`, growth frames, wind, billboards and
+annotations are rejected (exit code 2). A config file may hold `[[species]]` entries
+too; they are generated as a batch first, the stand after. The plants of a stand do not
+depend on the order of the `[[stand]]` entries nor on `--jobs`; the file names do, since
+they carry the index.
+
 ## `arbrume bench`
 
 For every species (`--species a,b`, default all presets) and age (`--ages`, default
@@ -338,6 +384,7 @@ println!("{} triangles, {:.1} m", plant.stats.triangles, plant.stats.height);
 | `Generator::generate_within(species, params, &budget, &mut plant)`, `Budget { triangles, vertices }` | the same within a mesh budget: the quality is lowered until the mesh fits, and `plant.params.mesh` records the options used |
 | `RandomSampler::new(seed)`, `.pick(index)`, `RandomPick { preset, species, params, budget }`, `.generate(&mut generator, &mut plant)` | random plants: a preset, an age, a scale and a varied individual per index |
 | `generate_many(&[(species, params)])` | a batch on the current `rayon` pool, results in input order |
+| `Generator::generate_group(&[(species, params, position)])`, `GroupEntry` | a stand: the plants grown together so that they shade one another, then meshed; one plant per entry, in input order, each in its own frame |
 | `run_batch(count, \|generator, plant, index\| ..)` | a batch that consumes each plant in the task, one generator and one scratch plant per thread |
 | `Sampler { seed, age, scale, quality }`, `.params(index)`, `plant_seed(seed, index)` | the per-plant parameters of a dataset |
 | `Distribution` | fixed, uniform or normal parameter distribution (TOML deserializable) |
@@ -365,6 +412,7 @@ arbrume sheet --random 64 --offset 64 --seeds 1 --size 160 --out random_1.png
 arbrume sheet --species open_grown_broadleaf --ages 12,22 --surroundings wall.toml --out wall.png
 arbrume sheet --species forest_grown_broadleaf --ages 40 --growth-frames 6 --out frames.png
 arbrume sheet --species hedge_shrub --ages 6,12 --row 5 --spacing 0.8 --surroundings box.toml --out hedge.png
+arbrume sheet --stand examples/stands/grove.toml --azimuths 20,110 --size 640 --out grove.png
 ```
 
 A species sheet has one row per species, seed and azimuth and one column per age; a
@@ -379,4 +427,7 @@ blocking occluders. `--growth-frames K` replaces the age columns by `K` frames o
 growth of the oldest age, all framed like the last. `--row N` grows `N` plants of the
 species side by side along X, `--spacing` meters apart (default 4), with
 `arbrume_grow::grow_together`, so that they share their light; with surroundings the
-row is centred on their origin.
+row is centred on their origin. `--stand FILE` shows the `[[stand]]` of a config file
+instead: per azimuth, the stand (left) and the same plants grown alone, placed at the
+same positions and framed alike (right). One line per plant compares its height, crown
+width and node count in the stand and alone, and how far the centre of its nodes moved.

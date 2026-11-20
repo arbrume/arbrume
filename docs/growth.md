@@ -494,24 +494,74 @@ receives `shade * a * b^-q` for every depth `q` in `0..=q_max` such that the vol
 comes within `q` voxels of the point `q` voxels above the bud. This treats a solid as
 one opaque layer per depth with one strength, a coarse rule of this implementation, not
 a light simulation. A wall has `shade = 1`; the crown of a neighbour is an ellipsoid
-with `blocks = false` and a larger `shade`. The shade of occluders does not enter `V`.
+with `blocks = false` and a larger `shade`. The shade of occluders also enters `V`: its
+central difference over one voxel along each axis is added to the gradient of $s$, so
+buds turn away from a shading wall as well as being darkened by it.
 
-**Several plants.** `grow_together` grows several plants in lockstep, each at its
-position, the self-organizing ones casting into one shadow grid and reading it:
+### Several plants: stands
+
+`grow_together` grows a stand: several plants of any species, each at its position in
+the frame of the surroundings, that shade one another.
 
 ```rust
 let stand = [
     Standing { species: &oak, params, position: Vec3::new(-2.5, 0.0, 0.0) },
-    Standing { species: &oak, params: other, position: Vec3::new(2.5, 0.0, 0.0) },
+    Standing { species: &pine, params: other, position: Vec3::new(2.5, 0.0, 0.0) },
 ];
 let graphs = grow_together(&stand, &Surroundings::none());
 ```
 
-Each graph comes back in the frame of its own plant. The grid takes the shadow
-coefficients of the first plant that senses light; within a cycle the plants grow in the
-order given, each seeing the shadows cast up to the previous cycle. This is a first
-form of shared light, enough for two trees or a hedge row; it does not yet batch or
-mesh the group.
+Each graph comes back in the frame of its own plant, standing at the origin, in the
+order of the entries. A plant younger than the oldest starts later, so that all end
+together. The plants grow in lockstep, and every cycle has three phases, each done for
+all the plants before the next starts:
+
+1. every self-organizing plant that senses light casts the shadow of its new metamers
+   into one shared shadow grid, and takes back that of the metamers it shed;
+2. every plant senses the grid, which then holds the shade of the whole stand as it was
+   at the end of the previous cycle;
+3. every plant allocates, grows its shoots and sheds, on its own; the plants of this
+   phase run in parallel on the `rayon` pool.
+
+No plant sees the growth of another within the same cycle, so the order of the entries
+does not matter. Floating-point sums depend on their order, so the casts are summed in
+an order fixed by the entries themselves (position, then seed, age, scale and species
+name): permuting the entries gives the same plants to the bit. The number of threads
+and the grid storage do not change them either.
+
+**Each species casts its own shadow.** The grid has the voxels of the species with the
+finest voxels (`shadow_cell` times the internode length and the scale). A plant casts
+with the strength `a`, decay `b` and depth `q_max` of its own species; when its voxels
+are larger than those of the grid, its pyramid is rescaled to the grid: `q_max` times
+the ratio of the edges, rounded, and `b` raised to the inverse ratio, so that the
+pyramid reaches as deep and fades as fast in meters
+(`ShadowParams::in_cell`). A bud reads its exposure `Q = max(C - s + a, 0)` with the
+`C` and `a` of its own species. A plant of a species with coarser voxels than the grid
+reads shade on finer voxels than it would alone, so its growth is not exactly that of
+the same plant alone even far from its neighbours.
+
+**Markers are not shared.** A plant that senses space scatters its own markers: in the
+envelope of the surroundings, or in its default envelope moved to where it stands. Two
+crowns of space-colonizing plants can therefore overlap; they compete through light
+only, when they also sense it (`sensing = "both"`).
+
+**Parametric plants** are grown as by `grow`: they neither cast nor sense shade.
+
+**One plant.** A stand of one plant at the origin is the plant grown alone, to the bit.
+A plant elsewhere reads the grid in voxels aligned with the stand, not with itself, so
+it differs slightly from the plant grown alone even when it has no neighbour: two plants
+50 m apart do not shade each other, and still differ from the same plants grown alone.
+
+**Cost.** Phase 1 is the sensing of the `Competition` stage, which casts before it
+reads; a stand with more than one plant sensing light senses twice per cycle, once to
+cast and once to read. Sensing is idempotent, so this costs time, not a different plant.
+The grid covers the whole stand: with the dense storage its memory grows with the area
+of the stand; `grow_together_with` takes `EngineOptions` (a sparse grid for a stand
+spread over a large area).
+
+`arbrume_gen::Generator::generate_group` grows a stand and meshes each plant; the
+command line writes the stand of a config file (`[[stand]]`, see
+[Command line](cli.md#stands)), and Python has `arbrume.generate_stand`.
 
 ### Age and growth sequences
 
@@ -557,12 +607,16 @@ compare options, they are not targets.
 - **Sensing buds in parallel** (`parallel_buds`). Reading the grid for each bud is a few
   memory reads; spreading it over the pool changed the growth time by -15 % to +50 %
   from one run to the next without a consistent gain. The default is sequential.
-- **Giving markers to buds in parallel** (`parallel_markers`). Each marker looks up the
-  buds around it in a read-only hash grid; the sums are then made on one thread in
-  marker order, so the result does not depend on the threads. One cycle with 6 934
-  markers took 0.69 ms on one thread and 0.17 ms on the pool, and a whole growth of the
-  marker preset is about 2.4 times faster; in a batch that already uses every thread it
-  changes nothing. The default is parallel.
+- **Giving markers to buds in parallel** (`parallel_markers`). The markers are bucketed
+  in a hash grid and each bud visits the cells within reach of it, skipping those
+  outside its occupancy zone and perception cone; when the buds are not fewer than the
+  markers, the buds are bucketed and each marker looks them up instead. Each marker
+  keeps its closest claiming bud, and the sums are then made on one thread in marker
+  order, so the result does not depend on the threads nor on the way round. One cycle
+  with 6 934 markers and 70 buds took 0.23 to 0.31 ms on one thread and 0.16 to
+  0.18 ms on the pool, against 1.39 ms and 0.19 ms when every marker looked up the buds,
+  measured on a loaded machine; in a batch that already uses every thread it changes
+  nothing. The default is parallel.
 
 Growth time of one plant, default options (median of 7, milliseconds):
 

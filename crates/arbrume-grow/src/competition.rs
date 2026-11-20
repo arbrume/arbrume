@@ -6,7 +6,8 @@
 //! * **shadow**: every metamer casts its pyramid in a [`ShadowGrid`] when it appears
 //!   and takes it back when it is shed. `Q = max(C - s + a, 0)`, with the shade of the
 //!   occluders of the [`Surroundings`] added to `s`, and `V` is the direction opposite
-//!   to the gradient of `s`;
+//!   to the gradient of `s`, the shade of the occluders included, so buds turn away
+//!   from them;
 //! * **markers**: `Q` is 1 for a bud that owns markers and 0 otherwise, `V` points to
 //!   its markers ([`Markers`]). The markers fill the envelope of the surroundings, or a
 //!   default envelope drawn from the species when there is none
@@ -25,8 +26,9 @@
 //! # Threads
 //!
 //! Each bud is sensed from read-only data and written to its own slot, and each marker
-//! is given to a bud from read-only data, the sums being made afterwards in a fixed
-//! order. Both passes can therefore run on the `rayon` pool without changing any
+//! is given to the smallest of the claims of the buds on it, a minimum that does not
+//! depend on the order of the claims, the sums being made afterwards in a fixed order
+//! ([`Markers`]). Both passes can therefore run on the `rayon` pool without changing any
 //! result; [`EngineOptions`] says which do, and `docs/growth.md` has the measurements
 //! behind its defaults.
 
@@ -111,6 +113,8 @@ pub struct Competition<'a> {
     /// Position of the plant in the frame of the surroundings and of the grid.
     origin: Vec3,
     shadow: Option<ShadowGrid>,
+    /// Whether an occluder casts shade, which then also steers the buds.
+    shading: bool,
     markers: Option<Markers>,
     perception: Perception,
     exponent: f32,
@@ -147,6 +151,7 @@ impl<'a> Competition<'a> {
             surroundings,
             origin: Vec3::ZERO,
             shadow,
+            shading: surroundings.occluders.iter().any(|o| o.shade > 0.0),
             markers,
             perception: Perception {
                 occupancy: model.occupancy_radius * unit,
@@ -221,10 +226,26 @@ impl<'a> Competition<'a> {
         };
         let cell = grid.params().cell;
         let shade = self.surroundings.shade(position, cell, grid.weights());
+        let mut gradient = grid.gradient(position);
+        if self.shading {
+            gradient += self.shade_gradient(position, grid);
+        }
         Sensed {
             exposure: grid.exposure(position, shade),
-            preferred: (-grid.gradient(position)).normalize_or_zero(),
+            preferred: (-gradient).normalize_or_zero(),
         }
+    }
+
+    /// Gradient of the shade of the occluders at `position`: the central difference
+    /// over one voxel along each axis, in the units of [`ShadowGrid::gradient`].
+    fn shade_gradient(&self, position: Vec3, grid: &ShadowGrid) -> Vec3 {
+        let cell = grid.params().cell;
+        let shade = |offset: Vec3| {
+            self.surroundings
+                .shade(position + offset * cell, cell, grid.weights())
+        };
+        let slope = |axis: Vec3| 0.5 * (shade(axis) - shade(-axis));
+        Vec3::new(slope(Vec3::X), slope(Vec3::Y), slope(Vec3::Z))
     }
 
     /// Fills `positions`, `directions` and `buds` with the live buds of `graph`.

@@ -14,9 +14,14 @@
 //!
 //! # Determinism
 //!
-//! Step 2 looks buds up in a read-only [`HashGrid`], marker by marker, and may run on
-//! the `rayon` pool: it only records the bud of each marker. The sums of step 3 are
-//! then made on one thread in marker order, so the floating-point result does not
+//! Step 2 buckets the markers in a [`HashGrid`] and visits, bud by bud, only the cells
+//! within reach of the bud, skipping those outside its occupancy zone and perception
+//! cone. When the buds are not fewer than the markers it buckets the buds instead and
+//! visits them marker by marker, the cheaper way round. Either way each marker keeps
+//! the smallest pair (squared distance, bud) of the buds that see it: a minimum over
+//! the same pairs and the same distances, which depends neither on the way round nor on
+//! the order of the visits, so this step may run on the `rayon` pool. The sums of step
+//! 3 are then made on one thread in marker order, so the floating-point result does not
 //! depend on the number of threads. Ties between buds at the same distance go to the
 //! bud given first.
 
@@ -25,13 +30,20 @@ use arbrume_core::grid::HashGrid;
 use arbrume_core::rng::{Rng, Stream};
 use glam::Vec3;
 use rayon::prelude::*;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Marker given to no bud.
 const FREE: u32 = u32::MAX;
 /// Marker inside an occupancy zone.
 const TAKEN: u32 = u32::MAX - 1;
-/// Markers per task of the parallel association.
-const CHUNK: usize = 512;
+/// Buds per task of the parallel association, bud by bud.
+const BUD_CHUNK: usize = 16;
+/// Markers per task of the parallel association, marker by marker.
+const MARKER_CHUNK: usize = 512;
+/// Claim of a marker inside an occupancy zone; it beats every claim of a seeing bud.
+const CLAIM_TAKEN: u64 = 0;
+/// Claim of a marker no bud sees.
+const CLAIM_FREE: u64 = u64::MAX;
 
 /// Sizes of the zones around a bud, in meters and radians.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -44,6 +56,81 @@ pub struct Perception {
     pub angle: f32,
 }
 
+/// The tests of the zones of a bud, with their constants.
+#[derive(Debug, Clone, Copy)]
+struct Zones {
+    occupancy: f32,
+    occupancy_sq: f32,
+    reach: f32,
+    /// Radius of the queries: the larger of `occupancy` and `reach`.
+    radius: f32,
+    /// Cosine and sine of the half-angle of the cone.
+    cos_limit: f32,
+    sin_limit: f32,
+    /// Whether the cone is at least a half-space, which leaves no cell to skip by angle.
+    wide: bool,
+}
+
+impl Zones {
+    fn new(perception: &Perception) -> Self {
+        let half = 0.5 * perception.angle;
+        Self {
+            occupancy: perception.occupancy,
+            occupancy_sq: perception.occupancy * perception.occupancy,
+            reach: perception.reach,
+            radius: perception.reach.max(perception.occupancy),
+            cos_limit: half.cos(),
+            sin_limit: half.sin(),
+            wide: half >= std::f32::consts::FRAC_PI_2,
+        }
+    }
+
+    /// Claim of the bud `bud` at `position`, growing towards `direction`, on the marker
+    /// at `marker`, `distance_sq` away from it.
+    ///
+    /// The claim is [`CLAIM_TAKEN`] for a marker in the occupancy zone, the squared
+    /// distance (high bits) and bud index (low bits) for a marker in the perception
+    /// cone, and [`CLAIM_FREE`] otherwise: the smallest claim on a marker names its
+    /// owner, closest bud first.
+    fn claim(&self, bud: u32, (position, direction): Bud, marker: Vec3, distance_sq: f32) -> u64 {
+        if distance_sq <= self.occupancy_sq {
+            return CLAIM_TAKEN;
+        }
+        let distance = distance_sq.sqrt();
+        let along = (marker - position).dot(direction);
+        if distance <= self.reach && along >= self.cos_limit * distance {
+            (u64::from(distance_sq.to_bits()) << 32) | u64::from(bud)
+        } else {
+            CLAIM_FREE
+        }
+    }
+
+    /// Whether a cell of edge `size` centered on `center` may hold a marker in a zone of
+    /// the bud at `position` growing towards `direction`.
+    ///
+    /// The cell is bounded by the ball of radius `size` about its center, wider than the
+    /// cell, which leaves room for rounding: a cell rejected here holds no marker that
+    /// [`Self::claim`] would accept. The ball meets the cone when the angle between the
+    /// axis and the center is at most the half-angle plus `asin(size / distance)`.
+    fn may_reach(&self, (position, direction): Bud, center: Vec3, size: f32) -> bool {
+        let offset = center - position;
+        let distance = offset.length();
+        if distance <= size + self.occupancy || self.wide {
+            return distance <= size + self.radius;
+        }
+        if distance > size + self.reach {
+            return false;
+        }
+        let sin_extra = size / distance;
+        let cos_extra = (1.0 - sin_extra * sin_extra).sqrt();
+        let cos_widest = self.cos_limit * cos_extra - self.sin_limit * sin_extra;
+        offset.dot(direction) >= cos_widest * distance
+    }
+}
+
+/// Position and unit direction of a bud.
+type Bud = (Vec3, Vec3);
+
 /// The markers left and the working memory of their association to buds.
 #[derive(Debug, Clone, Default)]
 pub struct Markers {
@@ -51,6 +138,7 @@ pub struct Markers {
     grid: HashGrid,
     owner: Vec<u32>,
     sums: Vec<Vec3>,
+    buds: Vec<Bud>,
 }
 
 impl Markers {
@@ -91,37 +179,125 @@ impl Markers {
         &self.points
     }
 
-    /// Owner of `marker` among the buds of the grid: a bud index, [`FREE`] or [`TAKEN`].
-    fn owner_of(
+    /// Owner of a marker from its smallest claim: a bud index, [`FREE`] or [`TAKEN`].
+    const fn owner_of(claim: u64) -> u32 {
+        match claim {
+            CLAIM_TAKEN => TAKEN,
+            CLAIM_FREE => FREE,
+            _ => claim as u32,
+        }
+    }
+
+    /// Calls `claim(marker, key)` for every marker of `grid` the bud `bud` claims.
+    fn claims_of(
         grid: &HashGrid,
-        marker: Vec3,
-        directions: &[Vec3],
-        perception: &Perception,
-    ) -> u32 {
-        let occupancy_sq = perception.occupancy * perception.occupancy;
-        let cos_limit = (0.5 * perception.angle).cos();
-        let reach = perception.reach.max(perception.occupancy);
-        let mut best: Option<(u32, f32)> = None;
-        let mut taken = false;
-        grid.for_each_in_radius(marker, reach, |bud, position, distance_sq| {
-            if distance_sq <= occupancy_sq {
-                taken = true;
-                return;
-            }
-            let distance = distance_sq.sqrt();
-            let along = (marker - position).dot(directions[bud as usize]);
-            let seen = distance <= perception.reach && along >= cos_limit * distance;
-            let closer = best.is_none_or(|(best_bud, best_sq)| {
-                distance_sq < best_sq || (distance_sq <= best_sq && bud < best_bud)
-            });
-            if seen && closer {
-                best = Some((bud, distance_sq));
+        zones: &Zones,
+        bud: u32,
+        zone: Bud,
+        mut claim: impl FnMut(usize, u64),
+    ) {
+        let keep = |center, size| zones.may_reach(zone, center, size);
+        grid.for_each_in_kept_cells(zone.0, zones.radius, keep, |marker, point, distance_sq| {
+            let key = zones.claim(bud, zone, point, distance_sq);
+            if key != CLAIM_FREE {
+                claim(marker as usize, key);
             }
         });
-        if taken {
-            TAKEN
+    }
+
+    /// Fills `owner` with the owner of each of the `count` markers of `grid`, visiting
+    /// the cells around each bud of `buds`.
+    fn owners_from_buds(
+        grid: &HashGrid,
+        zones: &Zones,
+        buds: &[Bud],
+        count: usize,
+        parallel: bool,
+        owner: &mut Vec<u32>,
+    ) {
+        if parallel {
+            let claims: Vec<AtomicU64> = (0..count).map(|_| AtomicU64::new(CLAIM_FREE)).collect();
+            buds.par_iter()
+                .enumerate()
+                .with_min_len(BUD_CHUNK)
+                .for_each(|(bud, &zone)| {
+                    Self::claims_of(grid, zones, bud as u32, zone, |marker, key| {
+                        claims[marker].fetch_min(key, Ordering::Relaxed);
+                    });
+                });
+            owner.extend(
+                claims
+                    .into_iter()
+                    .map(|claim| Self::owner_of(claim.into_inner())),
+            );
         } else {
-            best.map_or(FREE, |(bud, _)| bud)
+            let mut claims = vec![CLAIM_FREE; count];
+            for (bud, &zone) in buds.iter().enumerate() {
+                Self::claims_of(grid, zones, bud as u32, zone, |marker, key| {
+                    claims[marker] = claims[marker].min(key);
+                });
+            }
+            owner.extend(claims.into_iter().map(Self::owner_of));
+        }
+    }
+
+    /// Fills `owner` with the owner of each marker of `markers`, visiting the buds of
+    /// `grid` around it.
+    fn owners_from_markers(
+        grid: &HashGrid,
+        zones: &Zones,
+        buds: &[Bud],
+        markers: &[Vec3],
+        parallel: bool,
+        owner: &mut Vec<u32>,
+    ) {
+        let owner_of = |marker: &Vec3| {
+            let mut best = CLAIM_FREE;
+            grid.for_each_in_radius(*marker, zones.radius, |bud, _, distance_sq| {
+                let claim = zones.claim(bud, buds[bud as usize], *marker, distance_sq);
+                best = best.min(claim);
+            });
+            Self::owner_of(best)
+        };
+        owner.resize(markers.len(), FREE);
+        if parallel {
+            owner
+                .par_chunks_mut(MARKER_CHUNK)
+                .zip(markers.par_chunks(MARKER_CHUNK))
+                .for_each(|(owners, markers)| {
+                    for (slot, marker) in owners.iter_mut().zip(markers) {
+                        *slot = owner_of(marker);
+                    }
+                });
+        } else {
+            for (slot, marker) in owner.iter_mut().zip(markers) {
+                *slot = owner_of(marker);
+            }
+        }
+    }
+
+    /// Fills `owner` with the owner of every marker for the buds at `positions`,
+    /// bucketing the larger of the two sets.
+    fn associate(
+        &mut self,
+        positions: &[Vec3],
+        directions: &[Vec3],
+        perception: &Perception,
+        parallel: bool,
+    ) {
+        let zones = Zones::new(perception);
+        self.buds.clear();
+        self.buds
+            .extend(positions.iter().copied().zip(directions.iter().copied()));
+        self.owner.clear();
+        let (buds, owner) = (&self.buds, &mut self.owner);
+        if self.points.len() > positions.len() {
+            self.grid.rebuild(&self.points, zones.radius);
+            let count = self.points.len();
+            Self::owners_from_buds(&self.grid, &zones, buds, count, parallel, owner);
+        } else {
+            self.grid.rebuild(positions, zones.radius);
+            Self::owners_from_markers(&self.grid, &zones, buds, &self.points, parallel, owner);
         }
     }
 
@@ -143,26 +319,7 @@ impl Markers {
         if positions.is_empty() || self.points.is_empty() {
             return &self.sums;
         }
-        let cell = perception.reach.max(perception.occupancy);
-        self.grid.rebuild(positions, cell);
-        self.owner.clear();
-        self.owner.resize(self.points.len(), FREE);
-        let grid = &self.grid;
-        let owner = |marker: &Vec3| Self::owner_of(grid, *marker, directions, perception);
-        if parallel {
-            self.owner
-                .par_chunks_mut(CHUNK)
-                .zip(self.points.par_chunks(CHUNK))
-                .for_each(|(owners, markers)| {
-                    for (slot, marker) in owners.iter_mut().zip(markers) {
-                        *slot = owner(marker);
-                    }
-                });
-        } else {
-            for (slot, marker) in self.owner.iter_mut().zip(&self.points) {
-                *slot = owner(marker);
-            }
-        }
+        self.associate(positions, directions, perception, parallel);
         for (marker, &bud) in self.points.iter().zip(&self.owner) {
             if bud < TAKEN {
                 let towards = *marker - positions[bud as usize];
@@ -181,8 +338,9 @@ impl Markers {
 
 #[cfg(test)]
 mod tests {
-    use super::{Markers, Perception};
+    use super::{CLAIM_FREE, Markers, Perception, TAKEN, Zones};
     use crate::surroundings::Shape;
+    use arbrume_core::rng::{Rng, Stream};
     use glam::Vec3;
 
     const PERCEPTION: Perception = Perception {
@@ -281,5 +439,78 @@ mod tests {
         assert_eq!(sequential, parallel);
         assert_eq!(one.points(), many.points());
         assert!(one.points().len() < count);
+    }
+
+    /// Markers left and directions of a search that tests every bud against every marker.
+    fn brute_force(
+        markers: &[Vec3],
+        buds: &[(Vec3, Vec3)],
+        perception: &Perception,
+    ) -> (Vec<Vec3>, Vec<Vec3>) {
+        let zones = Zones::new(perception);
+        let mut sums = vec![Vec3::ZERO; buds.len()];
+        let mut left = Vec::new();
+        for &marker in markers {
+            let claim = (0..buds.len())
+                .map(|bud| {
+                    zones.claim(
+                        bud as u32,
+                        buds[bud],
+                        marker,
+                        marker.distance_squared(buds[bud].0),
+                    )
+                })
+                .fold(CLAIM_FREE, u64::min);
+            let owner = Markers::owner_of(claim);
+            if owner < TAKEN {
+                sums[owner as usize] += (marker - buds[owner as usize].0).normalize_or_zero();
+            }
+            if owner != TAKEN {
+                left.push(marker);
+            }
+        }
+        (
+            left,
+            sums.iter().map(|sum| sum.normalize_or_zero()).collect(),
+        )
+    }
+
+    #[test]
+    fn both_ways_round_match_a_search_of_every_pair() {
+        let mut rng = Rng::new(5, 0, Stream::ENVIRONMENT);
+        let mut cloud = |count: usize, extent: f32| -> Vec<Vec3> {
+            (0..count)
+                .map(|_| Vec3::new(rng.signed(), rng.signed(), rng.signed()) * extent)
+                .collect()
+        };
+        let markers = cloud(3000, 6.0);
+        let (few, many) = (cloud(80, 5.0), cloud(4000, 5.0));
+        let mut rng = Rng::new(6, 0, Stream::ENVIRONMENT);
+        for positions in [few, many] {
+            let directions: Vec<Vec3> = positions.iter().map(|_| rng.unit_sphere()).collect();
+            let buds: Vec<(Vec3, Vec3)> = positions
+                .iter()
+                .copied()
+                .zip(directions.iter().copied())
+                .collect();
+            for angle in [0.6_f32, std::f32::consts::FRAC_PI_2, 4.0] {
+                let perception = Perception {
+                    angle,
+                    ..PERCEPTION
+                };
+                let (left, expected) = brute_force(&markers, &buds, &perception);
+                for parallel in [false, true] {
+                    let mut grid = Markers::from_points(markers.clone());
+                    let seen = grid.perceive(&positions, &directions, &perception, parallel);
+                    assert_eq!(
+                        seen,
+                        expected.as_slice(),
+                        "{} buds, angle {angle}",
+                        buds.len()
+                    );
+                    assert_eq!(grid.points(), left.as_slice());
+                }
+            }
+        }
     }
 }

@@ -22,6 +22,8 @@
 //!   within a triangle budget.
 //! * [`presets`] are species files embedded in the library; [`species_with_overrides`]
 //!   changes fields of a species file by dotted path before it is parsed.
+//! * [`Generator::generate_group`] grows a stand of plants of any species together, so
+//!   that they shade one another, and meshes each in its own frame.
 //! * [`GenParams::with_surroundings`] places the plant in an envelope, next to obstacles
 //!   or under neighbours ([`Surroundings`]); species in the self-organizing mode respond.
 //! * [`Generator::timeline`] and [`Generator::frame`] mesh one grown plant at several
@@ -41,6 +43,7 @@
 #![forbid(unsafe_code)]
 
 mod batch;
+mod group;
 mod lods;
 mod metadata;
 mod overrides;
@@ -56,6 +59,7 @@ pub use arbrume_lod::{BillboardMethod, BillboardOptions};
 pub use arbrume_mesh::{Junctions, LeafInstance, LeafInstances, LodOptions};
 pub use arbrume_texture::{SpeciesTextures, TextureCache, TextureOptions};
 pub use batch::{Budget, Generator, generate, generate_many, run_batch};
+pub use group::GroupEntry;
 pub use lods::{LodKind, LodMesh, LodSettings};
 pub use metadata::{GENERATOR, VERSION, metadata};
 pub use overrides::species_with_overrides;

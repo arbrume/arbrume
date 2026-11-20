@@ -25,6 +25,12 @@ class PlantStatus:
     upload_ms: float = 0.0
     vertices: int = 0
     triangles: int = 0
+    surroundings_ms: float = 0.0
+    voxelized: int = 0
+    cached: int = 0
+    filled: int = 0
+    cell: float = 0.0
+    warning: str = ""
 
 
 @dataclass

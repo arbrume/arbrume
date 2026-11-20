@@ -117,6 +117,12 @@ impl Tree {
         self.data.plant.params.age
     }
 
+    /// Last growth cycle shown, for a frame of `growth_frames`; `None` for a whole plant.
+    #[getter]
+    fn max_cycle(&self) -> Option<u16> {
+        self.data.plant.params.mesh.max_cycle
+    }
+
     /// Scale factor.
     #[getter]
     fn scale(&self) -> f32 {

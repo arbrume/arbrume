@@ -14,6 +14,7 @@ mod instancing;
 mod json;
 mod levels;
 mod skin;
+mod stand;
 mod tangent;
 mod wind;
 
@@ -21,6 +22,7 @@ pub use instancing::{InstanceTransform, LeafInstancing};
 pub use levels::{
     ExportOptions, GlbLevel, ImageStorage, SkinOptions, WindLayout, write_glb_levels,
 };
+pub use stand::{GlbPlant, write_glb_stand};
 
 use std::borrow::Cow;
 use std::fs::File;

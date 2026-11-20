@@ -12,9 +12,10 @@ and triangle counts against ``tree.stats``, changes properties and parameters, e
 curve through its widget node, scrubs the age, runs every operator, saves and reopens the
 file, installs a species pack with image textures from an archive (checking the species
 menu, its thumbnails, the Packs preferences and the images on the materials) and removes
-it, disables and enables the extension, times generation against mesh upload for a
-large tree and renders two stills into ``--out``. The exit code is the number of failed
-checks (0 on success).
+it, grows plants in a sphere envelope and next to a cube obstacle and makes growth
+frames (``surroundings_steps.py``), disables and enables the extension, times generation
+against mesh upload for a large tree and renders three stills into ``--out``. The exit
+code is the number of failed checks (0 on success).
 
 With the environment variable ``ARBRUME_TEST_FALLBACKS=1`` the test forces the mesh upload
 paths the extension takes on Blenders without the faster attribute APIs (Blender 4.2 to
@@ -47,6 +48,10 @@ try:
     from mathutils import Vector
 except ImportError:
     addon_utils = bpy = np = Vector = None
+
+if bpy is not None:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import surroundings_steps
 
 MODULE = "bl_ext.user_default.arbrume"
 FAILURES: list[str] = []
@@ -503,7 +508,8 @@ def time_upload(ext) -> dict:
 
 
 def render_stills(ext, out: Path) -> None:
-    """Two EEVEE stills: a broadleaf tree and a group of three species."""
+    """Three EEVEE stills: a broadleaf tree, a group of three species and a plant in an
+    envelope next to a wall."""
     bpy.ops.wm.read_factory_settings(use_empty=True)
     ext = extension()
     scene = bpy.context.scene
@@ -551,6 +557,7 @@ def render_stills(ext, out: Path) -> None:
         plant.location.x = (i - 1) * 12.0
         tallest = max(tallest, plant.dimensions.z)
     shoot("group.png", Vector((0, 0, tallest * 0.5)), tallest * 3.0, 1.5)
+    surroundings_steps.render_still(ext, out)
 
 
 def sidebar():
@@ -735,6 +742,7 @@ def run_inside(argv: list[str]) -> int | None:
     test_operators(ext, obj, work)
     test_packs(ext, work)
     test_save_reload(ext, work)
+    surroundings_steps.run(ext, check)
     ext = test_reregister(ext)
     start = time.perf_counter()
     timings = time_upload(ext)

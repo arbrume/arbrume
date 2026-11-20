@@ -3,7 +3,8 @@
 //! Subcommands:
 //!
 //! * `gen`: generate `.glb` files for one species (`--species`) or for a batch config
-//!   (`--config`), with deterministic per-plant seeds, resume and a JSONL manifest;
+//!   (`--config`), with deterministic per-plant seeds, resume and a JSONL manifest; a
+//!   config file can also list a stand of plants grown together (`[[stand]]`);
 //! * `species list`, `species show <name>`: the built-in presets;
 //! * `info <file.toml>`: validate a species file;
 //! * `bench`: time each stage of the pipeline and the batch throughput, as a Markdown
@@ -33,6 +34,7 @@ mod scene;
 mod sheet;
 mod source;
 mod species_cmd;
+mod stand;
 mod textures;
 
 use std::path::PathBuf;

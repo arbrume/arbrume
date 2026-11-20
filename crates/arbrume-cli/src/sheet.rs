@@ -8,7 +8,9 @@
 //! every plant in the surroundings of a file and draws its obstacles, `--growth-frames`
 //! shows the frames of the growth sequence of the oldest age instead of the ages, and
 //! `--row N` grows N plants side by side that share their light. One line per plant
-//! (height, triangles, leaf sites, time) goes to standard output.
+//! (height, triangles, leaf sites, time) goes to standard output. `--stand FILE` shows
+//! the `[[stand]]` of a config file instead: per azimuth, the stand and the same plants
+//! grown alone at the same places, with one comparison line per plant.
 
 use std::path::PathBuf;
 use std::time::Instant;
@@ -43,7 +45,7 @@ enum View {
 #[derive(Debug, Args)]
 pub struct SheetArgs {
     /// Species to show, presets or files.
-    #[arg(long, value_delimiter = ',', required_unless_present = "random")]
+    #[arg(long, value_delimiter = ',', required_unless_present_any = ["random", "stand"])]
     species: Vec<String>,
     /// Ages, one column each.
     #[arg(long, value_delimiter = ',', default_value = "8,20,40")]
@@ -87,6 +89,9 @@ pub struct SheetArgs {
     /// Distance in meters between the plants of a row.
     #[arg(long, value_name = "METERS", default_value_t = 4.0, requires = "row")]
     spacing: f32,
+    /// Show the `[[stand]]` of this config file, grown together and alone.
+    #[arg(long, value_name = "FILE", conflicts_with_all = ["random", "row", "growth_frames", "species"])]
+    stand: Option<PathBuf>,
     /// PNG file to write.
     #[arg(long)]
     out: PathBuf,
@@ -357,6 +362,15 @@ pub fn run(args: &SheetArgs) -> Result<(), CliError> {
     if args.size == 0 {
         return Err(CliError::usage("--size must be at least 1"));
     }
+    if let Some(path) = &args.stand {
+        let (tiles, lines) = crate::stand::sheet_tiles(path, args.size, &args.azimuths)?;
+        let tiles: Vec<(Image, String)> = tiles.into_iter().map(|t| (t, String::new())).collect();
+        write_sheet(args, &tiles, 2)?;
+        for line in lines {
+            println!("{line}");
+        }
+        return Ok(());
+    }
     let (cells, columns) = match args.random {
         Some(count) => random_cells(args, count)?,
         None => species_cells(args)?,
@@ -368,7 +382,13 @@ pub fn run(args: &SheetArgs) -> Result<(), CliError> {
         .par_iter()
         .map(|cell| render(cell, args))
         .collect::<Result<Vec<_>, _>>()?;
-    let rows = (cells.len() as u32).div_ceil(columns);
+    write_sheet(args, &tiles, columns)
+}
+
+/// Pastes `tiles` into a sheet of `columns` columns, prints their lines and writes the
+/// sheet.
+fn write_sheet(args: &SheetArgs, tiles: &[(Image, String)], columns: u32) -> Result<(), CliError> {
+    let rows = (tiles.len() as u32).div_ceil(columns);
     let (width, height) = (columns * args.size, rows * args.size);
     let mut sheet = Image {
         width,
@@ -378,7 +398,9 @@ pub fn run(args: &SheetArgs) -> Result<(), CliError> {
     for (index, (tile, line)) in tiles.iter().enumerate() {
         let (column, row) = (index as u32 % columns, index as u32 / columns);
         paste(&mut sheet, tile, column * args.size, row * args.size);
-        println!("{line}");
+        if !line.is_empty() {
+            println!("{line}");
+        }
     }
     sheet
         .write_png(&args.out)

@@ -52,6 +52,21 @@ pub fn run_cycle<E, F, O, S>(
     S: Shedding,
 {
     stages.environment.sense(plant, cycle);
+    grow_sensed(plant, cx, stages, cycle);
+}
+
+/// The rest of growth cycle `cycle` once the environment has sensed `plant`: fate,
+/// shoots and shedding (see [`run_cycle`]).
+pub(crate) fn grow_sensed<E, F, O, S>(
+    plant: &mut Plant,
+    cx: &Context,
+    stages: &mut Stages<E, F, O, S>,
+    cycle: u16,
+) where
+    F: BudFate,
+    O: ShootOrientation,
+    S: Shedding,
+{
     let mut flushes = Vec::new();
     let mut from = crate::plant::MeristemId(0);
     loop {

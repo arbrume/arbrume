@@ -1,0 +1,22 @@
+# A stand of three plants grown together: `arbrume gen --config docs/stand.toml --out stand`
+# writes one .glb per plant and, with `stand_file`, stand.glb holding all three.
+quality = 0.5
+stand_file = true
+
+[[stand]]
+species = "open_grown_broadleaf"
+position = [-3.0, 0.0, 0.0]
+age = 14
+seed = 1
+
+[[stand]]
+species = "excurrent_conifer"
+position = [3.0, 0.0, 0.0]
+age = 16
+seed = 2
+
+[[stand]]
+species = "hedge_shrub"
+position = [0.0, 0.0, 2.5]
+age = 8
+seed = 3

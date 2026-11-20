@@ -47,6 +47,26 @@ pub struct ShadowParams {
     pub full: f32,
 }
 
+impl ShadowParams {
+    /// The same shadow on voxels of edge `cell`: a pyramid that reaches as deep in
+    /// meters (`q_max` scaled by the ratio of the edges and rounded) and fades as fast
+    /// per meter (`b` raised to the inverse ratio), with the same `a` and `C`. Returns
+    /// `self` unchanged when `cell` is its own edge.
+    #[must_use]
+    pub fn in_cell(&self, cell: f32) -> Self {
+        if cell.to_bits() == self.cell.to_bits() {
+            return *self;
+        }
+        let ratio = self.cell / cell;
+        Self {
+            cell,
+            decay: self.decay.powf(ratio.recip()),
+            depth: (f32::from(self.depth) * ratio).round().clamp(0.0, 255.0) as u8,
+            ..*self
+        }
+    }
+}
+
 /// How a [`ShadowGrid`] stores its voxels. See the [module documentation](self).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum GridStorage {
@@ -195,6 +215,13 @@ enum Store {
     Sparse(Sparse),
 }
 
+/// Shadow `a * b^-q` of one metamer at each depth `q` in `0..=q_max`.
+fn pyramid_weights(params: &ShadowParams) -> Vec<f32> {
+    (0..=i32::from(params.depth))
+        .map(|depth| params.strength * params.decay.powi(-depth))
+        .collect()
+}
+
 /// Voxel grid of shadow values. See the [module documentation](self).
 #[derive(Debug, Clone)]
 pub struct ShadowGrid {
@@ -208,13 +235,10 @@ impl ShadowGrid {
     /// An empty grid.
     #[must_use]
     pub fn new(params: ShadowParams, storage: GridStorage) -> Self {
-        let weights = (0..=i32::from(params.depth))
-            .map(|depth| params.strength * params.decay.powi(-depth))
-            .collect();
         Self {
             params,
             inverse_cell: params.cell.recip(),
-            weights,
+            weights: pyramid_weights(&params),
             store: match storage {
                 GridStorage::Dense => Store::Dense(Dense::default()),
                 GridStorage::Sparse => Store::Sparse(Sparse::default()),
@@ -226,6 +250,19 @@ impl ShadowGrid {
     #[must_use]
     pub const fn params(&self) -> &ShadowParams {
         &self.params
+    }
+
+    /// Casts, takes back and reads with the coefficients of `params` from now on,
+    /// rescaled to the edge of the voxels of the grid ([`ShadowParams::in_cell`]). The
+    /// values already in the grid are kept, which lets plants of several species share
+    /// one grid, each casting its own pyramid. A shadow is taken back with the
+    /// coefficients it was cast with.
+    pub fn set_coefficients(&mut self, params: &ShadowParams) {
+        let params = params.in_cell(self.params.cell);
+        if params != self.params {
+            self.weights = pyramid_weights(&params);
+            self.params = params;
+        }
     }
 
     /// Shadow `a * b^-q` one metamer adds at each depth `q` in `0..=q_max`.

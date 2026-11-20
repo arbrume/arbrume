@@ -235,6 +235,7 @@ dependencies = [
  "arbrume-gen",
  "arbrume-pack",
  "bytemuck",
+ "glam",
  "pyo3",
  "rayon",
  "serde_json",

@@ -39,6 +39,24 @@
 //!
 //! Surroundings act on species in the self-organizing mode; `docs/growth.md` describes
 //! the shapes.
+//!
+//! A config file may also, or instead, list the plants of one stand, grown together so
+//! that they shade one another (see [`crate::stand`]):
+//!
+//! ```toml
+//! stand_file = true               # also write the whole stand as stand.glb
+//!
+//! [[stand]]
+//! species = "open_grown_broadleaf" # preset, pack species or file
+//! position = [0.0, 0.0, 0.0]      # meters, Y up
+//! age = 18
+//! seed = 1
+//! scale = 1.0                     # optional
+//! name = "big_tree"               # optional label in file names
+//! ```
+//!
+//! The top-level `quality`, `textures`, `junctions` and `[surroundings]` apply to the
+//! stand; its surroundings are in the frame of the stand.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -55,6 +73,7 @@ use crate::batch::ThumbFormat;
 use crate::error::CliError;
 use crate::lods::{LodConfig, LodFile};
 use crate::source::{SpeciesSource, resolve, sanitize};
+use crate::stand::{StandPlant, load_stand};
 use crate::textures::TextureChoice;
 use arbrume_pack::split_species_id;
 
@@ -107,6 +126,10 @@ pub struct Batch {
     pub textures: Option<TextureChoice>,
     /// How branches are joined, when the config file or the command line chooses.
     pub junctions: Option<JunctionChoice>,
+    /// The plants of the stand of the config file, grown together.
+    pub stand: Vec<StandPlant>,
+    /// Whether to write the whole stand as one file too.
+    pub stand_file: bool,
 }
 
 /// What `--junctions` asks for (docs/junctions.md).
@@ -151,7 +174,30 @@ struct ConfigFile {
     surroundings: Option<Surroundings>,
     textures: Option<TextureChoice>,
     junctions: Option<JunctionChoice>,
+    #[serde(default)]
     species: Vec<EntryFile>,
+    #[serde(default)]
+    stand: Vec<StandFile>,
+    #[serde(default)]
+    stand_file: bool,
+}
+
+/// One `[[stand]]` entry of a config file: a plant of the stand.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StandFile {
+    /// Preset name, pack species or species file, relative to the config file.
+    pub species: String,
+    /// Where the plant stands, in meters.
+    pub position: [f32; 3],
+    /// Number of growth cycles.
+    pub age: u16,
+    /// Seed of the plant.
+    pub seed: u64,
+    /// Scale factor, 1 by default.
+    pub scale: Option<f32>,
+    /// Label in file names, the species label by default.
+    pub name: Option<String>,
 }
 
 /// One `[[species]]` entry of a batch config file.
@@ -264,6 +310,7 @@ pub fn load(path: &Path) -> Result<Batch, CliError> {
     }
     let lods = file.lods.unwrap_or(1);
     check_batch(&entries, lods)?;
+    let stand = load_stand(&file.stand, base, defaults.quality, shared.as_ref())?;
     Ok(Batch {
         out: file.out.map(|out| base.join(out)),
         lods,
@@ -279,6 +326,8 @@ pub fn load(path: &Path) -> Result<Batch, CliError> {
         random: None,
         textures: file.textures,
         junctions: file.junctions,
+        stand,
+        stand_file: file.stand_file,
     })
 }
 

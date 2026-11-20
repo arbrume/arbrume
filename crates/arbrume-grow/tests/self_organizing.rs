@@ -424,3 +424,37 @@ fn parametric_species_ignore_their_surroundings() {
         fingerprint(&plain)
     );
 }
+
+/// Horizontal offset along `-x` of the centroid of the live nodes of `graph`.
+fn lean_towards_minus_x(graph: &PlantGraph) -> f32 {
+    let live = graph.node_ids().filter(|&node| !graph.is_shed(node));
+    let xs: Vec<f32> = live.map(|node| graph.position(node).x).collect();
+    -xs.iter().sum::<f32>() / xs.len().max(1) as f32
+}
+
+/// Offsets of [`a_crown_leans_away_from_a_shading_wall`], seeds 1 to 3, for buds that
+/// take the shade of the wall into their exposure only, not into their direction. Turning
+/// the buds away from the shade must lean the crown further.
+const LEAN_FROM_EXPOSURE_ALONE: [f32; 3] = [0.965_432_05, 0.793_530_2, 1.147_880_6];
+
+#[test]
+fn a_crown_leans_away_from_a_shading_wall() {
+    let species = fixture();
+    let wall = Shape::Box {
+        min: Vec3::new(1.0, 0.0, -4.0),
+        max: Vec3::new(2.0, 10.0, 4.0),
+    };
+    let beside = Surroundings {
+        envelope: None,
+        occluders: vec![Occluder::neighbour(wall, 2.0)],
+    };
+    for (seed, before) in (1..=3).zip(LEAN_FROM_EXPOSURE_ALONE) {
+        let open = lean_towards_minus_x(&grow(&species, &params(seed, 14)));
+        let lean = lean_towards_minus_x(&grow_in(&species, &params(seed, 14), &beside));
+        assert!(
+            lean > open,
+            "seed {seed}: {lean} beside the wall, {open} in the open"
+        );
+        assert!(lean > before, "seed {seed}: {lean} is not beyond {before}");
+    }
+}

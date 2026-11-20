@@ -12,6 +12,7 @@ ORGAN_KINDS: tuple[str, ...]
 
 _Species = str | os.PathLike[str]
 _Float32 = npt.NDArray[np.float32]
+_Surroundings = dict[str, Any] | str | os.PathLike[str]
 
 def generate(
     species: _Species,
@@ -22,6 +23,7 @@ def generate(
     quality: float = 1.0,
     textures: bool = False,
     junctions: Literal["tier-a", "tier-b"] = "tier-a",
+    surroundings: _Surroundings | None = None,
     overrides: dict[str, Any] | None = None,
     **dotted_overrides: Any,
 ) -> Tree:
@@ -37,10 +39,66 @@ def generate_many(
     quality: float = 1.0,
     textures: bool = False,
     junctions: Literal["tier-a", "tier-b"] = "tier-a",
+    surroundings: _Surroundings | None = None,
     overrides: dict[str, Any] | None = None,
     **dotted_overrides: Any,
 ) -> list[Tree]:
     """Generate many trees in parallel without the GIL, results in input order."""
+
+def generate_stand(
+    plants: Sequence[dict[str, Any]],
+    age: int | None = None,
+    *,
+    threads: int | None = None,
+    scale: float = 1.0,
+    quality: float = 1.0,
+    textures: bool = False,
+    junctions: Literal["tier-a", "tier-b"] = "tier-a",
+    surroundings: _Surroundings | None = None,
+    overrides: dict[str, Any] | None = None,
+    **dotted_overrides: Any,
+) -> list[Tree]:
+    """Generate trees grown together (each dict has a ``position``), in input order."""
+
+def growth_frames(
+    species: _Species,
+    seed: int = 0,
+    age: int | None = None,
+    frames: int = 10,
+    *,
+    scale: float = 1.0,
+    quality: float = 1.0,
+    textures: bool = False,
+    junctions: Literal["tier-a", "tier-b"] = "tier-a",
+    surroundings: _Surroundings | None = None,
+    overrides: dict[str, Any] | None = None,
+    **dotted_overrides: Any,
+) -> list[Tree]:
+    """Grow one plant once and mesh it at ``frames`` ages, the last its full age."""
+
+def voxel_mask(
+    origin: tuple[float, float, float],
+    cell: float,
+    shape: tuple[int, int, int],
+    mask: npt.ArrayLike,
+) -> VoxelMask:
+    """A voxel volume: voxel ``[x, y, z]`` is filled where ``mask[x, y, z]`` is true."""
+
+@final
+class VoxelMask:
+    """A volume given as a grid of filled and empty cubic voxels (meters, Y up)."""
+
+    @property
+    def origin(self) -> tuple[float, float, float]: ...
+    @property
+    def cell(self) -> float: ...
+    @property
+    def shape(self) -> tuple[int, int, int]: ...
+    @property
+    def filled(self) -> int: ...
+    @property
+    def bounds(self) -> tuple[tuple[float, float, float], tuple[float, float, float]]: ...
+    def contains(self, point: tuple[float, float, float]) -> bool: ...
 
 def presets() -> list[str]:
     """Names of the built-in species presets."""
@@ -195,6 +253,8 @@ class Tree:
     def seed(self) -> int: ...
     @property
     def age(self) -> int: ...
+    @property
+    def max_cycle(self) -> int | None: ...
     @property
     def scale(self) -> float: ...
     @property
