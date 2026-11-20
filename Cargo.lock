@@ -75,7 +75,7 @@ dependencies = [
 
 [[package]]
 name = "arbrume"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "arbrume-core",
  "arbrume-export",
@@ -97,7 +97,7 @@ dependencies = [
 
 [[package]]
 name = "arbrume-core"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "glam",
  "proptest",
@@ -108,7 +108,7 @@ dependencies = [
 
 [[package]]
 name = "arbrume-export"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "arbrume-core",
  "bytemuck",
@@ -122,7 +122,7 @@ dependencies = [
 
 [[package]]
 name = "arbrume-fit"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "arbrume-core",
  "arbrume-export",
@@ -141,7 +141,7 @@ dependencies = [
 
 [[package]]
 name = "arbrume-gen"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "arbrume-core",
  "arbrume-export",
@@ -162,7 +162,7 @@ dependencies = [
 
 [[package]]
 name = "arbrume-grow"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "arbrume-core",
  "criterion",
@@ -175,7 +175,7 @@ dependencies = [
 
 [[package]]
 name = "arbrume-lod"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "arbrume-core",
  "arbrume-gen",
@@ -187,7 +187,7 @@ dependencies = [
 
 [[package]]
 name = "arbrume-mesh"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "arbrume-core",
  "arbrume-export",
@@ -199,7 +199,7 @@ dependencies = [
 
 [[package]]
 name = "arbrume-metrics"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "arbrume-core",
  "arbrume-gen",
@@ -210,7 +210,7 @@ dependencies = [
 
 [[package]]
 name = "arbrume-pack"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "arbrume-core",
  "arbrume-gen",
@@ -227,7 +227,7 @@ dependencies = [
 
 [[package]]
 name = "arbrume-py"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "arbrume-core",
  "arbrume-export",
@@ -244,7 +244,7 @@ dependencies = [
 
 [[package]]
 name = "arbrume-raster"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "arbrume-core",
  "arbrume-grow",
@@ -257,7 +257,7 @@ dependencies = [
 
 [[package]]
 name = "arbrume-texture"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "arbrume-core",
  "glam",
