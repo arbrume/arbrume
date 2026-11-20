@@ -64,7 +64,9 @@ use std::sync::Arc;
 
 use arbrume_core::species::Species;
 use arbrume_gen::species_with_overrides;
-use arbrume_gen::{Distribution, GenParams, Junctions, RandomSampler, Sampler, Surroundings};
+use arbrume_gen::{
+    Distribution, GenParams, Guides, Junctions, RandomSampler, Sampler, Surroundings,
+};
 use clap::ValueEnum;
 use serde::Deserialize;
 
@@ -90,6 +92,10 @@ pub struct Entry {
     pub sampler: Sampler,
     /// What stands around each plant; `None` for open ground.
     pub surroundings: Option<Arc<Surroundings>>,
+    /// Strokes and freezes that steer the growth of each plant; `None` for none.
+    pub guides: Option<Arc<Guides>>,
+    /// Ground and resources the roots grow in; `None` for homogeneous soil.
+    pub soil: Option<Arc<arbrume_gen::Soil>>,
 }
 
 /// Thumbnails to write next to the plants.
@@ -261,6 +267,8 @@ pub fn entry(
         count,
         sampler,
         surroundings: None,
+        guides: None,
+        soil: None,
     })
 }
 
@@ -271,6 +279,15 @@ pub fn load_surroundings(path: &Path) -> Result<Arc<Surroundings>, CliError> {
     let surroundings: Surroundings = toml::from_str(&text)
         .map_err(|error| CliError::usage(format!("{}: {error}", path.display())))?;
     checked(surroundings).map_err(|error| CliError::usage(format!("{}: {error}", path.display())))
+}
+
+/// Reads and checks the guides file (JSON) at `path`.
+pub fn load_guides(path: &Path) -> Result<Arc<Guides>, CliError> {
+    let fail = |error: String| CliError::usage(format!("{}: {error}", path.display()));
+    let text = std::fs::read_to_string(path).map_err(|error| fail(error.to_string()))?;
+    let guides: Guides = serde_json::from_str(&text).map_err(|error| fail(error.to_string()))?;
+    guides.validate().map_err(fail)?;
+    Ok(Arc::new(guides))
 }
 
 /// `surroundings` once validated.

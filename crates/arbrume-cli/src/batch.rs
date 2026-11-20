@@ -83,6 +83,18 @@ pub struct GenArgs {
     /// Surroundings file: envelope, obstacles and neighbours around each plant.
     #[arg(long, value_name = "FILE", conflicts_with = "config")]
     surroundings: Option<PathBuf>,
+    /// Guides file (JSON): crown, limb and erase strokes and freezes that steer the
+    /// growth of each plant (docs/brush.md).
+    #[arg(long, value_name = "FILE", conflicts_with = "config")]
+    guides: Option<PathBuf>,
+    /// Root system of every plant (docs/roots.md): a habit (tap, heart, plate, fibrous)
+    /// that replaces the `[roots]` of the species, `species` for that layer, `none` for
+    /// no roots [default: species].
+    #[arg(long, value_name = "HABIT", value_parser = crate::roots::parse_roots)]
+    roots: Option<crate::roots::RootChoice>,
+    /// Soil file: ground surface and resource patches the roots grow in (docs/roots.md).
+    #[arg(long, value_name = "FILE")]
+    soil: Option<PathBuf>,
     /// Write each plant as a growth sequence of K frames instead of one file.
     #[arg(long, value_name = "K")]
     growth_frames: Option<u16>,
@@ -290,6 +302,9 @@ fn batch_from_flags(args: &GenArgs) -> Result<Batch, CliError> {
     if let Some(path) = &args.surroundings {
         entry.surroundings = Some(config::load_surroundings(path)?);
     }
+    if let Some(path) = &args.guides {
+        entry.guides = Some(config::load_guides(path)?);
+    }
     let lods = args.lods.unwrap_or(1);
     config::check_batch(std::slice::from_ref(&entry), lods)?;
     Ok(Batch {
@@ -331,6 +346,7 @@ pub fn run(args: &GenArgs) -> Result<(), CliError> {
         batch.annotations = annotations;
     }
     batch.lod = args.lod.merge(batch.lod);
+    crate::roots::apply(&mut batch, args.roots, args.soil.as_deref())?;
     let texture_choice = args
         .textures
         .or(batch.textures)
@@ -455,6 +471,8 @@ impl Batch {
             let entry: &Entry = &self.entries[slot];
             let mut params = entry.sampler.params(index);
             params.surroundings.clone_from(&entry.surroundings);
+            params.guides.clone_from(&entry.guides);
+            params.soil.clone_from(&entry.soil);
             params.mesh.junctions = self.junction_mode();
             return Ok(Job {
                 label: Cow::Borrowed(&entry.label),

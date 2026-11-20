@@ -172,6 +172,11 @@ fn check_instance(
             assert_eq!(kind, PartKind::Leaf);
             assert!((instance as usize) < graph.organs().len());
         }
+        SemanticClass::Root => {
+            assert_eq!(kind, PartKind::Bark);
+            let first = graph.chains()[instance as usize].first;
+            assert!(graph.flags()[first.index()].is_root());
+        }
     }
 }
 

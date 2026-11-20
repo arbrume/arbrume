@@ -13,6 +13,7 @@ import bpy
 
 from . import curves_ui, plant, props, surroundings
 from .logic import schema, voxels
+from .logic.roots import grows_roots
 from .logic.values import entry_at, entry_points, f32_text, load_overrides
 from .ops import active_plant
 from .state import STATE, status_of
@@ -131,9 +132,11 @@ class VIEW3D_PT_arbrume_surroundings(bpy.types.Panel):
         layout = self.layout
         layout.enabled = plant.is_editable(obj)
         species = props.effective_species(settings)
-        if not voxels.is_self_organizing(species):
+        roots = grows_roots(species, settings.roots)
+        climbs = voxels.climbs(species)
+        if not voxels.is_self_organizing(species) and not roots and not climbs:
             layout.label(text="Envelope and obstacles shape", icon="INFO")
-            layout.label(text="self-organizing species only", icon="BLANK1")
+            layout.label(text="self-organizing, climbing species and roots only", icon="BLANK1")
         col = layout.column()
         col.use_property_split = True
         col.use_property_decorate = False
@@ -151,8 +154,10 @@ class VIEW3D_PT_arbrume_surroundings(bpy.types.Panel):
         for index, item in enumerate(settings.obstacles):
             row = layout.row(align=True)
             row.prop(item, "obj", text="")
-            row.prop(item, "blocks", text="", icon="MOD_PHYSICS")
-            row.prop(item, "shade")
+            row.prop(item, "role", text="")
+            if item.role == "OBSTACLE":
+                row.prop(item, "blocks", text="", icon="MOD_PHYSICS")
+                row.prop(item, "shade")
             op = row.operator("arbrume.remove_obstacle", text="", icon="X")
             op.index = index
         _surroundings_status(layout, obj)
@@ -238,6 +243,8 @@ def make_section_panel(section: schema.Section) -> type:
         layout.use_property_split = True
         layout.use_property_decorate = False
         overrides = load_overrides(obj.arbrume.overrides)
+        if section.name == "roots":
+            layout.prop(obj.arbrume, "roots")
         if has_orders:
             layout.prop(obj.arbrume, "curve_order", text="Curves of order")
         for index, (group, specs) in enumerate(section.groups.items()):

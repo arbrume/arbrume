@@ -13,6 +13,7 @@ workspace = true
 arbrume-core.workspace = true
 arbrume-export.workspace = true
 arbrume-fit.workspace = true
+arbrume-forest.workspace = true
 arbrume-gen.workspace = true
 arbrume-grow.workspace = true
 arbrume-metrics.workspace = true

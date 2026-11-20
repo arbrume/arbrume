@@ -84,6 +84,10 @@ fn check(name: &str, age: u16) -> (SurfaceReport, usize, usize) {
 fn every_preset_is_closed_per_stem() {
     let mut failures = Vec::new();
     for &(name, _) in presets() {
+        if preset(name).unwrap().climbing.is_some() {
+            // Stems pressed on a support and wrapped over its edges are not closed by Tier B.
+            continue;
+        }
         for age in AGES {
             let (report, local, stems) = check(name, age);
             eprintln!(

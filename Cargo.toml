@@ -21,6 +21,7 @@ arbrume-metrics = { path = "crates/arbrume-metrics" }
 arbrume-texture = { path = "crates/arbrume-texture" }
 arbrume-fit = { path = "crates/arbrume-fit" }
 arbrume-pack = { path = "crates/arbrume-pack" }
+arbrume-forest = { path = "crates/arbrume-forest" }
 
 [workspace.lints.rust]
 missing_debug_implementations = "warn"

@@ -10,6 +10,7 @@
 //! accessors and buffer views. A mesh with no drawable part produces a valid file with a
 //! single empty node.
 
+mod forest;
 mod instancing;
 mod json;
 mod levels;
@@ -18,6 +19,7 @@ mod stand;
 mod tangent;
 mod wind;
 
+pub use forest::{ForestGroup, ForestMesh, write_glb_forest};
 pub use instancing::{InstanceTransform, LeafInstancing};
 pub use levels::{
     ExportOptions, GlbLevel, ImageStorage, SkinOptions, WindLayout, write_glb_levels,

@@ -34,6 +34,13 @@
 //! open ground, [`grow_in`] in given surroundings, [`grow_together`] a stand of
 //! several plants that share their light ([`stand`]), and [`grow_with`] runs any other combination of stages.
 //!
+//! A species with a `[climbing]` table keeps the stages of its mode but orients its
+//! shoots with [`climbing::Climb`], which holds them to the blocking occluders of the
+//! surroundings and the ground, and its grown graph is dressed by [`climbing::dress`].
+//!
+//! A species with a `[roots]` layer grows a root system below its collar, in the same
+//! graph and by the same cycle: see [`grow_rooted`] and [`roots`].
+//!
 //! A grown plant can be shown as it was at an earlier age: see [`grow_timeline`] and
 //! [`GrowthRecord`].
 //!
@@ -52,16 +59,19 @@
 
 pub mod allocation;
 mod bend;
+pub mod climbing;
 pub mod competition;
 pub mod confine;
 mod cycle;
 mod distance_field;
+pub mod guides;
 pub mod history;
 pub mod markers;
 mod math;
 pub mod parametric;
 pub mod plant;
 mod radii;
+pub mod roots;
 pub mod shadow;
 pub mod shedding;
 mod shoot;
@@ -73,10 +83,15 @@ pub use allocation::{ResourceFate, borchert_honda, priority_weight};
 pub use competition::{Competition, EngineOptions, default_envelope, shadow_params};
 pub use confine::Confined;
 pub use cycle::{run_cycle, run_cycles, seed_plant};
+pub use guides::{
+    GuideReport, Guides, Stroke, StrokeKind, StrokeReport, grow_guided, grow_guided_timeline,
+    grow_guided_with,
+};
 pub use history::{GrowthRecord, radii_at_cycle};
 pub use markers::{Markers, Perception};
 pub use parametric::{GradientFate, TropismBlend};
 pub use plant::{Meristem, MeristemId, MeristemState, Plant, SiteKind};
+pub use roots::{Ground, HeightField, Resource, Soil, add_roots, grow_rooted};
 pub use shadow::{GridStorage, ShadowGrid, ShadowParams};
 pub use shedding::ExposureShedding;
 pub use stage::{
@@ -175,7 +190,9 @@ pub fn grow_in_with(
     options: EngineOptions,
 ) -> PlantGraph {
     let cx = params.context(species);
-    finish(grow_plant(&cx, surroundings, options), &cx)
+    let mut graph = finish(grow_plant(&cx, surroundings, options), &cx);
+    climbing::dress(&mut graph, &cx, surroundings, glam::Vec3::ZERO);
+    graph
 }
 
 /// Same as [`grow_in`], keeping the leaf sites of every metamer instead of those of the
@@ -190,7 +207,8 @@ pub fn grow_timeline(
     let cx = params.context(species);
     let plant = grow_plant(&cx, surroundings, EngineOptions::default());
     let mut lasting = Vec::new();
-    let (graph, shown) = finish_with(plant, &cx, Some(&mut lasting));
+    let (mut graph, shown) = finish_with(plant, &cx, Some(&mut lasting));
+    climbing::dress(&mut graph, &cx, surroundings, glam::Vec3::ZERO);
     GrowthRecord {
         graph,
         lasting,
@@ -201,6 +219,9 @@ pub fn grow_timeline(
 
 /// Runs the cycles of the mode of the species.
 fn grow_plant(cx: &Context, surroundings: &Surroundings, options: EngineOptions) -> Plant {
+    if cx.species.climbing.is_some() {
+        return climbing::grow_climber(cx, surroundings, options);
+    }
     match cx.species.growth.mode {
         GrowthMode::Parametric => {
             let mut stages = Stages {
@@ -240,7 +261,7 @@ pub fn finish(plant: Plant, cx: &Context) -> PlantGraph {
 /// [`finish`]; with `lasting`, every leaf site is kept and described there (see
 /// `retain_leaves`). Also returns the number of leaf sites the grown plant keeps, which
 /// come first.
-fn finish_with(
+pub(crate) fn finish_with(
     mut plant: Plant,
     cx: &Context,
     lasting: Option<&mut Vec<u16>>,

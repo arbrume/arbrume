@@ -1,0 +1,101 @@
+# Creeper-like ground cover, self-organizing: a few stems run out from one point over
+# the ground and over whatever lies on it (rocks, steps, the foot of a wall), held by
+# rootlets at their nodes, with small round leaves facing up. Its shoots keep level
+# instead of climbing, so a wall stops it.
+#
+# Typical size at age 10 on open ground: about 3 m across. Every value is a starting
+# point chosen by eye, not a measurement.
+
+schema_version = 0
+name = "Creeper-like ground cover"
+
+[architecture]
+branching = "monopodial"
+growth_rhythm = "rhythmic"
+branching_pattern = "diffuse"
+branch_timing = "proleptic"
+max_order = 4
+phyllotaxis = { leaves_per_node = 2, divergence_deg = 90.0 }
+
+[growth]
+mode = "self_organizing"
+environment_weight = 0.35
+stems = 4
+stem_spread = 0.04
+stem_angle = 80.0
+axis_length = { by_order = [2.5, 1.6, 1.0, 0.6, 0.4] }
+shoot_length = { by_order = [0.35, 0.3, 0.25, 0.2] }
+length_variation = 0.2
+internode_length = { by_order = [0.045, 0.042, 0.04, 0.038] }
+branch_probability = { by_order = [0.3, 0.3, 0.25] }
+branching_angle = { by_order = [55.0, 55.0, 50.0, 50.0] }
+branching_angle_variation = 15.0
+direction_variation = { by_order = [10.0, 12.0, 12.0] }
+gnarl = { by_order = [20.0, 22.0, 22.0] }
+gravitropic_setpoint = { by_order = [90.0, 90.0, 90.0] }
+tropism_weight = { by_order = [0.2, 0.15, 0.1] }
+
+[growth.self_organization]
+sensing = "shadow"
+allocation = "borchert_honda"
+axis_bias = 0.48
+resource_coefficient = 5.0
+shadow_cell = 2.0
+shadow_strength = 0.08
+shadow_depth = 3
+shedding_threshold = 0.008
+bud_lifespan = 4
+
+[geometry]
+radius_model = "pipe"
+pipe_exponent = 2.6
+tip_radius = 0.001
+flare = 0.0
+radial_segments = [3, 8]
+
+[foliage]
+length = 0.032
+width_ratio = 0.95
+shape = "elliptic"
+segments = 2
+inclination_deg = 75.0
+retention_cycles = 8
+density = 0.9
+per_node = 2
+color = [0.08, 0.2, 0.04]
+hue_variation = 0.1
+brightness_variation = 0.3
+venation = { kind = "pinnate", veins = 4, angle_deg = 50.0 }
+texture_resolution = 128
+
+[bark]
+color = [0.2, 0.22, 0.1]
+young_color = [0.18, 0.24, 0.09]
+young_radius = 0.004
+color_variation = 0.12
+texture_resolution = 128
+
+[climbing]
+attachment = "adhesive"
+reach = 0.05
+search_distance = 0.15
+seek_weight = 0.1
+gap = 0.002
+droop = 150.0
+ground = true
+rootlets = 0.2
+rootlet_length = 0.01
+leaf_facing = 0.9
+
+[variation]
+age = [6, 14]
+scale = [0.9, 1.1]
+weight = 0.0
+
+[variation.jitter]
+"growth.internode_length" = 0.08
+"growth.branching_angle" = 0.1
+"growth.gnarl" = 0.3
+"growth.self_organization.resource_coefficient" = 0.1
+"foliage.length" = 0.1
+"foliage.color" = 0.1

@@ -31,6 +31,7 @@ class PlantStatus:
     filled: int = 0
     cell: float = 0.0
     warning: str = ""
+    guides: dict | None = None
 
 
 @dataclass

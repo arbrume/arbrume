@@ -1,0 +1,51 @@
+# A post at the foot of the plant and a pergola: four posts and a grid of beams.
+[[occluders]]
+shape = "box"
+min = [-0.06, 0.0, -0.22]
+max = [0.06, 2.4, -0.1]
+shade = 0.0
+[[occluders]]
+shape = "box"
+min = [1.94, 0.0, -0.22]
+max = [2.06, 2.4, -0.1]
+shade = 0.0
+[[occluders]]
+shape = "box"
+min = [-0.06, 0.0, -2.22]
+max = [0.06, 2.4, -2.1]
+shade = 0.0
+[[occluders]]
+shape = "box"
+min = [1.94, 0.0, -2.22]
+max = [2.06, 2.4, -2.1]
+shade = 0.0
+[[occluders]]
+shape = "box"
+min = [-0.3, 2.4, -0.22]
+max = [2.3, 2.55, -0.1]
+shade = 0.0
+[[occluders]]
+shape = "box"
+min = [-0.3, 2.4, -2.22]
+max = [2.3, 2.55, -2.1]
+shade = 0.0
+[[occluders]]
+shape = "box"
+min = [-0.04, 2.55, -2.5]
+max = [0.04, 2.65, 0.2]
+shade = 0.0
+[[occluders]]
+shape = "box"
+min = [0.63, 2.55, -2.5]
+max = [0.71, 2.65, 0.2]
+shade = 0.0
+[[occluders]]
+shape = "box"
+min = [1.29, 2.55, -2.5]
+max = [1.37, 2.65, 0.2]
+shade = 0.0
+[[occluders]]
+shape = "box"
+min = [1.96, 2.55, -2.5]
+max = [2.04, 2.65, 0.2]
+shade = 0.0

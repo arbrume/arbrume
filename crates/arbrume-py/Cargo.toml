@@ -23,6 +23,7 @@ doctest = false
 arbrume-core.workspace = true
 arbrume-export.workspace = true
 arbrume-fit.workspace = true
+arbrume-forest.workspace = true
 arbrume-gen.workspace = true
 arbrume-pack.workspace = true
 bytemuck = "1.23"

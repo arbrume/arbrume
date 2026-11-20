@@ -14,7 +14,7 @@ from bpy.props import PointerProperty
 
 import arbrume
 
-from . import curves_ui, ops, packs, prefs, props, surroundings, ui
+from . import brush, curves_ui, forest, ops, packs, prefs, props, surroundings, ui
 from .logic import species
 from .state import STATE, reset
 
@@ -60,7 +60,7 @@ def register() -> None:
     _register(params_class)
     props.attach_params(params_class)
     bpy.types.Object.arbrume = PointerProperty(type=props.ARBRUME_PG_plant)
-    for cls in (*ops.CLASSES, *packs.CLASSES):
+    for cls in (*ops.CLASSES, *packs.CLASSES, *forest.CLASSES):
         _register(cls)
     packs.refresh()
     _register(ui.VIEW3D_PT_arbrume)
@@ -68,7 +68,10 @@ def register() -> None:
         _register(ui.make_section_panel(section))
     _register(ui.VIEW3D_PT_arbrume_surroundings)
     _register(ui.VIEW3D_PT_arbrume_tools)
+    brush.register()
+    _register(brush.VIEW3D_PT_arbrume_brush)
     bpy.types.VIEW3D_MT_mesh_add.append(ui.menu_add)
+    bpy.types.VIEW3D_MT_mesh_add.append(forest.menu_add)
     _remove_handlers()
     bpy.app.handlers.load_post.append(arbrume_on_load)
     curves_ui.register()
@@ -77,8 +80,10 @@ def register() -> None:
 def unregister() -> None:
     """Removes everything :func:`register` added."""
     curves_ui.unregister()
+    brush.unregister()
     _remove_handlers()
     bpy.types.VIEW3D_MT_mesh_add.remove(ui.menu_add)
+    bpy.types.VIEW3D_MT_mesh_add.remove(forest.menu_add)
     if hasattr(bpy.types.Object, "arbrume"):
         del bpy.types.Object.arbrume
     props.detach_params()

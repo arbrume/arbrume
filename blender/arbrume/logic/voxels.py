@@ -109,6 +109,12 @@ def is_self_organizing(species: dict) -> bool:
     return species.get("growth", {}).get("mode") == "self_organizing"
 
 
+def climbs(species: dict) -> bool:
+    """Whether a species has a ``[climbing]`` table: its shoots hold the blocking
+    obstacles, in either growth mode."""
+    return bool(species.get("climbing"))
+
+
 def _layout(points: np.ndarray, cell: float, pad: int) -> tuple[np.ndarray, float, np.ndarray]:
     """Corner, voxel edge and voxel counts of a grid around ``points``, ``pad`` voxels
     wider on every side, the edge grown so the grid holds at most ``MAX_VOXELS``."""

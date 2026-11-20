@@ -1,0 +1,103 @@
+# Ivy-like climber, self-organizing with adhesive rootlets: one stem from the ground
+# climbs the nearest support, its shoots fan out over the surface, the leaves face away
+# from it, and shoots that grow past the edge of the support hang. On open ground it
+# creeps as a ground cover.
+#
+# Typical size at age 14 on a wall: about 4 m tall and 5 m wide. Every value is a
+# starting point chosen by eye, not a measurement.
+
+schema_version = 0
+name = "Ivy-like climber"
+
+[architecture]
+branching = "monopodial"
+growth_rhythm = "rhythmic"
+branching_pattern = "diffuse"
+branch_timing = "proleptic"
+max_order = 6
+phyllotaxis = { leaves_per_node = 1, divergence_deg = 180.0 }
+
+[growth]
+mode = "self_organizing"
+environment_weight = 0.3
+axis_length = { by_order = [7.0, 5.0, 3.0, 2.0, 1.2, 0.8] }
+shoot_length = { by_order = [0.7, 0.6, 0.5, 0.4] }
+length_variation = 0.15
+internode_length = { by_order = [0.07, 0.065, 0.06, 0.055] }
+branch_probability = { by_order = [[[0.0, 0.4], [0.05, 0.8], [1.0, 0.8]], 0.8] }
+branching_angle = { by_order = [50.0, 50.0, 45.0, 45.0] }
+branching_angle_variation = 15.0
+direction_variation = { by_order = [8.0, 10.0, 12.0] }
+gnarl = { by_order = [14.0, 18.0, 18.0] }
+gravitropic_setpoint = { by_order = [0.0, 50.0, 70.0, 80.0] }
+tropism_weight = { by_order = [0.25, 0.1, 0.06, 0.05] }
+
+[growth.self_organization]
+sensing = "shadow"
+allocation = "borchert_honda"
+axis_bias = 0.5
+resource_coefficient = 6.0
+shadow_cell = 2.0
+shadow_strength = 0.06
+shadow_depth = 4
+shedding_threshold = 0.005
+bud_lifespan = 6
+
+[geometry]
+radius_model = "pipe"
+pipe_exponent = 2.4
+tip_radius = 0.0015
+flare = 0.1
+radial_segments = [3, 10]
+
+[foliage]
+length = 0.075
+width_ratio = 1.05
+shape = "ovate"
+segments = 2
+inclination_deg = 70.0
+retention_cycles = 7
+density = 0.95
+per_node = 1
+color = [0.035, 0.11, 0.03]
+hue_variation = 0.08
+brightness_variation = 0.3
+roughness = 0.45
+venation = { kind = "palmate", veins = 2, angle_deg = 55.0 }
+margin = { kind = "lobed", depth = 0.3 }
+texture_resolution = 256
+
+[bark]
+color = [0.2, 0.16, 0.11]
+young_color = [0.16, 0.2, 0.08]
+young_radius = 0.004
+color_variation = 0.12
+texture_resolution = 256
+pattern = { kind = "fibrous", feature_size = 0.004, stretch = 5.0, relief = 0.4, coverage = 0.4 }
+
+[climbing]
+attachment = "adhesive"
+reach = 0.08
+search_distance = 0.6
+seek_weight = 0.5
+gap = 0.003
+droop = 160.0
+ground = true
+rootlets = 0.3
+rootlet_length = 0.015
+leaf_facing = 0.85
+
+[variation]
+age = [8, 20]
+scale = [0.9, 1.1]
+weight = 0.0
+
+[variation.jitter]
+"growth.internode_length" = 0.08
+"growth.branching_angle" = 0.1
+"growth.gravitropic_setpoint" = 0.08
+"growth.gnarl" = 0.3
+"growth.self_organization.resource_coefficient" = 0.1
+"foliage.length" = 0.1
+"foliage.color" = 0.1
+"bark.color" = 0.08

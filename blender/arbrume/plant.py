@@ -18,7 +18,8 @@ from dataclasses import dataclass
 import bpy
 
 from . import surroundings
-from .logic import meshdata
+from .logic import brush, meshdata
+from .logic.roots import roots_argument
 from .logic.species import Source, generate
 from .logic.values import load_overrides
 from .state import STATE, status_of
@@ -85,6 +86,8 @@ def generation_args(settings: bpy.types.PropertyGroup) -> dict:
         "quality": float(settings.quality),
         "textures": bool(getattr(settings, "textures", False)),
         "junctions": str(getattr(settings, "junctions", "tier-a")),
+        "guides": brush.argument(str(getattr(settings, "guides", ""))),
+        "roots": roots_argument(str(getattr(settings, "roots", "species"))),
     }
 
 
@@ -327,8 +330,9 @@ def apply_tree(obj: bpy.types.Object, tree) -> tuple[float, int, int]:
     return elapsed, arrays.vertex_count, arrays.face_count
 
 
-def regenerate(obj: bpy.types.Object) -> str:
-    """Generates the plant of ``obj`` from its properties; returns an error message or ""."""
+def regenerate(obj: bpy.types.Object, args: dict | None = None) -> str:
+    """Generates the plant of ``obj`` from its properties, keyword arguments of the
+    generator replaced by ``args``; returns an error message or ""."""
     key = obj.as_pointer()
     if key in STATE.busy:
         return ""
@@ -346,11 +350,12 @@ def regenerate(obj: bpy.types.Object) -> str:
             source_of(settings),
             load_overrides(settings.overrides),
             surroundings=around,
-            **generation_args(settings),
+            **{**generation_args(settings), **(args or {})},
         )
         status.generate_ms = (time.perf_counter() - start) * 1e3
         status.upload_ms, status.vertices, status.triangles = apply_tree(obj, tree)
         status.error = ""
+        status.guides = getattr(tree, "guides", None)
     except (ValueError, TypeError, OSError, RuntimeError) as error:
         status.error = str(error).strip()
     finally:

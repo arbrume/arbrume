@@ -38,6 +38,7 @@ arbrume bench
 | `arbrume fit --target FILE --from PRESET ...` | fit the parameters of a species to a target skeleton and write a species file ([Parameter fitting](fitting.md)) |
 | `arbrume distance A B` | the distance between two tree skeletons, term by term ([Parameter fitting](fitting.md#the-distance)) |
 | `arbrume pack new/add-species/validate/thumbs/build/install/list/remove` | author, check, package and install species packs ([Species packs](packs.md)) |
+| `arbrume forest --config forest.toml --out DIR` | place a forest over a terrain and write its variants, instanced file and instance tables ([Forests](forest.md)) |
 
 Exit codes: 0 on success, 1 when generating or writing a plant failed (the other plants
 are still generated, the failures are listed on stderr), 2 for invalid arguments,
@@ -67,6 +68,9 @@ configuration or species files.
 | `--lod-file` | | write all levels of a plant in one file, one child node per level |
 | `--instance-leaves` | | with `--lod-file`: leaves as GPU instances of their templates (`EXT_mesh_gpu_instancing`) |
 | `--surroundings FILE` | | TOML file of the envelope, obstacles and neighbours around each plant |
+| `--guides FILE` | | JSON file of crown, limb and erase strokes and freezes that steer each plant ([Brush](brush.md)) |
+| `--roots HABIT` | `species` | root system of every plant: `tap`, `heart`, `plate` or `fibrous` replace the `[roots]` of the species, `species` keeps it, `none` removes it ([Roots](roots.md)); not applied to `--random` plants |
+| `--soil FILE` | | TOML file of the ground surface and resource patches the roots grow in ([Roots](roots.md)) |
 | `--growth-frames K` | | write each plant as `K` frames of its growth instead of one file; excludes `--lods` above 1, `--wind`, `--billboard` and `--random` |
 | `--out DIR` | | output directory, created if missing |
 | `--jobs J` | all cores | worker threads; without it `RAYON_NUM_THREADS` applies |
@@ -120,9 +124,40 @@ max = [2.0, 9.0, 8.0]
 ```
 
 Every plant of the run grows in them. Species in the self-organizing mode respond;
-parametric species are not changed. The surroundings are written to the metadata of each
+parametric species are not changed, except climbers. The blocking occluders are also the
+supports of climbing species ([Climbing plants](climbing.md)); there is no separate
+support option: a support is an occluder, with `shade = 0` when it should not darken the
+plant. `examples/climbing/` has a wall with a window, a pergola and rocks:
+
+```sh
+arbrume gen --species ivy_like --age 16 --surroundings examples/climbing/window_wall.toml --out ivy
+```
+ The surroundings are written to the metadata of each
 file (`surroundings`), so the plant can be regenerated; a voxel mask, which only the
 library can pass, is not written out.
+
+**Guides.** `--guides FILE` reads painted strokes and freezes from a JSON file
+([Brush](brush.md)), in meters around a plant standing at the origin, and steers every
+plant of the run with them; a parametric species is not changed. The guides are written
+to the metadata of each file (`guides`). The Blender extension stores the strokes of a
+plant in the same form (`Object.arbrume.guides`), so a file saved from there can be given
+here:
+
+```sh
+arbrume gen --species open_grown_broadleaf --age 20 --guides strokes.json --out out
+```
+
+**Roots.** A species with a `[roots]` table grows a root system below the ground, and
+`--roots` gives every plant of the run a habit or removes the roots. `--soil FILE` reads
+the ground and the resource patches ([Roots](roots.md#the-soil)); the obstacles of the
+roots are the blocking occluders of `--surroundings`, so a rock is an occluder below the
+ground:
+
+```sh
+arbrume gen --species broadleaf --roots plate --soil soil.toml --surroundings rock.toml --out plate
+```
+
+The soil is not written to the metadata of the file.
 
 **Growth sequences.** With `--growth-frames K` a plant is grown once and written as it
 stood at `K` ages spread evenly over its growth, the last being the full-grown plant:
@@ -301,6 +336,28 @@ annotations are rejected (exit code 2). A config file may hold `[[species]]` ent
 too; they are generated as a batch first, the stand after. The plants of a stand do not
 depend on the order of the `[[stand]]` entries nor on `--jobs`; the file names do, since
 they carry the index.
+
+## `arbrume forest`
+
+```sh
+arbrume forest --config examples/forests/valley.toml --out out/valley
+```
+
+Places the forest of a config file over its terrain, grows the variant library of each
+species, and writes one `.glb` per variant, one instanced `.glb`
+(`EXT_mesh_gpu_instancing`), the instance tables (CSV, binary) and a JSON manifest
+([Forests](forest.md) documents the config file and every output).
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--config FILE` | required | the forest config (`forest.toml`) |
+| `--out DIR` | required | output directory, created if missing |
+| `--seed N` | the config's | replace the seed |
+| `--placement-only` | off | grow nothing: write the tables and the manifest only (every species needs a `spacing`) |
+
+It prints the trees of each species against the target on open ground, warns when a
+density is out of reach for its spacing, and lists the files with their sizes. Exit code
+2 for an invalid config, terrain or exclusion, 1 when growing or writing failed.
 
 ## `arbrume bench`
 

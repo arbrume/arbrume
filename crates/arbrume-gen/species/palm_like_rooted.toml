@@ -1,0 +1,98 @@
+# Palm-like plant with fibrous roots: a dense tuft of thin roots of similar length.
+# The shoot is that of palm_like; the [roots] table at the end adds the root system
+# (docs/roots.md). Weight 0 keeps it out of random mixes. Every root value is a
+# starting point chosen by eye, not a measurement.
+#
+# Palm-like plant: an unbranched trunk crowned by a tuft of arching feather fronds, the
+# young ones upright in the middle, the old ones drooping around them.
+#
+# Typical size at age 20: about 7 m tall, fronds 3 m long, crown 5.5 m wide, trunk
+# 0.2 m across. Every value is a starting point chosen by eye, not a measurement. A
+# frond is a branch that is shed after a few cycles; its leaflets are the leaves.
+
+schema_version = 0
+name = "Palm-like plant, fibrous roots"
+
+[architecture]
+branching = "monopodial"
+growth_rhythm = "rhythmic"
+branching_pattern = "continuous"
+branch_timing = "sylleptic"
+max_order = 1
+phyllotaxis = { leaves_per_node = 1, divergence_deg = 137.5 }
+
+[[architecture.axes]]
+orientation = "orthotropic"
+
+[[architecture.axes]]
+orientation = "plagiotropic"
+phyllotaxis = { leaves_per_node = 2, divergence_deg = 180.0 }
+
+[growth]
+axis_length = { by_order = [14.0, 3.0] }
+shoot_length = { by_order = [[[0.0, 0.3], [1.0, 0.2]], 3.5] }
+length_variation = { by_order = [0.0, 0.12] }
+internode_length = { by_order = [0.075, 0.075] }
+branch_probability = 1.0
+# A frond lives six cycles and sinks as it ages.
+branch_lifespan = 6.0
+aging_angle = [[0.0, 0.0], [0.5, 45.0], [1.0, 100.0]]
+branching_angle = { by_order = [0.0, 22.0] }
+branching_angle_variation = 8.0
+direction_variation = { by_order = [0.6, 0.5] }
+gnarl = { by_order = [2.0, 0.0] }
+gravitropic_setpoint = { by_order = [0.0, 90.0] }
+tropism_weight = { by_order = [0.1, 0.0] }
+curvature = { by_order = [0.0, 75.0] }
+
+[geometry]
+radius_model = "tapered"
+radius_ratio = 0.02
+child_radius_exponent = 2.2
+taper = { by_order = [[[0.0, 1.0], [0.1, 0.85], [1.0, 0.8]], [[0.0, 1.0], [1.0, 0.15]]] }
+flare = 0.5
+collar_flare = 0.6
+
+[foliage]
+length = 0.5
+width_ratio = 0.085
+shape = "lanceolate"
+segments = 3
+fold_deg = 25.0
+curvature_deg = 40.0
+petiole_length = 0.0
+inclination_deg = 55.0
+size_along_axis = [[0.0, 0.0], [0.15, 0.3], [0.35, 1.0], [0.8, 0.85], [1.0, 0.35]]
+retention_cycles = 8
+min_order = 1
+color = [0.08, 0.2, 0.045]
+hue_variation = 0.08
+brightness_variation = 0.3
+size_variation = 0.1
+orientation_variation_deg = 8.0
+venation = { kind = "parallel", veins = 5 }
+
+# Grey ringed trunk; the stalks of the fronds are green.
+[bark]
+color = [0.2, 0.17, 0.135]
+young_color = [0.11, 0.2, 0.05]
+young_radius = 0.045
+color_variation = 0.1
+pattern = { kind = "smooth", feature_size = 0.12, stretch = 0.15, coverage = 0.9, contrast = 0.3, relief = 0.4 }
+
+[variation]
+age = [6, 30]
+scale = [0.8, 1.15]
+weight = 0.0
+
+[variation.jitter]
+"growth.axis_length" = 0.12
+"growth.curvature" = 0.2
+"growth.branching_angle" = 0.15
+"geometry.radius_ratio" = 0.12
+"foliage.length" = 0.1
+"foliage.color" = 0.1
+"bark.color" = 0.08
+
+[roots]
+habit = "fibrous"

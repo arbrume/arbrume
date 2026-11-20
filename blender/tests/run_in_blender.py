@@ -13,8 +13,11 @@ curve through its widget node, scrubs the age, runs every operator, saves and re
 file, installs a species pack with image textures from an archive (checking the species
 menu, its thumbnails, the Packs preferences and the images on the materials) and removes
 it, grows plants in a sphere envelope and next to a cube obstacle and makes growth
-frames (``surroundings_steps.py``), disables and enables the extension, times generation
-against mesh upload for a large tree and renders three stills into ``--out``. The exit
+frames (``surroundings_steps.py``), paints crown, limb and erase strokes with undo, redo,
+freezing and saving (``brush_steps.py``), grows root systems, turns them off and on and
+keeps them out of a stone (``roots_steps.py``), disables and enables the extension, times
+generation against mesh upload for a large tree and renders stills into ``--out``, among
+them a plant before and after strokes. The exit
 code is the number of failed checks (0 on success).
 
 With the environment variable ``ARBRUME_TEST_FALLBACKS=1`` the test forces the mesh upload
@@ -51,6 +54,10 @@ except ImportError:
 
 if bpy is not None:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import brush_steps
+    import climbing_steps
+    import forest_steps
+    import roots_steps
     import surroundings_steps
 
 MODULE = "bl_ext.user_default.arbrume"
@@ -558,6 +565,8 @@ def render_stills(ext, out: Path) -> None:
         tallest = max(tallest, plant.dimensions.z)
     shoot("group.png", Vector((0, 0, tallest * 0.5)), tallest * 3.0, 1.5)
     surroundings_steps.render_still(ext, out)
+    brush_steps.render_stills(ext, out)
+    roots_steps.render_still(ext, out)
 
 
 def sidebar():
@@ -702,6 +711,7 @@ def ui_steps(out: Path):
         region.tag_redraw()
         yield 1.0
     yield from drag_steps(ext, panels, window, region, obj.name)
+    yield from brush_steps.ui_steps(ext, window, area, out, check)
     if not FAILURES:
         print("UI checks passed", flush=True)
     bpy.ops.wm.quit_blender()
@@ -743,6 +753,10 @@ def run_inside(argv: list[str]) -> int | None:
     test_packs(ext, work)
     test_save_reload(ext, work)
     surroundings_steps.run(ext, check)
+    climbing_steps.run(ext, check)
+    brush_steps.run(ext, check, work)
+    forest_steps.run(ext, check, out)
+    roots_steps.run(ext, check)
     ext = test_reregister(ext)
     start = time.perf_counter()
     timings = time_upload(ext)

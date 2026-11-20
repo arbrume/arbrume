@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use arbrume_core::graph::PlantGraph;
 use arbrume_core::mesh::TreeMesh;
 use arbrume_core::species::Species;
-use arbrume_grow::{Surroundings, grow_in};
+use arbrume_grow::Surroundings;
 use arbrume_mesh::{DEFAULT_TOLERANCE, MeshCounts, MeshOptions, Mesher};
 use arbrume_texture::{SpeciesTextures, TextureCache, textured_species};
 
@@ -195,9 +195,11 @@ impl Generator {
         let start = Instant::now();
         let open = Surroundings::none();
         let surroundings = params.surroundings.as_deref().unwrap_or(&open);
-        let graph = grow_in(species, &params.grow_params(), surroundings);
+        let (graph, guides) = crate::guided::grow(species, params, surroundings);
+        let graph = crate::rooted::add(species, params, surroundings, graph);
         let grown = Instant::now();
         self.mesh_grown(species, params, budget, graph, plant)?;
+        plant.guides = guides;
         Ok(Timings {
             grow: grown - start,
             mesh: grown.elapsed(),
@@ -240,6 +242,7 @@ impl Generator {
             ..params.clone()
         };
         plant.stats = Stats::of(&plant.graph, &plant.mesh);
+        plant.guides = None;
         Ok(())
     }
 

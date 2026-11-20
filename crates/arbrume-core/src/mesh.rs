@@ -153,8 +153,9 @@ impl TreeMesh {
 
 /// Semantic class of a mesh vertex, the per-vertex ML label.
 ///
-/// Finer than [`PartKind`]: the bark part holds the trunk (axes of order 0) and the
-/// branches (every other axis), and the leaf part holds the leaves and, for a species
+/// Finer than [`PartKind`]: the bark part holds the trunk (axes of order 0), the
+/// branches (every other axis above the collar) and the roots (the axes flagged
+/// `NodeFlags::ROOT`), and the leaf part holds the leaves and, for a species
 /// with twig templates, the twig stems. The numeric values are those written to files.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(u8)]
@@ -167,13 +168,21 @@ pub enum SemanticClass {
     Twig = 2,
     /// A leaf, a needle, or the fins that stand for needles on a twig.
     Leaf = 3,
+    /// An axis of the root system, below the collar.
+    Root = 4,
 }
 
 impl SemanticClass {
     /// Every class, in the order of their numeric values.
-    pub const ALL: [Self; 4] = [Self::Trunk, Self::Branch, Self::Twig, Self::Leaf];
+    pub const ALL: [Self; 5] = [
+        Self::Trunk,
+        Self::Branch,
+        Self::Twig,
+        Self::Leaf,
+        Self::Root,
+    ];
 
-    /// Lower-case name written to files: `trunk`, `branch`, `twig` or `leaf`.
+    /// Lower-case name written to files: `trunk`, `branch`, `twig`, `leaf` or `root`.
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
@@ -181,6 +190,7 @@ impl SemanticClass {
             Self::Branch => "branch",
             Self::Twig => "twig",
             Self::Leaf => "leaf",
+            Self::Root => "root",
         }
     }
 
@@ -192,6 +202,7 @@ impl SemanticClass {
             1 => Some(Self::Branch),
             2 => Some(Self::Twig),
             3 => Some(Self::Leaf),
+            4 => Some(Self::Root),
             _ => None,
         }
     }

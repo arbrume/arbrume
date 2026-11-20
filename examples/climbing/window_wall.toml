@@ -1,0 +1,21 @@
+# A wall 6 m wide and 4 m tall behind the plant, with a window opening.
+[[occluders]]
+shape = "box"
+min = [-3.0, 0.0, -0.42]
+max = [-0.4, 4.0, -0.12]
+shade = 0.0
+[[occluders]]
+shape = "box"
+min = [0.9, 0.0, -0.42]
+max = [3.0, 4.0, -0.12]
+shade = 0.0
+[[occluders]]
+shape = "box"
+min = [-0.4, 0.0, -0.42]
+max = [0.9, 1.2, -0.12]
+shade = 0.0
+[[occluders]]
+shape = "box"
+min = [-0.4, 2.6, -0.42]
+max = [0.9, 4.0, -0.12]
+shade = 0.0

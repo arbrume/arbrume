@@ -16,6 +16,8 @@
 //! * `voxel_mask` builds a voxel volume, the `surroundings` keyword places a plant in an
 //!   envelope and among obstacles, and `growth_frames` meshes one plant at several ages
 //!   (see [`surroundings`]).
+//! * The `guides` keyword steers the growth with painted strokes, and `Tree.guides`
+//!   reports what each stroke did (see [`guides`]).
 //!
 //! The module is tested from Python (`tests/`, pytest) and documented in
 //! `docs/python.md`.
@@ -24,8 +26,11 @@ mod buffer;
 mod convert;
 mod data;
 mod fit;
+mod forest;
+mod guides;
 mod job;
 mod packs;
+mod roots;
 mod stand;
 mod surroundings;
 mod tree;
@@ -99,7 +104,10 @@ fn run_detached(py: Python<'_>, jobs: &[Job], threads: Option<i64>) -> PyResult<
 /// bark and leaf textures on the materials, default `False`), `junctions` (`"tier-a"`,
 /// the default, or `"tier-b"` for one closed bark surface), `surroundings` (a dict with
 /// `envelope` and `occluders`, or the path of a surroundings TOML file; read by species
-/// in the self-organizing mode), `overrides` (a dict of
+/// in the self-organizing mode), `guides` (strokes and freezes: a dict, JSON text or the
+/// path of a JSON file; read by species in the self-organizing mode), `roots` (a bool, a
+/// habit name or a dict: the root system, see `docs/roots.md`), `soil` (a dict or the path of
+/// a TOML file: ground and resources for the roots), `overrides` (a dict of
 /// dotted species paths to values), and any other keyword is one more override, e.g.
 /// `**{"foliage.length": 0.2}`. Raises `ValueError` for an invalid species or parameter.
 #[pyfunction]
@@ -265,6 +273,7 @@ fn arbrume_module(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(generate, module)?)?;
     module.add_function(wrap_pyfunction!(generate_many, module)?)?;
     module.add_function(wrap_pyfunction!(stand::generate_stand, module)?)?;
+    module.add_function(wrap_pyfunction!(forest::forest_build, module)?)?;
     module.add_function(wrap_pyfunction!(presets, module)?)?;
     module.add_function(wrap_pyfunction!(preset_toml, module)?)?;
     module.add_function(wrap_pyfunction!(plant_seed, module)?)?;

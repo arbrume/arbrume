@@ -182,7 +182,7 @@ impl Shape {
     }
 
     /// Checks that the sizes are positive and every number finite.
-    fn validate(&self) -> Result<(), String> {
+    pub(crate) fn validate(&self) -> Result<(), String> {
         let bounds = self.bounds();
         let size = bounds.max - bounds.min;
         if !(bounds.min.is_finite() && bounds.max.is_finite()) {

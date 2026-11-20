@@ -136,6 +136,46 @@ the tree `generate` gives. Errors raise `ValueError` (invalid species, parameter
 position, a position missing or not three numbers, plants with different
 surroundings) or `TypeError` (a plant that is not a dict).
 
+## Forests
+
+```python
+placed = arbrume.forest(
+    {
+        "seed": 7,
+        "terrain": {"size": [400.0, 400.0], "hills": {"amplitude": 40.0, "wavelength": 200.0}},
+        "species": [
+            {"species": "excurrent_conifer", "density": 120.0, "age": 25, "overlap": 0.65},
+            {"species": "thicket_shrub", "density": 300.0, "age": 10, "layer": 1},
+        ],
+        "exclude": [{"circle": {"center": [0.0, 0.0], "radius": 30.0}, "falloff": 8.0}],
+    },
+    out="out/forest",  # optional: also write the files of `arbrume forest`
+)
+placed.positions, placed.rotations, placed.scales  # (n, 3), (n, 4) x y z w, (n,)
+placed.species, placed.variants, placed.tints  # indices into names and library; (n, 3)
+placed.library[0][1]["levels"]  # arbrume.Tree per level of variant 1
+```
+
+`arbrume.forest(config, *, grow=True, base=None, out=None, threads=None)` places the
+forest of `config` (a dict with the keys of `forest.toml`, TOML text, or the path of a
+file; see [Forests](forest.md)) without the GIL. With `grow` (the default) it also grows
+the variant library, and the spacing of a species defaults to the crowns of its
+variants; with `grow=False` only the placement runs and every species needs a
+`spacing`. Relative paths in the config start from `base`, by default the directory of
+the file or the current directory. `out` writes the variant files, instanced file,
+tables and manifest there; `threads` sets the worker threads.
+
+It returns an `arbrume.Forest`: `instances` is a structured array of
+`arbrume.INSTANCE_DTYPE` (the 40-byte record of the binary table) and `positions`,
+`rotations`, `scales`, `species` and `variants` are views of its fields; `tints` is the
+colour factor as floats. `names` are the species labels, `library[s][k]` describes
+variant `k` of species `s` (`levels`, one `arbrume.Tree` per level of detail, the
+billboard last; `kinds`, `max_screen_height`, `seed`, `height`, `crown_radius`,
+`trunk_radius`), `terrain` holds `origin`, `size`, `samples` and the `heights` as a
+`(rows, columns)` array, `report` the counts per species against their target, and
+`coupled` the `(instance index, Tree)` of the coupled region. The placement depends on
+the config only, not on `threads`. An invalid config raises `ValueError`.
+
 ## Surroundings, voxel masks and growth frames
 
 Species in the self-organizing mode grow in response to what stands around them
@@ -159,13 +199,50 @@ tree = arbrume.generate(
 tree = arbrume.generate("open_grown_broadleaf", seed=1, age=25, surroundings="wall.toml")
 ```
 
+Climbing species ([Climbing plants](climbing.md)) hold the blocking occluders, analytic
+or voxel masks, whatever their growth mode:
+
+```python
+wall = {"shape": "box", "min": [-3.0, 0.0, -0.42], "max": [3.0, 4.0, -0.12], "shade": 0.0}
+ivy = arbrume.generate("ivy_like", seed=4, age=16, surroundings={"occluders": [wall]})
+vine = arbrume.generate("vine_like", seed=2, age=10, surroundings="examples/climbing/pergola.toml")
+looser = arbrume.generate(
+    "ivy_like", seed=4, age=16, surroundings={"occluders": [wall]}, **{"climbing.gap": 0.02}
+)
+```
+
 `surroundings` is a dict with `envelope` (a shape, or `None`) and `occluders` (a list),
 or the path of a surroundings TOML file. A shape dict has a `shape` key (`sphere`,
 `ellipsoid`, `box`, `cylinder`, `cone`) and its sizes; an occluder dict adds `blocks`
 (default `True`) and `shade` (default 1). The same surroundings given as a dict and as
 a file to `arbrume gen --surroundings` give the same plant. A parametric species ignores
-them. In a job dict of `generate_many`, `surroundings` applies to that job. They are
+them, unless it climbs. In a job dict of `generate_many`, `surroundings` applies to that job. They are
 written to the metadata (`tree.metadata["surroundings"]`), except a voxel mask.
+
+**Roots.** A species with a `[roots]` table grows a root system below the ground
+([Roots](roots.md)). The `roots` keyword chooses it: `False` removes it, `True` keeps it
+or adds the heart habit, a habit name (`"tap"`, `"heart"`, `"plate"`, `"fibrous"`)
+replaces it, and a dict is merged into it like any section override. `soil` is the ground
+and the resource patches, a dict with the keys of a `--soil` file or its path; the
+obstacles of the roots are the blocking occluders of `surroundings`:
+
+```python
+tree = arbrume.generate("maple_like_rooted", seed=1, age=40)
+plate = arbrume.generate(
+    "broadleaf",
+    seed=1,
+    age=30,
+    roots="plate",
+    soil={"resources": [{"shape": "sphere", "center": [3, -1, 0], "radius": 1, "richness": 5}]},
+    surroundings={"occluders": [{"shape": "sphere", "center": [1.2, -1, 0], "radius": 0.8}]},
+)
+shoot = arbrume.generate("oak_like_rooted", seed=1, age=40, roots=False)
+exposed = arbrume.generate("spruce_like_rooted", seed=1, age=40, **{"roots.exposed": 0.7})
+```
+
+Roots are grown by `generate`, `generate_many`, `growth_frames` (each frame with the
+roots of its age) and `generate_stand` (each plant in its own frame, without the obstacles
+of the stand). Root vertices are below the ground (Y < 0).
 
 **Voxel masks.** Any volume, such as a voxelized mesh, is passed as a voxel mask:
 
@@ -210,6 +287,30 @@ The last frame is the tree `generate` makes with the same arguments, bit for bit
 same mesh parts, skeleton and organ sites. A leaf keeps its place in the random leaf
 order from one frame to the next, so with `quality` below 1 the frames thin out the
 same leaves.
+
+## Guides: painted strokes
+
+The `guides` keyword of `generate`, `generate_many` and `growth_frames` steers a
+self-organizing species with crown, limb and erase strokes and freezes
+([Brush](brush.md)): a dict with `strokes` and `freezes`, the JSON text of a guides file,
+or its path. `tree.guides` reports what each stroke did (`None` without guides):
+
+```python
+guides = {
+    "strokes": [
+        {"kind": "limb", "points": [[0, 3, 0], [2, 4, 0.8], [5, 5.5, 0]], "radius": 0.4},
+        {"kind": "crown", "points": [[5, 8, 0], [8, 8.5, 0]], "radius": 1.5, "reach": 6.0},
+    ]
+}
+tree = arbrume.generate("open_grown_broadleaf", seed=3, age=20, guides=guides)
+tree.guides["strokes"][0]["claimed"]  # True: a branch took the limb
+tree.guides["strokes"][0]["mean_distance"]  # meters from its nodes to the stroke
+```
+
+The same guides as a dict, as text or as a file, and given to
+`arbrume gen --guides`, give the same plant. They are written to the metadata
+(`tree.metadata["guides"]`) when there are some. Empty guides, a parametric species or a
+stand (`generate_stand`, which does not take them) leave the plant unguided.
 
 ## Arrays without copies
 

@@ -12,6 +12,8 @@
 //! * `metrics`: the `ICTree` features of skeletons, summarised per species;
 //! * `fit`: fit species parameters to a target skeleton; `distance`: compare two
 //!   skeletons;
+//! * `forest`: place a forest of a config file over a terrain and write its variant
+//!   library, an instanced file and instance tables;
 //! * `pack`: author, validate, build, install and list species packs; their species
 //!   are named `pack_id/name` wherever a preset name is accepted.
 //!
@@ -26,10 +28,12 @@ mod bench;
 mod config;
 mod error;
 mod fit_cmd;
+mod forest_cmd;
 mod lods;
 mod metrics_cmd;
 mod pack_cmd;
 mod progress;
+mod roots;
 mod scene;
 mod sheet;
 mod source;
@@ -81,6 +85,8 @@ enum Command {
     /// Render a contact sheet of thumbnails, for tuning species by eye.
     #[command(hide = true)]
     Sheet(sheet::SheetArgs),
+    /// Place a forest over a terrain and write its variants, instances and tables.
+    Forest(Box<forest_cmd::ForestArgs>),
 }
 
 /// Subcommands of `arbrume species`.
@@ -117,6 +123,7 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Command::Distance(args) => fit_cmd::run_distance(&args),
         Command::Pack(command) => pack_cmd::run(&command),
         Command::Sheet(args) => sheet::run(&args),
+        Command::Forest(args) => forest_cmd::run(&args),
     }
 }
 

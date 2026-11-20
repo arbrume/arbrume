@@ -25,6 +25,9 @@ impl Generator {
     /// order of the entries, nor on the number of threads; a stand of one plant at the
     /// origin gives the plant of [`Generator::generate`].
     ///
+    /// A species with a `[roots]` layer grows its roots after the stand, in the soil of
+    /// its parameters, without the obstacles of the stand.
+    ///
     /// # Errors
     ///
     /// The errors of [`Generator::generate`] for any entry, and
@@ -41,6 +44,7 @@ impl Generator {
         let mut plants = Vec::with_capacity(entries.len());
         for ((species, params, _), graph) in entries.iter().zip(graphs) {
             let mut plant = Plant::default();
+            let graph = crate::rooted::add(species, params, &open, graph);
             self.mesh_grown(species, params, &Budget::NONE, graph, &mut plant)?;
             plants.push(plant);
         }

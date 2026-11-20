@@ -18,7 +18,7 @@
 use std::time::{Duration, Instant};
 
 use arbrume_core::species::Species;
-use arbrume_grow::{GrowthRecord, Surroundings, grow_timeline};
+use arbrume_grow::{GrowthRecord, GuideReport, Surroundings};
 use arbrume_mesh::MeshOptions;
 
 use crate::batch::Generator;
@@ -35,6 +35,8 @@ pub struct Timeline {
     pub record: GrowthRecord,
     /// Time spent growing.
     pub grow: Duration,
+    /// What the guides of the parameters did, when there are some.
+    pub guides: Option<GuideReport>,
 }
 
 impl Timeline {
@@ -68,11 +70,12 @@ impl Generator {
         let start = Instant::now();
         let open = Surroundings::none();
         let surroundings = params.surroundings.as_deref().unwrap_or(&open);
-        let record = grow_timeline(species, &params.grow_params(), surroundings);
+        let (record, guides) = crate::guided::grow_record(species, params, surroundings);
         Ok(Timeline {
             params: params.clone(),
             record,
             grow: start.elapsed(),
+            guides,
         })
     }
 
@@ -95,6 +98,7 @@ impl Generator {
         let start = Instant::now();
         let scale = timeline.params.scale;
         let graph = timeline.record.at_cycle(species, scale, cycle);
+        let graph = crate::rooted::add_at_cycle(species, &timeline.params, cycle, graph);
         let options = MeshOptions {
             max_cycle: Some(cycle),
             ..timeline.params.mesh
@@ -111,6 +115,7 @@ impl Generator {
             ..timeline.params.clone()
         };
         plant.stats = Stats::of(&plant.graph, &plant.mesh);
+        plant.guides.clone_from(&timeline.guides);
         Ok(start.elapsed())
     }
 }

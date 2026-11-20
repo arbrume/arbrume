@@ -15,7 +15,8 @@ pub const GENERATOR: &str = concat!("Arbrume ", env!("CARGO_PKG_VERSION"));
 /// The JSON object that makes an exported plant reproducible from its own file.
 ///
 /// Keys: `generator`, `version`, `species_name`, `seed`, `age`, `scale`, `surroundings`
-/// (null on open ground; a voxel mask is not written out), `mesh` (every
+/// (null on open ground; a voxel mask is not written out), `guides` (only when the
+/// plant has strokes or freezes), `mesh` (every
 /// field of the mesh options but `parallel`, which does not change the output), `stats`
 /// (see [`Stats`](crate::Stats)) and `species`, the full parameter set of the species.
 /// Deserializing `species` gives back an equal [`Species`]; with the other keys it gives
@@ -31,7 +32,7 @@ pub fn metadata(species: &Species, plant: &Plant) -> Value {
         serde_json::to_value(surroundings)
             .unwrap_or_else(|_| Value::String("not serializable: holds a voxel mask".to_owned()))
     });
-    json!({
+    let mut value = json!({
         "generator": "arbrume",
         "version": VERSION,
         "species_name": species.name,
@@ -52,7 +53,11 @@ pub fn metadata(species: &Species, plant: &Plant) -> Value {
         },
         "stats": plant.stats,
         "species": species,
-    })
+    });
+    if let Some(guides) = params.active_guides() {
+        value["guides"] = serde_json::to_value(guides).unwrap_or(Value::Null);
+    }
+    value
 }
 
 #[cfg(test)]

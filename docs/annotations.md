@@ -35,6 +35,7 @@ Everything is a pure function of the plant: the files are byte-identical whateve
 | 1 | `branch` | every other axis of the graph | chain id |
 | 2 | `twig` | the stem of a twig template (`foliage.twig.stem_radius > 0`) | organ index |
 | 3 | `leaf` | leaves, needles, and the fins that stand for needles on a twig | organ index |
+| 4 | `root` | axes of the root system, below the collar ([Roots](roots.md)) | chain id |
 
 Classes follow the structure of the plant graph ([Plant graph](core.md)). The bark part
 of the mesh holds the axes, the leaf part the instances of the foliage template at the
@@ -55,7 +56,7 @@ section 3.7.2.1), one value per vertex:
 
 | Attribute | Accessor | Value |
 |---|---|---|
-| `_SEMANTIC` | `SCALAR`, `FLOAT` | class value, 0 to 3 |
+| `_SEMANTIC` | `SCALAR`, `FLOAT` | class value, 0 to 4 |
 | `_INSTANCE` | `SCALAR`, `FLOAT` | instance id |
 
 Floats are what glTF allows here: `UNSIGNED_INT` is reserved for indices, and the Khronos
@@ -78,7 +79,7 @@ JSON object:
 | Key of `meta` | Value |
 |---|---|
 | `format`, `version` | `"arbrume-annotations"`, 1; the version rises on any incompatible change |
-| `semantic_classes` | `["trunk", "branch", "twig", "leaf"]` |
+| `semantic_classes` | `["trunk", "branch", "twig", "leaf", "root"]` |
 | `organ_kinds`, `part_kinds` | `["leaf", "twig", "flower", "fruit"]`, `["bark", "leaf", "billboard"]` |
 | `branch_samples` | `K`, or null without the branch table |
 | `arrays` | for each array present: `dtype`, symbolic `shape`, `meaning` |

@@ -40,12 +40,13 @@ fn line(name: &str, plant: &Plant) -> String {
     format!("{name} graph={graph:016x} mesh={mesh:016x}")
 }
 
-/// Golden lines of every self-organizing preset, seeds 1, 2 and 3, without surroundings.
+/// Golden lines of every self-organizing preset that does not climb, seeds 1, 2 and 3,
+/// without surroundings. Climbers have their own tests (`climbing.rs`).
 fn snapshot() -> String {
     let mut text = String::new();
     for (name, _) in presets() {
         let species = preset(name).unwrap();
-        if species.growth.mode != GrowthMode::SelfOrganizing {
+        if species.growth.mode != GrowthMode::SelfOrganizing || species.climbing.is_some() {
             continue;
         }
         for seed in [1, 2, 3] {

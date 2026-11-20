@@ -1,0 +1,70 @@
+# A valley of a few thousand trees: conifers on the heights, broadleaves below, shrubs
+# in the understory, a river along the valley floor and three clearings.
+# arbrume forest --config examples/forests/valley.toml --out out/valley
+name = "valley"
+seed = 7
+
+[terrain]
+size = [600.0, 600.0]
+hills = { amplitude = 110.0, wavelength = 320.0, octaves = 4, resolution = 2.0, seed = 5 }
+
+[placement]
+mode = "competition"
+
+[[species]]
+species = "excurrent_conifer"
+density = 150.0
+age = 25
+variants = 4
+overlap = 0.65
+scale = [0.6, 1.25]
+altitude = [60.0, 200.0]
+altitude_falloff = 10.0
+slope = [0.0, 35.0]
+slope_falloff = 10.0
+lean = 3.0
+tint = 0.08
+
+[[species]]
+species = "broadleaf"
+density = 85.0
+age = 20
+variants = 4
+overlap = 0.65
+scale = [0.6, 1.2]
+altitude = [-50.0, 60.0]
+altitude_falloff = 10.0
+lean = 4.0
+tint = 0.1
+
+[[species]]
+species = "thicket_shrub"
+density = 350.0
+age = 10
+variants = 3
+scale = [0.6, 1.4]
+layer = 1
+slope = [0.0, 30.0]
+tint = 0.12
+
+[[exclude]]
+path = { points = [[-300.0, -60.0], [-150.0, -20.0], [-40.0, 30.0], [80.0, 10.0], [190.0, 60.0], [300.0, 40.0]], width = 10.0 }
+falloff = 6.0
+carve = 3.0
+
+[[exclude]]
+circle = { center = [-90.0, 140.0], radius = 35.0 }
+falloff = 10.0
+
+[[exclude]]
+circle = { center = [140.0, -150.0], radius = 28.0 }
+falloff = 8.0
+
+[[exclude]]
+circle = { center = [60.0, 210.0], radius = 18.0 }
+falloff = 6.0
+
+[library]
+lods = 3
+billboard = "cloud"
+textures = true

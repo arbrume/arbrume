@@ -162,7 +162,11 @@ pub(crate) fn base_profile(
 ) -> BaseProfile {
     let radius = axis.radii[0];
     let Some(parent_radius) = view.parent_radius else {
-        return BaseProfile::flare(sweep, axis.length(), radius);
+        if graph.flags()[view.first.index()].is_root() {
+            return BaseProfile::Plain;
+        }
+        let flare = BaseProfile::flare(sweep, axis.length(), radius);
+        return flare.seated(collar_arc(graph, view));
     };
     if graph.orders()[view.attach.index()] == view.order {
         return BaseProfile::Plain;
@@ -172,6 +176,22 @@ pub(crate) fn base_profile(
         .first_direction()
         .map_or(1.0, |direction| direction.cross(parent).length());
     BaseProfile::collar(sweep, radius, parent_radius, sine)
+}
+
+/// Arc length from the base of the stem `view` to its first node when root axes leave
+/// that node (its collar), 0 otherwise.
+fn collar_arc(graph: &PlantGraph, view: &ChainView) -> f32 {
+    let first = view.first;
+    let flags = graph.flags();
+    let rooted = graph
+        .chains()
+        .iter()
+        .any(|chain| chain.attach == first && flags[chain.first.index()].is_root());
+    if rooted {
+        view.origin.distance(view.positions[0])
+    } else {
+        0.0
+    }
 }
 
 /// Texture mapping and colours of a chain of base radius `radius`.

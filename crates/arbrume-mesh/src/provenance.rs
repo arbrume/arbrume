@@ -39,11 +39,12 @@ impl Mesher {
                 .enumerate()
                 .filter(|&(_, (_, len))| len > 0)
                 .map(|(chain, (start, len))| {
-                    let order = graph.chain(ChainId::new(chain)).order;
+                    let axis = graph.chain(ChainId::new(chain));
+                    let root = graph.flags()[axis.first.index()].is_root();
                     VertexRun {
                         start: start as u32,
                         len: len as u32,
-                        class: axis_class(order),
+                        class: axis_class(axis.order, root),
                         instance: chain as u32,
                     }
                 })
@@ -77,9 +78,12 @@ impl Mesher {
     }
 }
 
-/// Class of the vertices of an axis of branching order `order`.
-const fn axis_class(order: u8) -> SemanticClass {
-    if order == 0 {
+/// Class of the vertices of an axis of branching order `order`, part of the root
+/// system or not.
+const fn axis_class(order: u8, root: bool) -> SemanticClass {
+    if root {
+        SemanticClass::Root
+    } else if order == 0 {
         SemanticClass::Trunk
     } else {
         SemanticClass::Branch

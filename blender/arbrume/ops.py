@@ -39,6 +39,7 @@ SETTINGS_FIELDS = (
     "textures",
     "junctions",
     "overrides",
+    "guides",
     "live_update",
     "envelope",
     "envelope_ground",
@@ -69,6 +70,7 @@ def copy_settings(source, target, **changes) -> None:
         for item in source.obstacles:
             copy = target.obstacles.add()
             copy.obj, copy.blocks, copy.shade = item.obj, item.blocks, item.shade
+            copy.role = item.role
 
 
 def new_plant_object(context, name: str, collection=None) -> bpy.types.Object:

@@ -14,6 +14,7 @@ const PRESETS: &[(&str, &str)] = &[
     ("birch_like", include_str!("../species/birch_like.toml")),
     ("broadleaf", include_str!("../species/broadleaf.toml")),
     ("conifer", include_str!("../species/conifer.toml")),
+    ("creeper_like", include_str!("../species/creeper_like.toml")),
     ("cypress_like", include_str!("../species/cypress_like.toml")),
     (
         "envelope_tree",
@@ -29,14 +30,27 @@ const PRESETS: &[(&str, &str)] = &[
         include_str!("../species/forest_grown_broadleaf.toml"),
     ),
     ("hedge_shrub", include_str!("../species/hedge_shrub.toml")),
+    ("ivy_like", include_str!("../species/ivy_like.toml")),
     ("larch_like", include_str!("../species/larch_like.toml")),
     ("maple_like", include_str!("../species/maple_like.toml")),
+    (
+        "maple_like_rooted",
+        include_str!("../species/maple_like_rooted.toml"),
+    ),
     ("oak_like", include_str!("../species/oak_like.toml")),
+    (
+        "oak_like_rooted",
+        include_str!("../species/oak_like_rooted.toml"),
+    ),
     (
         "open_grown_broadleaf",
         include_str!("../species/open_grown_broadleaf.toml"),
     ),
     ("palm_like", include_str!("../species/palm_like.toml")),
+    (
+        "palm_like_rooted",
+        include_str!("../species/palm_like_rooted.toml"),
+    ),
     ("pine_like", include_str!("../species/pine_like.toml")),
     ("poplar_like", include_str!("../species/poplar_like.toml")),
     ("rosette_herb", include_str!("../species/rosette_herb.toml")),
@@ -52,6 +66,10 @@ const PRESETS: &[(&str, &str)] = &[
     ),
     ("spruce_like", include_str!("../species/spruce_like.toml")),
     (
+        "spruce_like_rooted",
+        include_str!("../species/spruce_like_rooted.toml"),
+    ),
+    (
         "thicket_shrub",
         include_str!("../species/thicket_shrub.toml"),
     ),
@@ -59,6 +77,7 @@ const PRESETS: &[(&str, &str)] = &[
         "upright_shrub",
         include_str!("../species/upright_shrub.toml"),
     ),
+    ("vine_like", include_str!("../species/vine_like.toml")),
     ("willow_like", include_str!("../species/willow_like.toml")),
 ];
 

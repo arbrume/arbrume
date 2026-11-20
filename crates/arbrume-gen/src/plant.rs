@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use arbrume_core::graph::{OrganKind, PlantGraph};
 use arbrume_core::mesh::TreeMesh;
+use arbrume_grow::GuideReport;
 use serde::Serialize;
 
 use crate::params::GenParams;
@@ -104,6 +105,8 @@ pub struct Plant {
     pub mesh: TreeMesh,
     /// Statistics of the graph and of the mesh.
     pub stats: Stats,
+    /// What the guides of the parameters did, when there are some.
+    pub guides: Option<GuideReport>,
 }
 
 /// Wall-clock time of the stages of one generation.

@@ -48,7 +48,7 @@ node. Each accessor returns the whole slice.
 | `node_chains()` | `&[ChainId]` | chain the node belongs to |
 | `orders()` | `&[u8]` | branching order (that of the chain) |
 | `births()` | `&[u16]` | growth cycle in which the metamer appeared |
-| `flags()` | `&[NodeFlags]` | `SHED`, `GROWTH_UNIT_START` |
+| `flags()` | `&[NodeFlags]` | `SHED`, `GROWTH_UNIT_START`, `ROOT` (a node of the root system, [Roots](roots.md)) |
 
 The proximal end of an internode is not stored: it is the position of the parent node, or
 the origin of the chain for the first node of a root chain (`proximal(node)`). The length
@@ -141,6 +141,7 @@ let side = graph.add_chain(attach_node, ChainKind::Lateral, metamer);
 | `shed_subtrees(&nodes, cycle)` | the same for several branches in one pass, recording the growth cycle of the shedding |
 | `restore_shed_after(cycle)` | clears the flag of the nodes shed after `cycle`: the branches the plant still bore then |
 | `add_organ(site) -> usize`, `clear_organs()` | organ sites |
+| `map_points(map)`, `set_root_origin(chain, origin)` | move node positions and the origins of root chains (axes without a parent; not to be confused with the axes of a root system, flagged `ROOT`) |
 
 A `Metamer` is `{ position, radius, birth, flags }`. `birth` must not be earlier than the
 parent's. Preconditions are checked with `debug_assert!`; `check_invariants()` verifies
@@ -317,6 +318,8 @@ its own fields, so layers can be extended independently.
 | `[foliage]` | `foliage.rs` | which nodes bear leaves (`enabled`, `retention_cycles`, `density`, `per_node`, `min_order`, see [Growth](growth.md)); the leaf, its variation and the `[foliage.twig]` instanced at each site (see [Meshing](mesh.md)) |
 | `[bark]` | `bark.rs` | `color`, `young_color`, `young_radius`, `color_variation`, `roughness`, `texture_size`, `texture` (see [Meshing](mesh.md)) |
 | `[variation]` | `variation.rs` | `age` and `scale` ranges, `weight`, and the `[variation.jitter]` table (below) |
+| `[climbing]` | `climbing.rs` | optional: `attachment` (adhesive, tendril, twining), reach and search distances, gap, droop, tendrils, rootlets, leaf facing ([Climbing plants](climbing.md)) |
+| `[roots]` | `roots.rs` | optional: the root system below the collar: `habit` (tap, heart, plate, fibrous), `mode`, primaries, lengths, branching and tropism curves, sinkers, pipe balance, flare, exposure ([Roots](roots.md)) |
 
 Growth curves take one of two positions, stated in the documentation of each field:
 *along the parent* (where the axis is attached, 0 at the parent's base) or *along the

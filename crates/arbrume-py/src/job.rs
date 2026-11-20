@@ -10,7 +10,8 @@
 //!
 //! The keyword options are `scale`, `quality`, `textures` (a bool: procedural textures,
 //! see `docs/textures.md`), `junctions` (`"tier-a"` or `"tier-b"`, see
-//! `docs/junctions.md`), `surroundings` (see [`crate::surroundings`]) and `overrides`
+//! `docs/junctions.md`), `surroundings` (see [`crate::surroundings`]), `guides` (see
+//! [`crate::guides`]), `roots` and `soil` (see [`crate::roots`]) and `overrides`
 //! (a dict of dotted paths); every other keyword is one more override, so
 //! `**{"foliage.length": 0.2}` and `overrides={"foliage.length": 0.2}` are the same.
 //!
@@ -25,7 +26,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use arbrume_core::species::Species;
 use arbrume_gen::{
-    GenParams, Junctions, Surroundings, TextureCache, TextureOptions, preset_toml, presets,
+    GenParams, Guides, Junctions, Surroundings, TextureCache, TextureOptions, preset_toml, presets,
     species_with_overrides,
 };
 use pyo3::exceptions::{PyFileNotFoundError, PyTypeError, PyValueError};
@@ -49,6 +50,10 @@ pub struct Options {
     pub junctions: Junctions,
     /// What stands around the plant.
     pub surroundings: Option<Arc<Surroundings>>,
+    /// Strokes and freezes that steer the growth.
+    pub guides: Option<Arc<Guides>>,
+    /// Ground and resources the roots grow in.
+    pub soil: Option<Arc<arbrume_gen::Soil>>,
 }
 
 /// Largest number of species in the texture cache before it is emptied.
@@ -70,7 +75,7 @@ pub fn texture_cache() -> Arc<TextureCache> {
 
 impl Options {
     /// Reads `kwargs`: `scale`, `quality`, `textures`, `junctions`, `surroundings`,
-    /// `overrides` and dotted overrides.
+    /// `guides`, `overrides` and dotted overrides.
     pub fn parse(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
         let mut options = Self {
             scale: 1.0,
@@ -79,6 +84,8 @@ impl Options {
             textures: false,
             junctions: Junctions::TierA,
             surroundings: None,
+            guides: None,
+            soil: None,
         };
         let Some(kwargs) = kwargs else {
             return Ok(options);
@@ -96,6 +103,9 @@ impl Options {
                 "overrides" => {}
                 "junctions" => options.junctions = junctions(&value)?,
                 "surroundings" => options.surroundings = crate::surroundings::parse(&value)?,
+                "guides" => options.guides = crate::guides::parse(&value)?,
+                "soil" => options.soil = crate::roots::parse_soil(&value)?,
+                "roots" if value.is_none() => {}
                 "textures" => {
                     options.textures = value.extract::<bool>().map_err(|_| {
                         PyTypeError::new_err("`textures` must be a bool".to_owned())
@@ -158,6 +168,8 @@ pub fn params(seed: u64, age: u16, options: &Options) -> GenParams {
         .with_quality(options.quality);
     params.mesh.junctions = options.junctions;
     params.surroundings.clone_from(&options.surroundings);
+    params.guides.clone_from(&options.guides);
+    params.soil.clone_from(&options.soil);
     params
 }
 
@@ -258,8 +270,8 @@ impl SpeciesCache {
         if let Some(species) = self.parsed.get(&key) {
             return Ok(Arc::clone(species));
         }
-        let mut species =
-            species_with_overrides(&key.0.text, overrides).map_err(|e| gen_error(&e))?;
+        let (text, overrides) = crate::roots::resolve(&key.0.text, overrides)?;
+        let mut species = species_with_overrides(&text, &overrides).map_err(|e| gen_error(&e))?;
         species.asset_dir.clone_from(&key.0.asset_dir);
         let species = Arc::new(species);
         self.parsed.insert(key, Arc::clone(&species));

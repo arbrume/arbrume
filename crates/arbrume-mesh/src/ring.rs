@@ -105,12 +105,16 @@ pub(crate) enum BaseProfile {
     /// No widening.
     Plain,
     /// Trunk flare over the first eighth of an axis of the given length, followed with
-    /// `rings` rings.
+    /// `rings` rings. On a stem with roots the flare starts at the collar, the arc length
+    /// `collar` where the roots leave the stem, and the widening grows linearly from the
+    /// base of the stem up to the collar.
     Flare {
         /// Arc length of the whole axis.
         length: f32,
         /// Number of rings over the flared part.
         rings: f32,
+        /// Arc length of the collar, 0 for a stem without roots.
+        collar: f32,
     },
     /// Collar of a lateral axis: the radius is multiplied by `1 + gain` up to the arc
     /// length `start`, where the axis leaves its parent, and falls back to the plain
@@ -149,6 +153,23 @@ impl BaseProfile {
         Self::Flare {
             length,
             rings: rings.ceil().clamp(1.0, MAX_BASE_RINGS),
+            collar: 0.0,
+        }
+    }
+
+    /// The same flare starting at the arc length `collar`, where roots leave the stem;
+    /// other profiles are kept as they are.
+    pub(crate) fn seated(self, collar: f32) -> Self {
+        match self {
+            Self::Flare { length, rings, .. } if collar > 0.0 => {
+                let zone = length * FLARE_ZONE;
+                Self::Flare {
+                    length,
+                    rings: (rings * (zone + collar) / zone).ceil().min(MAX_BASE_RINGS),
+                    collar,
+                }
+            }
+            other => other,
         }
     }
 
@@ -179,7 +200,11 @@ impl BaseProfile {
     pub(crate) fn zone(&self) -> (f32, f32, f32) {
         match *self {
             Self::Plain => (f32::INFINITY, f32::INFINITY, 0.0),
-            Self::Flare { length, rings } => (0.0, length * FLARE_ZONE, rings),
+            Self::Flare {
+                length,
+                rings,
+                collar,
+            } => (0.0, collar + length * FLARE_ZONE, rings),
             Self::Collar {
                 start,
                 length,
@@ -194,14 +219,15 @@ impl BaseProfile {
     pub(crate) fn widening(&self, geometry: &Geometry, arc: f32) -> (f32, f32) {
         match *self {
             Self::Plain => (0.0, 0.0),
-            Self::Flare { length, .. } => {
-                let height = arc / length;
+            Self::Flare { length, collar, .. } => {
+                let height = (arc - collar).max(0.0) / length;
                 if height >= FLARE_ZONE {
                     return (0.0, 0.0);
                 }
                 let lobed = geometry.buttress_lobes > 0;
                 let depth = if lobed { geometry.buttress_depth } else { 0.0 };
-                (geometry.flare_factor(height) - 1.0, depth)
+                let below = if arc < collar { arc / collar } else { 1.0 };
+                ((geometry.flare_factor(height) - 1.0) * below, depth)
             }
             Self::Collar {
                 start,

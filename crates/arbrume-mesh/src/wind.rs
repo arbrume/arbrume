@@ -107,6 +107,9 @@ pub(crate) struct WindPlan {
     lengths: Vec<f32>,
     /// Wind data of each kept leaf in buffer order, flutter 0.
     pub leaves: Vec<WindVertex>,
+    /// Wind data of every vertex of each root chain, by chain id: that of the stem
+    /// where the root system leaves it. `None` for a chain above the collar.
+    anchor_of: Vec<Option<WindVertex>>,
 }
 
 /// A unit vector orthogonal to `tangent`, as horizontal as possible.
@@ -128,11 +131,15 @@ impl WindPlan {
     ) {
         self.table.branches.clear();
         self.branch_of.clear();
+        self.anchor_of.clear();
         self.lengths.clear();
         let mut volumes = Vec::new();
         for chain in graph.chain_ids() {
             let tube = bark.tube(chain.index());
-            let Some(view) = graph.chain_view(chain).filter(|_| tube.vertices > 0) else {
+            let anchor = self.anchor(graph, chain, arcs);
+            self.anchor_of.push(anchor);
+            let view = graph.chain_view(chain).filter(|_| tube.vertices > 0);
+            let Some(view) = view.filter(|_| anchor.is_none()) else {
                 self.branch_of.push(NO_BRANCH);
                 continue;
             };
@@ -179,6 +186,31 @@ impl WindPlan {
             self.lengths.push(length);
         }
         self.accumulate_mass(&volumes);
+    }
+
+    /// The wind data of the vertices of `chain` when it is a root: the roots stay still
+    /// with the base of the stem they leave. `None` for a chain above the collar.
+    fn anchor(&self, graph: &PlantGraph, chain: ChainId, arcs: &[f32]) -> Option<WindVertex> {
+        let first = graph.chain(chain).first;
+        if !graph.flags()[first.index()].is_root() {
+            return None;
+        }
+        let attach = graph.chain(chain).attach;
+        if attach.is_none() {
+            return Some([0.0; 6]);
+        }
+        let parent = graph.chain_of(attach).index();
+        Some(self.anchor_of[parent].unwrap_or_else(|| self.at(parent, arcs[attach.index()])))
+    }
+
+    /// The wind data of a point at arc length `arc` along chain `chain`: [`Self::at`], or
+    /// the anchor of a root chain.
+    fn along(&self, chain: usize, arc: f32) -> WindVertex {
+        self.anchor_of
+            .get(chain)
+            .copied()
+            .flatten()
+            .unwrap_or_else(|| self.at(chain, arc))
     }
 
     /// Sets the parent, level and lineage of `branch`, which grows from node `attach`.
@@ -239,7 +271,7 @@ impl WindPlan {
     /// The wind data of a footprint point of `junction`: that of its parent where the
     /// point lies on it.
     fn on_parent(&self, junction: &Junction, foot: &Foot) -> WindVertex {
-        self.at(
+        self.along(
             junction.hole.parent as usize,
             junction.host.arc + foot.param[1],
         )
@@ -250,10 +282,14 @@ impl WindPlan {
         buffers.wind.clear();
         buffers.wind.resize(buffers.positions.len(), [0.0; 6]);
         for (chain, &index) in self.branch_of.iter().enumerate() {
-            if index == NO_BRANCH {
+            let still = self.anchor_of.get(chain).copied().flatten().is_some();
+            if index == NO_BRANCH && !still {
                 continue;
             }
             let tube = bark.tube(chain);
+            if tube.vertices == 0 {
+                continue;
+            }
             let out = &mut buffers.wind[tube.vertex_start..tube.vertex_start + tube.vertices];
             let mut slot = 0;
             for ring in tube.rings {
@@ -261,16 +297,16 @@ impl WindPlan {
                 let values = &mut out[slot..slot + count];
                 match (ring.skew, tube.own) {
                     (Some((_, blend)), Some(own)) => self.fill_collar(chain, own, blend, values),
-                    _ => values.fill(self.at(chain, ring.arc)),
+                    _ => values.fill(self.along(chain, ring.arc)),
                 }
                 slot += count;
             }
-            let length = self.lengths[index as usize];
-            out[slot] = self.at(chain, length);
+            let length = self.lengths.get(index as usize).copied().unwrap_or(0.0);
+            out[slot] = self.along(chain, length);
             slot += 1;
             match tube.own {
                 Some(own) => self.fill_stitch(bark, own, &mut out[slot..]),
-                None => out[slot..].fill(self.at(chain, 0.0)),
+                None => out[slot..].fill(self.along(chain, 0.0)),
             }
         }
     }
@@ -290,7 +326,7 @@ impl WindPlan {
             *value = if blend == 0.0 {
                 self.on_parent(junction, foot)
             } else {
-                self.at(chain, foot.arc + (junction.collar.end - foot.arc) * blend)
+                self.along(chain, foot.arc + (junction.collar.end - foot.arc) * blend)
             };
         }
     }
@@ -304,7 +340,7 @@ impl WindPlan {
         let rim = junction.hole.rim_len();
         for (k, value) in out[..rim].iter_mut().enumerate() {
             let (row, _) = junction.hole.rim(k);
-            *value = self.at(parent, rings[row as usize].arc);
+            *value = self.along(parent, rings[row as usize].arc);
         }
         for (value, foot) in out[rim..].iter_mut().zip(feet) {
             *value = self.on_parent(junction, foot);

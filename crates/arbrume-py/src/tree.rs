@@ -99,6 +99,18 @@ impl Tree {
         json_to_py(py, &value)
     }
 
+    /// What the guides did, one dict per stroke under `strokes` (see `docs/brush.md`);
+    /// `None` for a tree grown without strokes or freezes.
+    #[getter]
+    fn guides<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
+        let Some(report) = &self.data.plant.guides else {
+            return Ok(None);
+        };
+        let value = serde_json::to_value(report)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+        json_to_py(py, &value).map(Some)
+    }
+
     /// The metadata written to exported files, enough to generate the same tree again.
     #[getter]
     fn metadata<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {

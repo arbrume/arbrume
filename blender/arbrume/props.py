@@ -3,7 +3,8 @@
 ``Object.arbrume`` (:class:`ARBRUME_PG_plant`) holds what a plant is made from: the species
 (a preset name or the text of a species file), seed, age, scale, quality, whether the
 plant carries procedural textures, how its branches are joined, the overrides as JSON
-text, and the envelope and obstacle objects it grows among (:mod:`.surroundings`).
+text, the brush strokes as JSON text (:mod:`.brush`), and the envelope and obstacle
+objects it grows among (:mod:`.surroundings`).
 Those are saved with the file, so a plant reopens editable.
 
 ``Object.arbrume.params`` is a property group built at registration from the species
@@ -28,6 +29,7 @@ from bpy.props import (
 )
 
 from . import plant, surroundings
+from .logic import roots as root_modes
 from .logic import schema
 from .logic.packs import display_name
 from .logic.species import readable_name
@@ -123,6 +125,20 @@ class ARBRUME_PG_obstacle(bpy.types.PropertyGroup):
         soft_max=5.0,
         update=_changed,
     )
+    role: EnumProperty(
+        name="Role",
+        description="What the object is to the plant",
+        items=[
+            ("OBSTACLE", "Obstacle", "Blocks growth and casts the shade set beside it"),
+            (
+                "SUPPORT",
+                "Support",
+                "A surface climbing plants hold: blocks growth and casts no shade",
+            ),
+        ],
+        default="OBSTACLE",
+        update=_changed,
+    )
 
 
 class ARBRUME_PG_plant(bpy.types.PropertyGroup):
@@ -181,10 +197,23 @@ class ARBRUME_PG_plant(bpy.types.PropertyGroup):
         default="tier-a",
         update=_changed,
     )
+    roots: EnumProperty(
+        name="Roots",
+        description="Root system of the plant",
+        items=root_modes.MODES,
+        default="species",
+        update=_changed,
+    )
     overrides: StringProperty(
         name="Overrides",
         description="Species parameters changed from the species, as JSON",
         default="{}",
+        update=_changed,
+    )
+    guides: StringProperty(
+        name="Guides",
+        description="Brush strokes and freezes that steer the growth, as JSON",
+        default="",
         update=_changed,
     )
     live_update: BoolProperty(

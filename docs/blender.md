@@ -77,6 +77,26 @@ active plant:
   came from the cache. Moving an envelope or an obstacle does not regenerate the plant
   by itself: press *Regenerate* or change a setting. For a parametric species the panel
   says the volumes have no effect, and nothing is voxelized.
+- **Supports.** Each obstacle slot has a *Role*: *Obstacle* (blocks and casts the shade set
+  beside it) or *Support*, a surface a climbing plant holds, which blocks growth and casts
+  no shade. A climbing species (`ivy_like`, `vine_like`, `creeper_like`, or any species
+  with a `[climbing]` table, see [Climbing plants](climbing.md)) climbs every blocking
+  slot, in either growth mode; the support role only saves it from the shade of the
+  object it climbs. Supports are voxelized and cached like obstacles. The automatic voxel
+  size follows the internodes of the species; for a thin post or a wire set *Voxel Size*
+  below the radius of the support, or the plant sees a coarser object. A plant mesh can
+  be a support too, for ivy on a tree: select it as a support slot.
+- **Brush.** The *Brush* sub-panel and the *Arbrume Brush* tool of the toolbar paint
+  strokes that steer a self-organizing plant (see [Brush](#brush) below).
+- **Roots.** The *Roots* sub-panel chooses the root system of the plant ([Roots](roots.md)):
+  *Species* grows the `[roots]` of the species when it has one (the presets
+  `*_rooted`), *Grow Roots* adds the heart habit to a species without roots, *No Roots*
+  grows none. Below it, the parameters of `[roots]` from the schema (habit, mode,
+  primaries, lengths and angles per order, sinkers, pipe balance, flare, exposure) are
+  edited like any other; changing one adds the layer to a species without it. Roots grow
+  below the ground plane of the plant (negative Z). The *Obstacles* of the Surroundings
+  panel block roots too, for a parametric species as well: a sphere under the ground is a
+  stone the roots grow around.
 - **Growth Frames.** *Batch and Files > Growth Frames* grows the active plant once and
   makes one object per growth stage (*Stages*, spread evenly over its age, with its
   surroundings) in a new collection `<plant> growth`. Their viewport and render
@@ -105,6 +125,41 @@ yet.
 
 Preferences (*Edit > Preferences > Add-ons > Arbrume*): the quality of new plants, the
 number of threads of batch generation, and whether to use the generator's normals.
+
+## Forests
+
+*Add > Mesh > Arbrume Forest* (`bpy.ops.arbrume.add_forest`) places a forest over a
+terrain mesh, the active object by default. Its redo panel takes:
+
+| Property | Default | Meaning |
+|---|---|---|
+| *Terrain* | active mesh | the mesh the trees stand on |
+| *Species Mix* | `excurrent_conifer:90,forest_grown_broadleaf:50` | species (preset or `pack_id/name`) and trees per hectare |
+| *Density* | 1 | factor on every density |
+| *Seed* | 0 | seed of the placement and of the variants |
+| *Variants*, *Mesh Levels*, *Billboard*, *Textures* | 3, 2, cloud, on | the variant library ([Forests](forest.md#variant-library)) |
+| *Terrain Resolution* | 2 m | spacing of the height samples |
+| *Viewport Level* | last | level of detail drawn in the viewport; renders draw level 0 |
+| *Config* | none | a `forest.toml` whose terrain is replaced by the mesh: exclusions, slopes, altitudes, modes |
+
+The terrain is sampled by casting rays straight down onto its evaluated mesh on a grid of
+the chosen resolution; samples off the mesh take the heights of their neighbours and are
+excluded (a `mask_grid` exclusion), so nothing grows off the mesh. The forest is computed by `arbrume.forest`, then made of:
+
+- a collection `<terrain> forest library`, excluded from the view layer, with one
+  collection per level of detail holding one mesh object per variant;
+- one object `<terrain> forest` whose vertices are the trees, with the point attributes
+  `arbrume_index` (which variant), `arbrume_rotation` (quaternion), `arbrume_scale` and
+  `arbrume_tint`, and a Geometry Nodes modifier: *Instance on Points* picks the variant
+  among the separate children of the collection of the viewport level (*Is Viewport*) or
+  of level 0 in renders, and turns and scales it.
+
+The materials of the forest are copies of the plant materials (`<material> tinted`) whose
+base colour is multiplied by `arbrume_tint`, read from the instancer. Whatever the number
+of trees the scene holds a few objects: the valley of [Forests](forest.md) (17 339 trees,
+3 species, 11 variants, 4 levels) is 44 variant objects and one instancer, built in
+0.6 s from the result of `arbrume.forest`. The trees are instances, not objects: to edit
+one, *Make Instances Real* on the instancer.
 
 ## How it works
 
@@ -165,6 +220,58 @@ roughness factor feeds the roughness. The UV map is flipped vertically (`v` beco
 `1 - v`) because Blender puts the origin of images at the bottom, glTF at the top; the
 normal maps then need no change, since both conventions point `+y` up the image.
 
+## Brush
+
+The *Arbrume Brush* tool (toolbar of the 3D view in Object Mode, or *Brush Tool* in the
+*Brush* sub-panel) paints strokes on the active plant ([Brush](brush.md) has the growth
+rules). Each left-button drag is one stroke and one undo step:
+
+- **Crown** paints a volume the crown grows into. *Radius* is the brush radius,
+  *Strength* the light given to the buds that reach it, *Reach* the distance from which
+  buds are drawn to it, *Density* its markers.
+- **Limb** draws a line one axis follows: start it on the trunk or on a branch (the
+  closest bud within the radius of the start takes it), or at the ground to steer the
+  trunk. *Follow* is how closely the axis keeps to the line.
+- **Erase** removes growth and keeps it out. With *Erase Through* (the default) the
+  stroke cuts along the view through the whole plant, as an eraser on a picture does;
+  without it only near the drawing plane.
+
+A stroke is projected onto a plane facing the view through the point of the plant (or of
+any other object) under its first point, or through the plant origin when there is none
+(*Projection: Plane*), or onto the surfaces under the mouse (*Surface*). While the button
+is held, the plant grows again with the stroke so far at *Preview Quality* each time the
+mouse has moved, as often as generation keeps up; on release it grows at its own
+quality. *Esc* or the right button cancels the stroke. The strokes are drawn over the
+view while the tool is active (*Show Strokes* draws them always): crown green, limb
+orange, erase red.
+
+*Freeze* keeps the plant grown so far: the age grows by *Growth After Freeze* cycles, in
+which only later strokes add growth; *Unfreeze* removes the last freeze and the strokes
+drawn after it, *Clear Strokes* every stroke. The panel counts the strokes, shows the
+time of the last stroke and warns about a limb no branch took or one that is not grown
+to its end (raise the age). The strokes are stored on the object (`Object.arbrume.guides`,
+the JSON of [Brush](brush.md)) in the frame of the plant, so they move, turn and
+duplicate with it, and a saved file reopens editable.
+
+For a parametric species the panel says that strokes steer self-organizing species and
+offers to switch to the self-organizing preset closest in habit: trunk height, branch
+reach, number of stems, highest order, and branches in tiers or not
+(`logic.brush.nearest_self_organizing`). The switch drops the parameter changes of the
+plant, which belong to the other species.
+
+Time of one stroke drawn in twelve steps (`brush_steps.time_strokes`, Blender 5.3 in
+background on the machine of [Growth](growth.md#performance-and-engine-options)):
+
+| plant | triangles at quality 1 | each preview at quality 0.25 (median, max) | on release: total (growth and meshing, upload) |
+|---|---|---|---|
+| `envelope_tree`, age 16 | 90 239 | 14.7 ms, 16.9 ms | 36.0 ms (9.6 ms, 25.7 ms) |
+| `open_grown_broadleaf`, age 20 | 208 913 | 19.7 ms, 22.2 ms | 73.5 ms (11.6 ms, 60.3 ms) |
+| `open_grown_broadleaf`, age 30 | 449 380 | 46.5 ms, 49.0 ms | 161.0 ms (29.6 ms, 129.0 ms) |
+
+The upload of the mesh into Blender, not growth, dominates on release. These were taken
+with no other build running; with several compilations running on the machine, the same
+strokes took two to four times as long.
+
 ## Building the extension
 
 ```sh
@@ -209,8 +316,18 @@ inside it, a seed change reuses the cached voxels, moving the sphere voxelizes i
 again), growth frames of that plant (as many objects as stages, one visible at each
 frame of the timeline), a plant next to a cube obstacle (no skeleton node inside the
 cube, where the same plant without it grows through) and the same obstacle ignored by a
-parametric species (`blender/tests/surroundings_steps.py`), disabling and enabling the
-extension, upload timings and three EEVEE stills, the last a plant in a sphere envelope
+parametric species (`blender/tests/surroundings_steps.py`), an ivy given a wall in the
+support role (it creeps without it; with it, it climbs above 1.5 m, no skeleton node
+enters the wall, most nodes hold it, the occluder casts no shade and a seed change
+reuses the voxels; `blender/tests/climbing_steps.py`, whose `render` also makes the
+Cycles still of an ivy on a wall with a window), a forest over a hilly grid (`blender/tests/forest_steps.py`: the
+library excluded from the view layer with one object per variant and level, tinted
+materials, every tree on the terrain, one instance per tree, the same trees for the same
+seed and others for another, a negative density refused, an EEVEE still), a rooted
+preset with its roots turned off and on, a root parameter, and a stone under the ground
+that no root node enters (`blender/tests/roots_steps.py`, whose `render_still` makes a
+Cycles still of a rooted spruce next to a stone, the ground left out), disabling and
+enabling the extension, upload timings and three EEVEE stills, the last a plant in a sphere envelope
 next to a wall. The third opens a window (with `--enable-event-simulate`), draws the
 panels, saves screenshots of the sidebar, then drags a point of a curve widget with
 simulated mouse events and checks that the drag is one undo step that undo and redo

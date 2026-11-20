@@ -3,7 +3,7 @@
 use arbrume_core::species::SpeciesError;
 use std::sync::Arc;
 
-use arbrume_grow::{GrowParams, Surroundings};
+use arbrume_grow::{GrowParams, Guides, Soil, Surroundings};
 use arbrume_mesh::{MeshError, MeshOptions};
 
 /// Error from the generation pipeline.
@@ -55,6 +55,13 @@ pub struct GenParams {
     /// Envelope, obstacles and neighbours around the plant, in meters in the frame of
     /// the plant; `None` for open ground. Read by the self-organizing mode only.
     pub surroundings: Option<Arc<Surroundings>>,
+    /// Strokes and freezes that steer the growth (`arbrume_grow::guides`), in meters in
+    /// the frame of the plant; `None` for none. Read by the self-organizing mode only.
+    pub guides: Option<Arc<Guides>>,
+    /// Ground and resources the roots grow in, for a species with a `[roots]` layer;
+    /// `None` for homogeneous soil under flat ground. Its obstacles are the blocking
+    /// occluders of `surroundings`.
+    pub soil: Option<Arc<Soil>>,
 }
 
 impl Default for GenParams {
@@ -77,6 +84,8 @@ impl GenParams {
                 ..MeshOptions::default()
             },
             surroundings: None,
+            guides: None,
+            soil: None,
         }
     }
 
@@ -84,6 +93,26 @@ impl GenParams {
     #[must_use]
     pub fn with_surroundings(mut self, surroundings: impl Into<Arc<Surroundings>>) -> Self {
         self.surroundings = Some(surroundings.into());
+        self
+    }
+
+    /// The same parameters with the growth steered by `guides`.
+    #[must_use]
+    pub fn with_guides(mut self, guides: impl Into<Arc<Guides>>) -> Self {
+        self.guides = Some(guides.into());
+        self
+    }
+
+    /// The guides of the plant when they have strokes or freezes.
+    #[must_use]
+    pub fn active_guides(&self) -> Option<&Guides> {
+        self.guides.as_deref().filter(|guides| !guides.is_empty())
+    }
+
+    /// The same parameters with the roots growing in `soil`.
+    #[must_use]
+    pub fn with_soil(mut self, soil: impl Into<Arc<Soil>>) -> Self {
+        self.soil = Some(soil.into());
         self
     }
 
@@ -113,12 +142,13 @@ impl GenParams {
         }
     }
 
-    /// Checks the scale, the surroundings and the mesh options.
+    /// Checks the scale, the surroundings, the guides and the mesh options.
     ///
     /// # Errors
     ///
     /// Returns [`GenError::InvalidParam`] for a scale that is not positive and finite or
-    /// for surroundings with an empty or infinite volume, and [`GenError::Mesh`] for
+    /// for surroundings with an empty or infinite volume or invalid guides, and
+    /// [`GenError::Mesh`] for
     /// invalid mesh options.
     pub fn validate(&self) -> Result<(), GenError> {
         if !(self.scale > 0.0 && self.scale.is_finite()) {
@@ -134,6 +164,12 @@ impl GenParams {
                     field: "surroundings",
                     reason,
                 })?;
+        }
+        if let Some(guides) = &self.guides {
+            guides.validate().map_err(|reason| GenError::InvalidParam {
+                field: "guides",
+                reason,
+            })?;
         }
         self.mesh.validate()?;
         Ok(())

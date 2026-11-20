@@ -83,6 +83,8 @@ impl NodeFlags {
     pub const SHED: Self = Self(1);
     /// First metamer of a growth unit (the shoot extended in one flush).
     pub const GROWTH_UNIT_START: Self = Self(1 << 1);
+    /// The metamer belongs to the root system, below the collar.
+    pub const ROOT: Self = Self(1 << 2);
 
     /// `true` when every flag of `other` is set.
     #[inline]
@@ -103,6 +105,13 @@ impl NodeFlags {
     #[must_use]
     pub const fn is_shed(self) -> bool {
         self.contains(Self::SHED)
+    }
+
+    /// `true` when [`NodeFlags::ROOT`] is set.
+    #[inline]
+    #[must_use]
+    pub const fn is_root(self) -> bool {
+        self.contains(Self::ROOT)
     }
 }
 
@@ -515,6 +524,31 @@ impl PlantGraph {
     /// Removes all organ sites, keeping the allocation.
     pub fn clear_organs(&mut self) {
         self.organs.clear();
+    }
+
+    /// Moves the base point of the root chain `chain` to `origin`. Attached chains start
+    /// at their attachment node and are left as they are.
+    pub fn set_root_origin(&mut self, chain: ChainId, origin: Vec3) {
+        let entry = &mut self.chains[chain.index()];
+        if entry.attach.is_none() {
+            entry.origin = origin;
+        }
+    }
+
+    /// Moves every point of the graph by `map`: node positions and the origins of root
+    /// chains. Directions of buds and organ sites are left as they are, so `map` should be
+    /// a translation unless the caller sets them again.
+    pub fn map_points(&mut self, map: impl Fn(Vec3) -> Vec3) {
+        for position in &mut self.position {
+            *position = map(*position);
+        }
+        for chain in self
+            .chains
+            .iter_mut()
+            .filter(|chain| chain.attach.is_none())
+        {
+            chain.origin = map(chain.origin);
+        }
     }
 }
 

@@ -13,6 +13,9 @@ ORGAN_KINDS: tuple[str, ...]
 _Species = str | os.PathLike[str]
 _Float32 = npt.NDArray[np.float32]
 _Surroundings = dict[str, Any] | str | os.PathLike[str]
+_Guides = dict[str, Any] | str | os.PathLike[str]
+_Soil = dict[str, Any] | str | os.PathLike[str]
+_Roots = bool | Literal["tap", "heart", "plate", "fibrous"] | dict[str, Any]
 
 def generate(
     species: _Species,
@@ -24,6 +27,9 @@ def generate(
     textures: bool = False,
     junctions: Literal["tier-a", "tier-b"] = "tier-a",
     surroundings: _Surroundings | None = None,
+    guides: _Guides | None = None,
+    roots: _Roots | None = None,
+    soil: _Soil | None = None,
     overrides: dict[str, Any] | None = None,
     **dotted_overrides: Any,
 ) -> Tree:
@@ -40,6 +46,9 @@ def generate_many(
     textures: bool = False,
     junctions: Literal["tier-a", "tier-b"] = "tier-a",
     surroundings: _Surroundings | None = None,
+    guides: _Guides | None = None,
+    roots: _Roots | None = None,
+    soil: _Soil | None = None,
     overrides: dict[str, Any] | None = None,
     **dotted_overrides: Any,
 ) -> list[Tree]:
@@ -60,6 +69,16 @@ def generate_stand(
 ) -> list[Tree]:
     """Generate trees grown together (each dict has a ``position``), in input order."""
 
+def forest_build(
+    config: dict[str, Any] | str,
+    *,
+    grow: bool = True,
+    base: str | None = None,
+    out: str | None = None,
+    threads: int | None = None,
+) -> dict[str, Any]:
+    """Place (and grow) a forest; raw records and lists, see ``arbrume.forest``."""
+
 def growth_frames(
     species: _Species,
     seed: int = 0,
@@ -71,6 +90,9 @@ def growth_frames(
     textures: bool = False,
     junctions: Literal["tier-a", "tier-b"] = "tier-a",
     surroundings: _Surroundings | None = None,
+    guides: _Guides | None = None,
+    roots: _Roots | None = None,
+    soil: _Soil | None = None,
     overrides: dict[str, Any] | None = None,
     **dotted_overrides: Any,
 ) -> list[Tree]:
@@ -249,6 +271,8 @@ class Tree:
     def stats(self) -> dict[str, Any]: ...
     @property
     def metadata(self) -> dict[str, Any]: ...
+    @property
+    def guides(self) -> dict[str, Any] | None: ...
     @property
     def seed(self) -> int: ...
     @property

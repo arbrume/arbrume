@@ -174,6 +174,18 @@ GPU instances of their few templates (`EXT_mesh_gpu_instancing`): the file of an
 3.0 MB, a `broadleaf` of age 20 from 9.4 MB to 3.8 MB. The colour of each leaf, its wind
 data and the flutter of its vertices are then lost ([Wind](wind.md)).
 
+## In forests
+
+A forest draws each species from a few variants, and every variant carries the whole
+chain: `arbrume forest` writes one file per variant with its levels as child nodes, and
+one instanced file with a group node per level, `<forest>_LOD<i>`, whose nodes instance
+the level-`i` mesh of each variant at every tree of that variant
+(`EXT_mesh_gpu_instancing`). Choosing the level of each tree by its screen height
+(`max_screen_height` of the level, in the `extras` and the manifest, times the scale of
+the tree) is the engine's job; the instanced file holds every level so that it can.
+In Blender the forest operator draws one level in the viewport and level 0 in renders.
+See [Forests](forest.md).
+
 ## Looking at the levels
 
 ```

@@ -240,7 +240,8 @@ let graph = grow_in(&species, &GrowParams { seed: 1, age: 20, scale: 1.0 }, &sur
 ```
 
 `grow` grows the plant on open ground, `grow_in` in given surroundings. A parametric
-species ignores the surroundings.
+species ignores the surroundings, unless it climbs: a species with a `[climbing]` table
+holds the blocking occluders in either mode ([Climbing plants](climbing.md)).
 
 | Stage | Implementation | What it does |
 |---|---|---|
@@ -506,6 +507,14 @@ a light simulation. A wall has `shade = 1`; the crown of a neighbour is an ellip
 with `blocks = false` and a larger `shade`. The shade of occluders also enters `V`: its
 central difference over one voxel along each axis is added to the gradient of $s$, so
 buds turn away from a shading wall as well as being darkened by it.
+
+### Guides: painted strokes
+
+`grow_guided` grows a plant in its surroundings steered by `Guides`: *crown* strokes
+scatter markers of free space that buds are drawn to, *limb* strokes are lines that one
+axis follows, *erase* strokes block and prune growth, and *freezes* keep the plant grown
+so far while later strokes only add growth. Without strokes the plant is that of
+`grow_in`. [Brush](brush.md) describes the rules, the measurements and the API.
 
 ### Several plants: stands
 

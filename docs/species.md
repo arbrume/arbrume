@@ -42,6 +42,13 @@ Triangles are those of one plant at the stated age and full quality.
 | `thicket_shrub` | shrub, self-organizing | several leaning stems, twigs crowded at the lit surface of a rounded bush | 10 | 1.7 m | 2.3 m | 2.5 cm | 28 k |
 | `hedge_shrub` | shrub, self-organizing | dense small-leaved bush that fills and stops at a clip volume | 10 | 1.4 m | 2 m | 2.5 cm | 24 k |
 | `envelope_tree` | broadleaf tree, self-organizing | crown that fills an envelope, by default an ellipsoid (markers and light) | 25 | 9.5 m | 8 m | 0.18 m | 130 k |
+| `ivy_like` | climber, self-organizing, adhesive | climbs a wall and fans out over it, wraps over its top and around a window; creeps on open ground. Size on the wall of `examples/climbing/window_wall.toml` | 16 | 4.1 m | 5.8 m | 6 cm | 65 k |
+| `vine_like` | climber, self-organizing, tendril | climbs a post with coiled tendrils, runs along the beams of a pergola; size on `examples/climbing/pergola.toml` | 10 | 2.9 m | 3 m | 3.5 cm | 18 k |
+| `creeper_like` | ground cover, self-organizing, adhesive | stems running out level over the ground and over rocks, small leaves facing up; on open ground | 12 | 5 cm | 4.4 m | 2 cm | 100 k |
+| `oak_like_rooted` | broadleaf tree with roots | `oak_like` over a tap root among long near-horizontal roots ([Roots](roots.md)) | 60 | 14 m | 18 m | 0.7 m | 445 k |
+| `maple_like_rooted` | broadleaf tree with roots | `maple_like` over a heart root system: oblique roots in a rounded mass | 45 | 13 m | 12 m | 0.4 m | 400 k |
+| `spruce_like_rooted` | conifer with roots | `spruce_like` over a plate root system with sinkers, the primaries showing at the trunk base | 45 | 18 m | 8.5 m | 0.35 m | 280 k |
+| `palm_like_rooted` | palm with roots | `palm_like` over a dense tuft of thin fibrous roots | 25 | 7 m | 5.5 m | 0.2 m | 48 k |
 
 `broadleaf`, `conifer` and `shrub` are the generic presets; the three files of the same
 names in `crates/arbrume-grow/tests/data/` are older starter species kept as test
@@ -49,9 +56,9 @@ fixtures of the growth engine.
 
 ## How the presets are built
 
-Seven presets grow in the self-organizing mode (next section); the others use the
-parametric growth mode ([Growth](growth.md)). All use the foliage and bark of the mesher
-([Meshing](mesh.md)). In the parametric presets a few devices recur:
+Ten presets grow in the self-organizing mode (the three climbers and the seven of the
+next section); the others use the parametric growth mode ([Growth](growth.md)). All use
+the foliage and bark of the mesher ([Meshing](mesh.md)). In the parametric presets a few devices recur:
 
 - **Crown shape** is the `axis_length` curve of order 1 over the height of the trunk,
   with `apical_dominance` for cones, a narrow `branching_angle` and an upward
@@ -81,6 +88,24 @@ parametric growth mode ([Growth](growth.md)). All use the foliage and bark of th
   spreading decurrent tree, and needles with two opaque variants and the spray of their
   fins on the conifers. Trees use 512 texel bark and leaves, shrubs and needles 256, herbs
   less.
+
+## Climbing presets
+
+`ivy_like`, `vine_like` and `creeper_like` have a `[climbing]` table
+([Climbing plants](climbing.md)): their shoots hold the blocking volumes of the
+surroundings and the ground. Their `variation.weight` is 0, so the random sampler never
+draws them: a climber needs a support to be itself, and giving every random plant a wall
+would change the random set. Generated without surroundings they creep as a ground cover.
+
+## Rooted presets
+
+`oak_like_rooted`, `maple_like_rooted`, `spruce_like_rooted` and `palm_like_rooted` are
+their base presets with a `[roots]` table ([Roots](roots.md)) of the tap, heart, plate
+and fibrous habits; the oak lengthens its roots for its size and the spruce shows the
+upper side of its primaries near the trunk (`exposed = 0.4`). Their shoots are those of
+the base presets, lowered so that the first node of the trunk is on the ground. Their
+`variation.weight` is 0, so random mixes are unchanged. Heights and widths in the table
+of presets are those of the shoots; triangles include the roots.
 
 ## Self-organizing presets
 
@@ -141,7 +166,10 @@ changes. Each preset states the range of ages it is meant for in `[variation]`:
 | `envelope_tree` | 12 to 22 | `open_grown_broadleaf` | 10 to 25 |
 | `excurrent_conifer` | 12 to 34 | `spreading_decurrent` | 10 to 30 |
 | `forest_grown_broadleaf` | 15 to 45 | `thicket_shrub` | 5 to 11 |
-| `hedge_shrub` | 5 to 10 | | |
+| `hedge_shrub` | 5 to 10 | `ivy_like` | 8 to 20 |
+| `vine_like` | 6 to 14 | `creeper_like` | 6 to 14 |
+| `oak_like_rooted` | 30 to 70 | `maple_like_rooted` | 18 to 50 |
+| `spruce_like_rooted` | 12 to 50 | `palm_like_rooted` | 6 to 30 |
 
 Below its range a tree is a thin sapling with little foliage, which is why the ranges of
 the spreading trees start late. Node counts need not grow with age: a `bare_base` and a

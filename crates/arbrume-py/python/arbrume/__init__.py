@@ -34,10 +34,13 @@ from arbrume._arbrume import (
     remove_pack,
     voxel_mask,
 )
+from arbrume.forest import INSTANCE_DTYPE, Forest, forest
 
 __all__ = [
+    "INSTANCE_DTYPE",
     "ORGAN_KINDS",
     "Buffer",
+    "Forest",
     "MeshPart",
     "Organs",
     "Skeleton",
@@ -46,6 +49,7 @@ __all__ = [
     "__version__",
     "distance",
     "fit",
+    "forest",
     "generate",
     "generate_many",
     "generate_stand",

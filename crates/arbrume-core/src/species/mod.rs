@@ -12,6 +12,8 @@
 //! | `[foliage]` | [`Foliage`] | leaf size, attitude, retention, twigs, appearance |
 //! | `[bark]` | [`Bark`] | bark appearance |
 //! | `[variation]` | [`Variation`] | how individuals differ: age and scale ranges, jitter |
+//! | `[climbing]` | [`Climbing`] | optional: how a climbing plant finds and holds a support |
+//! | `[roots]` | [`Roots`] | optional: the root system below the collar |
 //!
 //! `bark.texture`, `bark.normal_texture`, `foliage.texture` and `foliage.normal_texture`
 //! name image files that replace the synthesized textures; relative paths are resolved
@@ -44,10 +46,12 @@
 
 mod architecture;
 mod bark;
+mod climbing;
 mod foliage;
 mod geometry;
 mod growth;
 mod leaf_texture;
+mod roots;
 mod variation;
 
 pub use architecture::{
@@ -55,6 +59,7 @@ pub use architecture::{
     GrowthRhythm, Phyllotaxis,
 };
 pub use bark::{Bark, BarkKind, BarkPattern, MAX_TEXTURE_RESOLUTION, MIN_TEXTURE_RESOLUTION};
+pub use climbing::{Attachment, Climbing};
 pub use foliage::{
     BladeShape, Foliage, LeafGeometry, MAX_BLADE_SEGMENTS, MAX_LEAFLET_PAIRS, MAX_TWIG_FINS,
     MAX_TWIG_LEAVES, MAX_TWIG_VARIANTS, Twig,
@@ -65,6 +70,7 @@ pub use leaf_texture::{
     BladePlacement, LeafAtlas, LeafLayout, MAX_TEXTURE_VARIANTS, MAX_VEINS, Margin, MarginKind,
     Venation, VenationKind,
 };
+pub use roots::{MAX_PRIMARY_ROOTS, MAX_ROOT_ORDER, RootHabit, RootSelfOrganization, Roots};
 pub use variation::{JITTERABLE, Variation};
 
 use crate::curve::OrderCurve;
@@ -123,6 +129,15 @@ pub struct Species {
     pub bark: Bark,
     /// How individuals of the species vary.
     pub variation: Variation,
+    /// How the plant climbs; `None` for a plant that does not climb.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub climbing: Option<Climbing>,
+    /// Root system; `None` for a plant grown without roots.
+    #[serde(
+        deserialize_with = "roots::deserialize_layer",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub roots: Option<Roots>,
     /// Directory against which relative texture paths are resolved: the directory of
     /// the species pack or file the species was loaded from. Not read from nor written
     /// to the file; `None` resolves them against the current directory.
@@ -141,6 +156,8 @@ impl Default for Species {
             foliage: Foliage::default(),
             bark: Bark::default(),
             variation: Variation::default(),
+            climbing: None,
+            roots: None,
             asset_dir: None,
         }
     }
@@ -221,6 +238,12 @@ impl Species {
         self.geometry.validate()?;
         self.foliage.validate()?;
         self.bark.validate()?;
+        if let Some(climbing) = &self.climbing {
+            climbing.validate()?;
+        }
+        if let Some(roots) = &self.roots {
+            roots.validate()?;
+        }
         self.variation.validate()
     }
 }

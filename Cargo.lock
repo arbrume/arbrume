@@ -80,6 +80,7 @@ dependencies = [
  "arbrume-core",
  "arbrume-export",
  "arbrume-fit",
+ "arbrume-forest",
  "arbrume-gen",
  "arbrume-grow",
  "arbrume-mesh",
@@ -140,6 +141,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "arbrume-forest"
+version = "0.1.0"
+dependencies = [
+ "arbrume-core",
+ "arbrume-export",
+ "arbrume-gen",
+ "arbrume-grow",
+ "arbrume-pack",
+ "glam",
+ "png",
+ "rayon",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "toml",
+]
+
+[[package]]
 name = "arbrume-gen"
 version = "0.1.0"
 dependencies = [
@@ -170,6 +190,7 @@ dependencies = [
  "proptest",
  "rayon",
  "serde",
+ "serde_json",
  "toml",
 ]
 
@@ -232,6 +253,7 @@ dependencies = [
  "arbrume-core",
  "arbrume-export",
  "arbrume-fit",
+ "arbrume-forest",
  "arbrume-gen",
  "arbrume-pack",
  "bytemuck",

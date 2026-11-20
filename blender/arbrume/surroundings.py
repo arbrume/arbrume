@@ -23,6 +23,7 @@ import numpy as np
 import arbrume
 
 from .logic import voxels
+from .logic.roots import grows_roots
 
 CACHE_SIZE = 32
 """Voxelized objects kept in the session."""
@@ -95,6 +96,14 @@ def voxel_mask(plant_obj, obj, cell: float, ground: bool, report: Report) -> arb
     return mask
 
 
+def occluder_of(item, mask: arbrume.VoxelMask) -> dict:
+    """The occluder of one obstacle slot: a support blocks and casts no shade, so a
+    climbing plant can hold it without being darkened by it."""
+    if getattr(item, "role", "OBSTACLE") == "SUPPORT":
+        return {"shape": mask, "blocks": True, "shade": 0.0}
+    return {"shape": mask, "blocks": bool(item.blocks), "shade": float(item.shade)}
+
+
 def cell_size(settings, species: dict) -> float:
     """The voxel edge of a plant: its own setting, or derived from its species and scale."""
     if settings.voxel_size > 0.0:
@@ -104,12 +113,15 @@ def cell_size(settings, species: dict) -> float:
 
 def build(plant_obj, species: dict) -> tuple[dict | None, Report]:
     """The ``surroundings`` argument of a plant and what building it took; ``None`` when
-    the plant names no volume or its species ignores them."""
+    the plant names no volume or ignores them (a parametric species without roots)."""
     settings = plant_obj.arbrume
     report = Report()
     obstacles = [item for item in settings.obstacles if is_volume(item.obj)]
     envelope = settings.envelope if is_volume(settings.envelope) else None
-    if not voxels.is_self_organizing(species) or (envelope is None and not obstacles):
+    mode = str(getattr(settings, "roots", "species"))
+    acts = voxels.is_self_organizing(species) or grows_roots(species, mode)
+    acts = acts or voxels.climbs(species)
+    if not acts or (envelope is None and not obstacles):
         return None, report
     start = time.perf_counter()
     report.cell = cell = cell_size(settings, species)
@@ -127,7 +139,6 @@ def build(plant_obj, species: dict) -> tuple[dict | None, Report]:
         except errors as error:
             report.errors.append(f"{item.obj.name}: {error}")
             continue
-        occluder = {"shape": mask, "blocks": bool(item.blocks), "shade": float(item.shade)}
-        surroundings["occluders"].append(occluder)
+        surroundings["occluders"].append(occluder_of(item, mask))
     report.milliseconds = (time.perf_counter() - start) * 1e3
     return surroundings, report

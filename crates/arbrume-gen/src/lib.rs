@@ -26,6 +26,8 @@
 //!   that they shade one another, and meshes each in its own frame.
 //! * [`GenParams::with_surroundings`] places the plant in an envelope, next to obstacles
 //!   or under neighbours ([`Surroundings`]); species in the self-organizing mode respond.
+//! * [`GenParams::with_guides`] steers the growth with painted strokes ([`Guides`]):
+//!   crown markers, limbs that axes follow, erased volumes and freezes.
 //! * [`Generator::timeline`] and [`Generator::frame`] mesh one grown plant at several
 //!   ages, for growth sequences.
 //! * [`Generator::set_textures`] gives every mesh the procedural bark and leaf textures
@@ -44,6 +46,7 @@
 
 mod batch;
 mod group;
+mod guided;
 mod lods;
 mod metadata;
 mod overrides;
@@ -51,10 +54,14 @@ mod params;
 mod plant;
 mod presets;
 mod random;
+mod rooted;
 mod sample;
 mod timeline;
 
-pub use arbrume_grow::{Occluder, Shape, Surroundings, VoxelMask};
+pub use arbrume_grow::{Ground, HeightField, Resource, Soil};
+pub use arbrume_grow::{
+    GuideReport, Guides, Occluder, Shape, Stroke, StrokeKind, StrokeReport, Surroundings, VoxelMask,
+};
 pub use arbrume_lod::{BillboardMethod, BillboardOptions};
 pub use arbrume_mesh::{Junctions, LeafInstance, LeafInstances, LodOptions};
 pub use arbrume_texture::{SpeciesTextures, TextureCache, TextureOptions};
