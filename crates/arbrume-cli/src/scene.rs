@@ -158,6 +158,7 @@ pub fn add_occluders(mesh: &mut TreeMesh, surroundings: &Surroundings) {
             alpha_cutoff: None,
             base_color_texture: None,
             normal_texture: None,
+            roughness_texture: None,
         },
         buffers,
     });

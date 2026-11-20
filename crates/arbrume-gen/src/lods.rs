@@ -12,7 +12,8 @@ use crate::batch::Generator;
 use crate::params::GenError;
 use crate::plant::Plant;
 
-/// What [`Generator::lod_chain`] builds.
+/// What [`Generator::lod_chain`] builds. With textures (`Generator::set_textures`)
+/// every mesh level carries them and the billboard is baked from the textured leaves.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct LodSettings {
     /// The mesh levels (see `arbrume_mesh::lod`).
@@ -74,6 +75,8 @@ impl Generator {
         species: &Species,
         settings: &LodSettings,
     ) -> Result<Vec<LodMesh>, GenError> {
+        let meshed = self.meshed(species);
+        let (textured, species) = (species, meshed.as_ref());
         let base = MeshOptions {
             wind: settings.wind,
             ..plant.params.mesh
@@ -84,14 +87,18 @@ impl Generator {
         let mut out = Vec::with_capacity(levels.len() + 1);
         for level in &levels {
             let start = Instant::now();
-            let mesh = self.mesher.mesh(&plant.graph, species, &level.options)?;
-            let leaves = settings
+            let mut mesh = self.mesher.mesh(&plant.graph, species, &level.options)?;
+            self.texture(textured, &mut mesh);
+            let mut leaves = settings
                 .leaf_instances
                 .then(|| {
                     self.mesher
                         .leaf_instances(&plant.graph, species, &level.options)
                 })
                 .transpose()?;
+            if let Some(leaves) = &mut leaves {
+                self.remap_templates(textured, leaves);
+            }
             out.push(LodMesh {
                 leaves,
                 kind: LodKind::Mesh,

@@ -92,7 +92,8 @@ def build_arrays(parts: Sequence[Any]) -> MeshArrays:
             normals[v0 : v0 + nv] = (0.0, 0.0, 1.0)
         part_uvs = _rows(part.uvs, nv, 2)
         if part_uvs is not None:
-            uvs[v0 : v0 + nv] = part_uvs
+            uvs[v0 : v0 + nv, 0] = part_uvs[:, 0]
+            uvs[v0 : v0 + nv, 1] = 1.0 - part_uvs[:, 1]
             has_uvs = True
         part_colors = _rows(part.colors, nv, 4)
         if part_colors is not None:
@@ -122,5 +123,9 @@ def material_key(species_name: str, kind: str, material: dict) -> str:
     color = material.get("base_color") or [1.0, 1.0, 1.0, 1.0]
     values = [*color[:4], material.get("roughness", 0.5), float(bool(material.get("double_sided")))]
     text = ",".join(f"{float(v):.4f}" for v in values)
+    for name in ("base_color_texture", "normal_texture", "roughness_texture"):
+        image = material.get(name)
+        if image:
+            text += hashlib.sha1(image).hexdigest()
     digest = hashlib.sha1(text.encode()).hexdigest()[:6]
     return f"Arbrume {species_name[:32]} {kind} {digest}"

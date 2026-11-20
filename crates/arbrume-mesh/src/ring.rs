@@ -29,7 +29,7 @@ use glam::Vec3;
 use std::f32::consts::PI;
 
 /// Chords and spans shorter than this, in meters, are treated as empty.
-const MIN_SPAN: f32 = 1e-6;
+pub(crate) const MIN_SPAN: f32 = 1e-6;
 
 /// Smallest radius of a ring, in meters, so that no cross-section collapses to a point.
 const MIN_RADIUS: f32 = 1e-5;
@@ -59,6 +59,13 @@ pub(crate) struct Ring {
     pub lobe: f32,
     /// Number of sides.
     pub sides: u32,
+    /// Direction of angle 0 around the ring, orthogonal to `tangent`, carried from ring
+    /// to ring by [`frame_rings`].
+    pub normal: Vec3,
+    /// For a ring of a junction collar ([`crate::junction`]), the index of the junction
+    /// and the position of the ring between the footprint (0) and the first round ring
+    /// (1); `None` for a ring in a plane.
+    pub skew: Option<(u32, f32)>,
 }
 
 /// Species geometry and tolerance shared by all axes of one mesh.
@@ -169,7 +176,7 @@ impl BaseProfile {
     }
 
     /// Arc lengths where the widened part starts and ends, and its ring count.
-    fn zone(&self) -> (f32, f32, f32) {
+    pub(crate) fn zone(&self) -> (f32, f32, f32) {
         match *self {
             Self::Plain => (f32::INFINITY, f32::INFINITY, 0.0),
             Self::Flare { length, rings } => (0.0, length * FLARE_ZONE, rings),
@@ -184,7 +191,7 @@ impl BaseProfile {
 
     /// Relative widening of the radius at `arc`, and the depth of the lobes as a
     /// fraction of that widening.
-    fn widening(&self, geometry: &Geometry, arc: f32) -> (f32, f32) {
+    pub(crate) fn widening(&self, geometry: &Geometry, arc: f32) -> (f32, f32) {
         match *self {
             Self::Plain => (0.0, 0.0),
             Self::Flare { length, .. } => {
@@ -220,6 +227,11 @@ pub(crate) struct Axis<'a> {
     pub radii: &'a [f32],
     /// Widening near the base.
     pub profile: BaseProfile,
+    /// Arc lengths, increasing, at which a ring must be placed.
+    pub stops: &'a [f32],
+    /// Length by which the axis is prolonged straight beyond its last node, keeping its
+    /// tip radius, to make room for the junction of a child at its tip.
+    pub extend: f32,
 }
 
 impl Axis<'_> {
@@ -233,7 +245,7 @@ impl Axis<'_> {
     }
 
     /// Radius at point `index` of the polyline.
-    fn radius(&self, index: usize) -> f32 {
+    pub(crate) fn radius(&self, index: usize) -> f32 {
         self.radii[index.max(1) - 1].max(MIN_RADIUS)
     }
 
@@ -377,6 +389,15 @@ impl Walker<'_, '_> {
                 deviation: 0.0,
             };
         }
+        if axis.extend > MIN_SPAN {
+            let last = anchor.station;
+            let end = Station {
+                point: last.point + last.tangent * axis.extend,
+                arc: last.arc + axis.extend,
+                ..last
+            };
+            self.span(&last, &end, false);
+        }
     }
 
     /// Emits the rings after `a` up to and including `b`. A `curved` span is a Hermite
@@ -394,16 +415,23 @@ impl Walker<'_, '_> {
         let bend = (length * turn / (8.0 * self.sweep.tolerance)).sqrt();
         let bend_rings = bend.ceil().clamp(1.0, MAX_SPAN_RINGS);
         let (zone_start, zone_end, zone_rings) = self.axis.profile.zone();
+        let stops = self.axis.stops;
+        let smooth = !stops.is_empty();
         let mut from = a.arc;
-        for stop in [zone_start, zone_end, b.arc] {
-            let to = if stop >= b.arc - MIN_SPAN {
+        while from < b.arc - MIN_SPAN {
+            let required = stops[stops.partition_point(|&stop| stop <= from + MIN_SPAN)..]
+                .first()
+                .copied()
+                .unwrap_or(f32::INFINITY);
+            let next = [zone_start, zone_end, required]
+                .into_iter()
+                .filter(|&stop| stop > from + MIN_SPAN)
+                .fold(b.arc, f32::min);
+            let to = if next >= b.arc - MIN_SPAN {
                 b.arc
             } else {
-                stop
+                next
             };
-            if to - from <= MIN_SPAN {
-                continue;
-            }
             let share = to - from;
             let middle = from + 0.5 * share;
             let mut rings = (bend_rings * share / length).ceil();
@@ -416,7 +444,7 @@ impl Walker<'_, '_> {
                     break;
                 }
                 let arc = from + share * step as f32 / steps as f32;
-                let station = between(a, b, (arc - a.arc) / length, curved);
+                let station = between(a, b, (arc - a.arc) / length, (curved, smooth));
                 self.push(&station);
             }
             from = to;
@@ -442,14 +470,18 @@ impl Walker<'_, '_> {
             radius,
             lobe,
             sides: self.sweep.sides(radius, lobe),
+            normal: Vec3::ZERO,
+            skew: None,
         });
     }
 }
 
 /// Station at the parameter `u` in `(0, 1)` between `a` and `b`: on the Hermite segment
 /// whose end tangents are those of the stations scaled by the chord length when
-/// `curved`, on the chord otherwise. Arc length and radius are interpolated linearly.
-fn between(a: &Station, b: &Station, u: f32, curved: bool) -> Station {
+/// `curved`, on the chord otherwise. Arc length and radius are interpolated linearly. On
+/// the chord the tangent is that of the chord, or with `smooth` blended from the tangent
+/// of `a` to that of `b`, so that rings close to a station do not tilt against its ring.
+fn between(a: &Station, b: &Station, u: f32, (curved, smooth): (bool, bool)) -> Station {
     let chord = b.point - a.point;
     let (point, tangent) = if curved {
         let scale = chord.length();
@@ -462,6 +494,12 @@ fn between(a: &Station, b: &Station, u: f32, curved: bool) -> Station {
             + a.tangent * (scale * (3.0 * u2 - 4.0 * u + 1.0))
             + b.tangent * (scale * (3.0 * u2 - 2.0 * u));
         (point, velocity.normalize_or(chord.normalize_or(a.tangent)))
+    } else if smooth {
+        let blended = a.tangent.lerp(b.tangent, u);
+        (
+            a.point.lerp(b.point, u),
+            blended.normalize_or(chord.normalize_or(a.tangent)),
+        )
     } else {
         (a.point.lerp(b.point, u), chord.normalize_or(a.tangent))
     };
@@ -470,6 +508,46 @@ fn between(a: &Station, b: &Station, u: f32, curved: bool) -> Station {
         tangent,
         arc: a.arc + (b.arc - a.arc) * u,
         radius: a.radius + (b.radius - a.radius) * u,
+    }
+}
+
+/// Direction of the first vertex of the first ring: as far down as possible while
+/// orthogonal to `tangent`, or along X for a vertical axis. It puts the texture seam on
+/// the underside of a branch.
+pub(crate) fn seam_direction(tangent: Vec3) -> Vec3 {
+    let down = Vec3::NEG_Y.reject_from_normalized(tangent);
+    if down.length_squared() > 1e-4 {
+        down.normalize()
+    } else {
+        Vec3::X.reject_from_normalized(tangent).normalize()
+    }
+}
+
+/// Parallel transport of the unit vector `normal`, orthogonal to `from`, to the tangent
+/// `to`: the rotation about `from x to` that takes `from` onto `to`, applied to `normal`.
+pub(crate) fn transport(normal: Vec3, from: Vec3, to: Vec3) -> Vec3 {
+    let cosine = from.dot(to);
+    if cosine < -0.999 {
+        return normal
+            .reject_from_normalized(to)
+            .normalize_or(to.any_orthonormal_vector());
+    }
+    let moved = normal - (from + to) * (normal.dot(to) / (1.0 + cosine));
+    moved.reject_from_normalized(to).normalize_or(normal)
+}
+
+/// Sets the frame of each ring of one axis: the seam direction on the first, then
+/// parallel transport from ring to ring (see `crate::tube`).
+pub(crate) fn frame_rings(rings: &mut [Ring]) {
+    let Some(first) = rings.first() else {
+        return;
+    };
+    let mut normal = seam_direction(first.tangent);
+    let mut previous = first.tangent;
+    for ring in rings {
+        normal = transport(normal, previous, ring.tangent);
+        ring.normal = normal;
+        previous = ring.tangent;
     }
 }
 
@@ -500,6 +578,8 @@ mod tests {
             positions,
             radii,
             profile,
+            stops: &[],
+            extend: 0.0,
         };
         let mut out = Vec::new();
         sample_axis(&axis, &sweep, &mut out);

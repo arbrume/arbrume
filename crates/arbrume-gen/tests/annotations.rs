@@ -224,9 +224,16 @@ fn twig_stems_are_labelled_twig() {
             .iter()
             .position(|x| x.kind == PartKind::Leaf);
         let own = labels.part(index.unwrap());
+        let stem_uv = species
+            .foliage
+            .atlas()
+            .map(0, arbrume_core::species::LeafAtlas::STEM_UV);
         for (vertex, &class) in own.semantic.iter().enumerate() {
             if class == SemanticClass::Twig as u8 {
-                assert_eq!(part.buffers.uvs[vertex], [0.5, 0.0], "{name}");
+                assert_eq!(
+                    part.buffers.uvs[vertex], stem_uv,
+                    "{name}: stems sample the stalk"
+                );
             }
         }
     }

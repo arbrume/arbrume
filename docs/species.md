@@ -70,6 +70,17 @@ parametric growth mode ([Growth](growth.md)). All use the foliage and bark of th
   The fronds of the fern and the leaves of the rosette are stems rising from the ground.
 - **Bark** has a `young_color` for thin axes: dark twigs on the white birch, orange
   limbs on the pine, green stalks on the palm.
+- **Textures** ([Textures](textures.md)) come from `[bark].pattern` and the `venation`
+  and `margin` of `[foliage]`: smooth bark with lenticels on the birch, sapling, bamboo,
+  beech-like forest-grown broadleaf and the ringed palm (lenticels stretched into bands),
+  furrowed bark on the oak, maple, poplar, willow, acacia and the generic broadleaves,
+  plated bark on the pine, larch, spruce and conifers, fibrous bark on the cypress and the
+  shrubs, peeling bark on the spreading decurrent tree. Leaves: lobed oak leaves,
+  palmate lobed maple leaves, serrate birch, willow and broadleaf leaves, crenate poplar
+  and beech leaves, parallel veins on the bamboo, palm and cypress, open venation on the
+  spreading decurrent tree, and needles with two opaque variants and the spray of their
+  fins on the conifers. Trees use 512 texel bark and leaves, shrubs and needles 256, herbs
+  less.
 
 ## Self-organizing presets
 

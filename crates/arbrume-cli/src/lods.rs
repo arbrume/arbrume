@@ -12,8 +12,8 @@ use std::path::Path;
 use arbrume_core::mesh::{Material, MeshPart, PartKind, TreeMesh};
 use arbrume_core::species::Species;
 use arbrume_export::{
-    ExportOptions, ExtraAttribute, GlbError, GlbLevel, GlbOptions, InstanceTransform,
-    LeafInstancing, SkinOptions, WindLayout, write_glb_levels, write_glb_with,
+    ExportOptions, ExtraAttribute, GlbError, GlbLevel, GlbOptions, ImageStorage, InstanceTransform,
+    LeafInstancing, SkinOptions, WindLayout, write_glb_images, write_glb_levels,
 };
 use arbrume_gen::{
     BillboardMethod, BillboardOptions, GENERATOR, Generator, LeafInstances, LodKind, LodMesh,
@@ -67,6 +67,7 @@ impl LodFile {
             single_file: self.file,
             skin: self.skin && self.wind.is_some(),
             instance_leaves: self.instance_leaves && self.file,
+            images: ImageStorage::Embed,
         }
     }
 }
@@ -101,6 +102,7 @@ impl LodArgs {
             single_file: self.lod_file || config.single_file,
             skin: self.skin || config.skin,
             instance_leaves: self.instance_leaves || config.instance_leaves,
+            images: config.images,
         }
     }
 }
@@ -118,6 +120,8 @@ pub struct LodConfig {
     pub skin: bool,
     /// Leaves as GPU instances, in the one file of `single_file`.
     pub instance_leaves: bool,
+    /// Where texture images go (`--textures`).
+    pub images: ImageStorage,
 }
 
 impl LodConfig {
@@ -154,6 +158,7 @@ impl LodConfig {
                 Some(WindChoice::Custom) => WindLayout::Custom,
             },
             skin: (self.skin && self.wind.is_some()).then(SkinOptions::default),
+            images: self.images,
         }
     }
 }
@@ -207,8 +212,12 @@ pub fn write_mesh(
     out: impl Write,
 ) -> Result<(), GlbError> {
     let export = config.export();
-    if export == ExportOptions::default() {
-        return write_glb_with(mesh, options, extra, out);
+    let plain = ExportOptions {
+        images: export.images,
+        ..ExportOptions::default()
+    };
+    if export == plain {
+        return write_glb_images(mesh, options, extra, export.images, out);
     }
     let level = GlbLevel {
         mesh,
@@ -278,6 +287,7 @@ fn instanced(leaves: &LeafInstances, mesh: &TreeMesh) -> Instanced {
                 alpha_cutoff: None,
                 base_color_texture: None,
                 normal_texture: None,
+                roughness_texture: None,
             }),
             buffers: buffers.clone(),
         })
@@ -331,5 +341,8 @@ pub fn write_chain_file(
     let bytes = file.metadata().map_err(|e| e.to_string())?.len();
     drop(file);
     fs::rename(&temp, &path).map_err(|e| format!("{}: {e}", path.display()))?;
+    if config.images == ImageStorage::External {
+        crate::textures::write_images(out, chain.iter().map(|level| &level.mesh))?;
+    }
     Ok(bytes)
 }

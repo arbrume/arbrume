@@ -3,9 +3,11 @@
 //! Where leaves sit around an axis is the phyllotaxis of the architecture layer; this
 //! layer describes the leaf itself: its size, the outline of its blade
 //! ([`BladeShape`]), how the blade is folded and curved, its petiole, whether it is
-//! compound, and how much leaves differ from one another. All defaults are starting
-//! points for tuning, not measured values.
+//! compound, and how much leaves differ from one another, and what its procedural
+//! texture looks like (`venation`, `margin`, see the `leaf_texture` module). All
+//! defaults are starting points for tuning, not measured values.
 
+use super::leaf_texture::{Margin, Venation, validate_texture};
 use super::{SpeciesError, check_color, check_range};
 use crate::curve::Curve;
 use serde::{Deserialize, Serialize};
@@ -248,6 +250,19 @@ pub struct Foliage {
     /// Variation of leaf brightness in `[0, 1]`: a leaf is darkened by up to this
     /// fraction.
     pub brightness_variation: f32,
+    /// Width and height in texels of the synthesized leaf texture atlas, a power of two
+    /// from 16 to 4096.
+    pub texture_resolution: u32,
+    /// Number of leaf variants in the texture atlas, from 1 to 16. Leaves pick a
+    /// variant at random.
+    pub texture_variants: u32,
+    /// Variation of the colour within a leaf texture (mottling, paler margins) and
+    /// between its variants, in `[0, 1]`.
+    pub texture_variation: f32,
+    /// Veins drawn on the leaf texture.
+    pub venation: Venation,
+    /// Edge of the blade on the leaf texture.
+    pub margin: Margin,
 }
 
 impl Default for Foliage {
@@ -278,6 +293,11 @@ impl Default for Foliage {
             orientation_variation_deg: 12.0,
             hue_variation: 0.08,
             brightness_variation: 0.25,
+            texture_resolution: 512,
+            texture_variants: 4,
+            texture_variation: 0.3,
+            venation: Venation::default(),
+            margin: Margin::default(),
         }
     }
 }
@@ -314,7 +334,8 @@ impl Foliage {
         check_range("foliage.density", self.density, f32::MIN_POSITIVE, 1.0)?;
         self.twig.validate()?;
         self.validate_blade()?;
-        self.validate_variation()
+        self.validate_variation()?;
+        validate_texture(self)
     }
 
     fn validate_blade(&self) -> Result<(), SpeciesError> {

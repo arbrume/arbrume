@@ -393,6 +393,7 @@ pub fn bake(
         alpha_cutoff: Some(options.alpha_cutoff),
         base_color_texture: Some(encode(&images.color, side, true)),
         normal_texture: Some(encode(&images.normal, side, false)),
+        roughness_texture: None,
     };
     Some(Baked {
         material,

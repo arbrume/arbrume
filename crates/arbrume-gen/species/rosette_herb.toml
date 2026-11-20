@@ -54,9 +54,12 @@ hue_variation = 0.1
 brightness_variation = 0.2
 size_variation = 0.35
 orientation_variation_deg = 18.0
+texture_resolution = 256
 
 [bark]
 color = [0.1, 0.24, 0.07]
+texture_resolution = 64
+pattern = { kind = "smooth", feature_size = 0.01, coverage = 0.0, relief = 0.1 }
 
 [variation]
 age = [1, 2]

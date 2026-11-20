@@ -9,6 +9,9 @@ The mesh is rebuilt in place (``clear_geometry``) with ``foreach_set`` from the 
 
 from __future__ import annotations
 
+import hashlib
+import os
+import tempfile
 import time
 from dataclasses import dataclass
 
@@ -79,6 +82,8 @@ def generation_args(settings: bpy.types.PropertyGroup) -> dict:
         "age": int(settings.age),
         "scale": float(settings.scale),
         "quality": float(settings.quality),
+        "textures": bool(getattr(settings, "textures", False)),
+        "junctions": str(getattr(settings, "junctions", "tier-a")),
     }
 
 
@@ -152,8 +157,84 @@ def _socket(sockets, name: str, kind: str | None = None):
     return None
 
 
+def _image(name: str, png: bytes | None, color: bool) -> bpy.types.Image | None:
+    """A packed image of the PNG bytes ``png``, reused when one of that name exists.
+
+    Images are named after a hash of their bytes, so plants of a species share them;
+    ``color`` images are sRGB, the others (normals, roughness) non-colour data.
+    """
+    if not png:
+        return None
+    key = f"Arbrume {name} {hashlib.sha1(png).hexdigest()[:10]}"
+    image = bpy.data.images.get(key)
+    if image is not None:
+        return image
+    with tempfile.TemporaryDirectory() as folder:
+        path = os.path.join(folder, "texture.png")
+        with open(path, "wb") as handle:
+            handle.write(png)
+        image = bpy.data.images.load(path, check_existing=False)
+        image.pack()
+    image.name = key
+    image.colorspace_settings.name = "sRGB" if color else "Non-Color"
+    return image
+
+
+def _image_node(tree, image: bpy.types.Image, location: tuple[int, int]):
+    node = tree.nodes.new("ShaderNodeTexImage")
+    node.image = image
+    node.location = location
+    return node
+
+
+def _textured(tree, data: dict, bsdf, color_input) -> None:
+    """Wires the textures of ``data`` into ``bsdf``.
+
+    The base colour image times the colour of ``color_input`` feeds that input, its alpha
+    is cut at the alpha cutoff, the normal image goes through a tangent-space normal map
+    and the roughness image (green channel) multiplies the roughness.
+    """
+    base = _image("base", data.get("base_color_texture"), True)
+    if base is not None:
+        node = _image_node(tree, base, (-700, 200))
+        mix = tree.nodes.new("ShaderNodeMix")
+        mix.data_type = "RGBA"
+        mix.blend_type = "MULTIPLY"
+        mix.location = (-400, 200)
+        mix.inputs[0].default_value = 1.0
+        _socket(mix.inputs, "A", "RGBA").default_value = tuple(color_input.default_value)
+        tree.links.new(node.outputs["Color"], _socket(mix.inputs, "B", "RGBA"))
+        tree.links.new(_socket(mix.outputs, "Result", "RGBA"), color_input)
+        cutoff = data.get("alpha_cutoff")
+        if cutoff is not None:
+            clip = tree.nodes.new("ShaderNodeMath")
+            clip.operation = "GREATER_THAN"
+            clip.inputs[1].default_value = float(cutoff)
+            clip.location = (-400, -50)
+            tree.links.new(node.outputs["Alpha"], clip.inputs[0])
+            tree.links.new(clip.outputs[0], bsdf.inputs["Alpha"])
+    normal = _image("normal", data.get("normal_texture"), False)
+    if normal is not None:
+        node = _image_node(tree, normal, (-700, -300))
+        normal_map = tree.nodes.new("ShaderNodeNormalMap")
+        normal_map.uv_map = UV_LAYER
+        normal_map.location = (-400, -300)
+        tree.links.new(node.outputs["Color"], normal_map.inputs["Color"])
+        tree.links.new(normal_map.outputs["Normal"], bsdf.inputs["Normal"])
+    rough = _image("roughness", data.get("roughness_texture"), False)
+    if rough is not None:
+        node = _image_node(tree, rough, (-700, -600))
+        scale = tree.nodes.new("ShaderNodeMath")
+        scale.operation = "MULTIPLY"
+        scale.inputs[1].default_value = float(data.get("roughness", 1.0))
+        scale.location = (-400, -600)
+        tree.links.new(node.outputs["Color"], scale.inputs[0])
+        tree.links.new(scale.outputs[0], bsdf.inputs["Roughness"])
+
+
 def _build_material_nodes(material: bpy.types.Material, data: dict) -> None:
-    """Principled BSDF whose base colour is the material colour times the vertex colour."""
+    """Principled BSDF whose base colour is the material colour times the vertex colour,
+    times the base colour texture when the part has textures (see :func:`_textured`)."""
     color = list(data.get("base_color") or [0.8, 0.8, 0.8, 1.0])[:4]
     roughness = float(data.get("roughness", 0.5))
     tree = material.node_tree
@@ -175,6 +256,7 @@ def _build_material_nodes(material: bpy.types.Material, data: dict) -> None:
     tree.links.new(_socket(mix.outputs, "Result", "RGBA"), bsdf.inputs["Base Color"])
     bsdf.inputs["Roughness"].default_value = roughness
     tree.links.new(bsdf.outputs[0], output.inputs["Surface"])
+    _textured(tree, data, bsdf, _socket(mix.inputs, "A", "RGBA"))
     material.diffuse_color = color
     material.roughness = roughness
     material.use_backface_culling = not data.get("double_sided", False)

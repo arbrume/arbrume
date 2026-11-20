@@ -61,12 +61,15 @@ color = [0.045, 0.14, 0.04]
 hue_variation = 0.1
 brightness_variation = 0.35
 twig = { leaves = 8, length = 0.13, leaves_per_node = 2, divergence_deg = 0.0, inclination_deg = 55.0, bend_deg = 5.0, stem_radius = 0.001, terminal_leaf = false }
+texture_resolution = 256
 
 [bark]
 color = [0.14, 0.09, 0.07]
 young_color = [0.2, 0.09, 0.06]
 young_radius = 0.008
 color_variation = 0.15
+texture_resolution = 256
+pattern = { kind = "fibrous", feature_size = 0.008, stretch = 6.0, relief = 0.4, coverage = 0.4 }
 
 [variation]
 age = [4, 12]

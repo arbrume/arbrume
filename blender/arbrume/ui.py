@@ -84,6 +84,8 @@ class VIEW3D_PT_arbrume(bpy.types.Panel):
         _age_hint(col, settings)
         col.prop(settings, "scale")
         col.prop(settings, "quality", slider=True)
+        col.prop(settings, "textures")
+        col.prop(settings, "junctions")
         row = layout.row(align=True)
         row.prop(settings, "live_update", toggle=True, icon="PLAY")
         row.operator("arbrume.regenerate", icon="FILE_REFRESH")

@@ -192,7 +192,9 @@ impl MeshPart {
         format!("{:?}", self.part().kind).to_lowercase()
     }
 
-    /// Material: name, base colour, roughness, double sided, alpha cutoff, texture.
+    /// Material: name, base colour, roughness, double sided, alpha cutoff, and the PNG
+    /// bytes (or `None`) of `base_color_texture`, `normal_texture` and
+    /// `roughness_texture` (roughness in the green channel).
     #[getter]
     fn material<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let material = &self.part().material;
@@ -207,6 +209,9 @@ impl MeshPart {
             .as_ref()
             .map(|bytes| PyBytes::new(py, bytes));
         dict.set_item("base_color_texture", texture)?;
+        let bytes = |image: &Option<Vec<u8>>| image.as_ref().map(|b| PyBytes::new(py, b));
+        dict.set_item("normal_texture", bytes(&material.normal_texture))?;
+        dict.set_item("roughness_texture", bytes(&material.roughness_texture))?;
         Ok(dict)
     }
 

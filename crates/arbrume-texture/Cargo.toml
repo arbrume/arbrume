@@ -1,0 +1,20 @@
+[package]
+name = "arbrume-texture"
+description = "Procedural bark and leaf textures of Arbrume species"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+arbrume-core.workspace = true
+glam = "0.34.3"
+png = "0.18.1"
+rayon = "1.10"
+
+[dev-dependencies]
+png = "0.18.1"

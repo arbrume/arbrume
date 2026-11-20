@@ -65,6 +65,7 @@ hue_variation = 0.08
 brightness_variation = 0.3
 size_variation = 0.1
 orientation_variation_deg = 8.0
+venation = { kind = "parallel", veins = 5 }
 
 # Grey ringed trunk; the stalks of the fronds are green.
 [bark]
@@ -72,6 +73,7 @@ color = [0.2, 0.17, 0.135]
 young_color = [0.11, 0.2, 0.05]
 young_radius = 0.045
 color_variation = 0.1
+pattern = { kind = "smooth", feature_size = 0.12, stretch = 0.15, coverage = 0.9, contrast = 0.3, relief = 0.4 }
 
 [variation]
 age = [6, 30]

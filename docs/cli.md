@@ -68,6 +68,8 @@ configuration or species files.
 | `--jobs J` | all cores | worker threads; without it `RAYON_NUM_THREADS` applies |
 | `--resume` | | skip plants already complete |
 | `--manifest` | | write `manifest.jsonl` in the output directory |
+| `--junctions TIER` | `tier-a` | how a branch is joined to its parent: `tier-a` (intersecting tubes with a collar) or `tier-b` (one closed bark surface per stem) ([Junctions](junctions.md)) |
+| `--textures MODE` | `files` | procedural bark and leaf textures: `files` (PNG files shared next to the plants), `embed` (inside each file) or `none` ([Textures](textures.md)) |
 | `--annotations LIST` | | ML ground truth next to each plant: `skeleton`, `labels`, `points=N`, `branches[=K]`, `metrics`, `json` ([ML annotations](annotations.md)) |
 | `--quiet`, `-q` | | print errors only |
 | `--config FILE` | | batch config file; excludes the species and parameter options |
@@ -91,6 +93,15 @@ budget `0.3^k` times that of level 0, then the billboard
 the manifest lists each level with its triangles (with `--lod-file`, every level names
 the one file). With `--wind` every level carries the [wind data](wind.md). Each worker thread writes its own files and reuses its buffers, so memory stays at
 one plant per thread whatever the count.
+
+**Textures.** With `--textures files` (the default) or `embed`, every plant carries
+the textures of its species, synthesized once per species by a cache shared by the
+worker threads, and its leaves are meshed as cards cut by the alpha of the texture.
+`files` writes each image once to the output directory as `arbrume_<hash>.png`, named
+after its bytes, and the `.glb` files reference it by relative URI; `embed` stores it in
+every file. A random plant takes the textures of its preset. Unless `--quiet`, the run
+ends with the number of species textured, the synthesis time and the size of the
+images. [Textures](textures.md) gives the file sizes and times measured on the random set.
 
 **Surroundings.** `--surroundings FILE` reads an envelope and occluders, in meters
 around a plant standing at the origin ([Growth](growth.md#surroundings) lists the shapes):
@@ -189,6 +200,8 @@ age = { uniform = [10, 30] }    # age of the entries that set none (default 10)
 scale = 1.0                     # scale of the entries that set none (default 1)
 growth_frames = 0               # same as --growth-frames (default 0: one file per plant)
 annotations = "skeleton,labels" # same as --annotations (default: none)
+textures = "files"              # same as --textures (default: files)
+junctions = "tier-b"            # same as --junctions (default: tier-a)
 lod = { wind = "texcoord", billboard = "cloud", file = false, skin = false, instance_leaves = false }
 
 [surroundings]                  # around the plants of the entries that set none
@@ -294,6 +307,11 @@ nothing parallel inside a plant. [Growth](growth.md#performance-and-engine-optio
 the measurements and the defaults taken from them; `cargo bench -p arbrume-gen --bench
 engine` measures the same options and the two data structures alone with criterion.
 
+`arbrume bench --junctions` prints the bark triangles and the meshing time of each species
+and age with Tier A and with Tier B junctions ([Junctions](junctions.md#cost) has the
+measurements); `cargo bench -p arbrume-mesh` compares them on synthetic skeletons
+(group `junctions`).
+
 ## Library
 
 ```rust
@@ -348,7 +366,8 @@ arbrume sheet --species hedge_shrub --ages 6,12 --row 5 --spacing 0.8 --surround
 A species sheet has one row per species, seed and azimuth and one column per age; a
 random sheet shows plants `offset` to `offset + N` of the random sampler with base seed
 `--seeds`. `--view` is `full`, `crown` (the middle of the crown, enlarged) or `junction`
-(the trunk and its first branches). One line per plant goes to standard output: quality
+(the trunk and its first branches); `--junctions` chooses the junctions as for `gen`. One
+line per plant goes to standard output: quality
 reached, height, width, trunk diameter, triangles, vertices, nodes, leaf sites and time.
 
 `--surroundings FILE` grows every plant in the surroundings of the file and draws its

@@ -49,6 +49,7 @@ fn trunk() -> MeshPart {
             alpha_cutoff: None,
             base_color_texture: None,
             normal_texture: None,
+            roughness_texture: None,
         },
         buffers,
     }
@@ -65,6 +66,7 @@ fn leaf_card() -> MeshPart {
             alpha_cutoff: Some(0.5),
             base_color_texture: Some(TINY_PNG.to_vec()),
             normal_texture: None,
+            roughness_texture: None,
         },
         buffers: MeshBuffers {
             positions: vec![

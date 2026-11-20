@@ -26,6 +26,8 @@
 //!   or under neighbours ([`Surroundings`]); species in the self-organizing mode respond.
 //! * [`Generator::timeline`] and [`Generator::frame`] mesh one grown plant at several
 //!   ages, for growth sequences.
+//! * [`Generator::set_textures`] gives every mesh the procedural bark and leaf textures
+//!   of its species, synthesized once per species by a shared [`TextureCache`].
 //! * [`metadata`] is the JSON stored in the `extras` of an exported file, enough to
 //!   generate the same plant again.
 //!
@@ -51,7 +53,8 @@ mod timeline;
 
 pub use arbrume_grow::{Occluder, Shape, Surroundings, VoxelMask};
 pub use arbrume_lod::{BillboardMethod, BillboardOptions};
-pub use arbrume_mesh::{LeafInstance, LeafInstances, LodOptions};
+pub use arbrume_mesh::{Junctions, LeafInstance, LeafInstances, LodOptions};
+pub use arbrume_texture::{SpeciesTextures, TextureCache, TextureOptions};
 pub use batch::{Budget, Generator, generate, generate_many, run_batch};
 pub use lods::{LodKind, LodMesh, LodSettings};
 pub use metadata::{GENERATOR, VERSION, metadata};

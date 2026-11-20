@@ -42,6 +42,7 @@ with and without `MeshOptions::parallel`, for any number of threads, and whether
 | `max_cycle` | none | mesh the plant as it was at the end of this growth cycle |
 | `seed` | 0 | seed of the mesh-level variation (leaf order, size, attitude and colour, texture offsets) |
 | `parallel` | false | fill the buffers on the global `rayon` pool |
+| `junctions` | `TierA` | how a lateral axis is joined to its parent: `TierA` (below) or `TierB`, one closed bark surface ([Junctions](junctions.md)) |
 
 `MeshOptions::with_quality(q)` sets the level-of-detail controls from one number, 1 being
 full detail: the tolerance is the default divided by `q` squared and `leaf_fraction` is
@@ -99,6 +100,11 @@ below.
 
 ## Junctions
 
+This section describes the default, Tier A. With `junctions = TierB` the child is
+stitched into a hole cut in the surface of its parent, which makes the bark of each stem
+one closed surface; [Junctions](junctions.md) describes it, its cost and how it was
+chosen.
+
 A lateral axis starts on the centerline of its parent, inside it, so the two tubes
 intersect and no gap can open (as in Longay et al. 2012 and Raistrick et al. 2023). Where
 the axis comes out of its parent it is widened into a collar that narrows back to the
@@ -111,7 +117,8 @@ cannot come out on the far side, and it is left out when the widening is below t
 tolerance. A relay axis, which continues its parent at the same order, gets no collar.
 
 The junction is not watertight: the child is a separate tube that passes through the
-surface of its parent.
+surface of its parent. `arbrume_mesh::topology::check_surface` reports which of these
+properties a mesh has.
 
 ## Trunk base
 
@@ -137,7 +144,9 @@ amplitude is below the tolerance are left out.
 - `v` starts at a random offset on each lateral axis, so that neighbouring branches do
   not show the same piece of bark.
 
-Texel density is that of the species wherever the circumference is at least one texture
+The synthesized bark textures tile in both directions over one repeat
+([Textures](textures.md)), so the whole number of repeats around an axis closes without a
+seam. Texel density is that of the species wherever the circumference is at least one texture
 repeat. Thinner axes have one repeat around and a higher density. Along a tapering axis
 the density rises towards the tip, since the number of repeats around is constant.
 
@@ -178,12 +187,20 @@ from base to tip, `y` across, `z` towards the upper side.
   a single flat triangle, widest at its base: a needle.
 - `leaflet_pairs > 0`: a pinnately compound leaf, `2 pairs + 1` blades on a straight
   rachis, the lateral ones at `leaflet_angle_deg` from it.
-- `geometry = "card"`: a flat rectangle over the extent of the leaf, for an alpha-masked
-  texture. The leaf material then has an alpha cutoff of 0.5; the caller attaches the
-  texture to it.
+- `geometry = "card"`: a rectangle over the extent of the leaf, for an alpha-masked
+  texture. It is flat (two triangles) when the fold and bend of the blade stay within
+  the tolerance, otherwise folded and bent like a blade in one segment fewer than the
+  outline would have, which gives it the same triangle count. The leaf material then has
+  an alpha cutoff of 0.5. With procedural textures ([Textures](textures.md)) every
+  outline leaf other than a needle is meshed as a card.
 
-Both kinds have texture coordinates over the bounding rectangle of the leaf, `v` from
-base to tip. The petiole (`petiole_length`) and the rachis are one thin triangle; the
+Both kinds have texture coordinates over the bounding rectangle of the leaf
+(`LeafLayout`), `v` from base to tip, mapped into a cell of the leaf atlas of the species
+(`Foliage::atlas`): without a twig the leaf template has one variant per leaf cell, which
+each site draws; each leaf of a twig takes the cell `(variant + leaf) mod cells`. Twig
+stems sample the stalk at `LeafAtlas::STEM_UV` of the first cell, which the texture
+keeps opaque, and fins span the needle spray cell, `u` across, `v` along the twig. The
+geometry does not depend on the atlas. The petiole (`petiole_length`) and the rachis are one thin triangle; the
 petiole of a simple leaf is left out when it is thinner than the tolerance. The leaf
 material is double-sided.
 
@@ -319,6 +336,8 @@ All defaults are starting points for tuning, not measured values.
 | `hue_variation` | 0.08 | opposite scaling of the red and blue channels of a leaf, in `[0, 1]` |
 | `brightness_variation` | 0.25 | largest darkening of a leaf, in `[0, 1]` |
 | `roughness` | 0.6 | roughness of the leaf material |
+| `texture_resolution`, `texture_variants`, `texture_variation` | 512, 4, 0.3 | size, leaf variants and colour variation of the leaf atlas ([Textures](textures.md)) |
+| `venation`, `margin` | pinnate, entire | veins and edge drawn on the leaf texture ([Textures](textures.md)) |
 
 `length`, `width_ratio`, `color` and `retention_cycles` are used as described above. For
 a compound leaf `length` is that of the whole leaf and `width_ratio` that of a leaflet.
@@ -354,6 +373,8 @@ a compound leaf `length` is that of the whole leaf and `width_ratio` that of a l
 | `color_variation` | 0 | largest darkening of one axis, in `[0, 1]` |
 | `roughness` | 0.9 | roughness of the bark material |
 | `texture_size` | `[0.5, 0.5]` m | size of one texture repeat, around and along |
+| `texture_resolution` | 512 | texels of the synthesized bark texture ([Textures](textures.md)) |
+| `pattern` | furrowed | relief and colour pattern of the bark texture ([Textures](textures.md)) |
 
 ## Looking at a mesh
 
@@ -365,8 +386,10 @@ writes the mesh of a hand-built skeleton as a `.glb` file for any glTF viewer.
 
 ## Limits
 
-- Junctions are intersecting tubes, not one surface. A thick branch leaving at a shallow
-  angle shows a crease where the two tubes meet.
+- Tier A junctions are intersecting tubes, not one surface. A thick branch leaving at a
+  shallow angle shows a crease where the two tubes meet. Tier B junctions close the
+  surface at about twice the cost; their own limits are listed in
+  [Junctions](junctions.md#limits).
 - Where an axis bends more tightly than its own radius, rings overlap on the inside of
   the bend.
 - Twigs are baked into the leaf part, one copy per site: a file does not shrink for

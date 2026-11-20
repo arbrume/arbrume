@@ -6,16 +6,26 @@
 //! preset nor a file and looks like neither TOML (no `=`, no `[`, no newline) is reported
 //! as an unknown preset or a missing file.
 //!
-//! The keyword options are `scale`, `quality` and `overrides` (a dict of dotted paths);
-//! every other keyword is one more override, so `**{"foliage.length": 0.2}` and
+//! The keyword options are `scale`, `quality`, `textures` (a bool: procedural textures,
+//! see `docs/textures.md`), `junctions` (`"tier-a"` or `"tier-b"`, see
+//! `docs/junctions.md`) and `overrides` (a dict of dotted paths); every other keyword
+//! is one more override, so `**{"foliage.length": 0.2}` and
 //! `overrides={"foliage.length": 0.2}` are the same.
+//!
+//! Textures come from one cache for the whole process, so that regenerating a plant of
+//! the same species does not synthesize them again; it is emptied when it holds more
+//! than [`MAX_TEXTURED_SPECIES`] species, which bounds its memory while species are
+//! edited.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use arbrume_core::species::Species;
-use arbrume_gen::{GenParams, preset_toml, presets, species_with_overrides};
+use arbrume_gen::{
+    GenParams, Junctions, TextureCache, TextureOptions, preset_toml, presets,
+    species_with_overrides,
+};
 use pyo3::exceptions::{PyFileNotFoundError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
@@ -31,6 +41,27 @@ pub struct Options {
     pub quality: f32,
     /// Species overrides by dotted path.
     pub overrides: toml::Table,
+    /// Whether the plants carry procedural textures.
+    pub textures: bool,
+    /// How branches are joined.
+    pub junctions: Junctions,
+}
+
+/// Largest number of species in the texture cache before it is emptied.
+pub const MAX_TEXTURED_SPECIES: usize = 32;
+
+/// The texture cache of the process.
+pub fn texture_cache() -> Arc<TextureCache> {
+    static CACHE: Mutex<Option<Arc<TextureCache>>> = Mutex::new(None);
+    let mut slot = CACHE.lock().unwrap_or_else(PoisonError::into_inner);
+    match slot.as_ref() {
+        Some(cache) if cache.len() <= MAX_TEXTURED_SPECIES => Arc::clone(cache),
+        _ => {
+            let cache = Arc::new(TextureCache::new(TextureOptions::default()));
+            *slot = Some(Arc::clone(&cache));
+            cache
+        }
+    }
 }
 
 impl Options {
@@ -40,6 +71,8 @@ impl Options {
             scale: 1.0,
             quality: 1.0,
             overrides: toml::Table::new(),
+            textures: false,
+            junctions: Junctions::TierA,
         };
         let Some(kwargs) = kwargs else {
             return Ok(options);
@@ -55,6 +88,12 @@ impl Options {
                 "scale" => options.scale = number(&value, "scale")?,
                 "quality" => options.quality = number(&value, "quality")?,
                 "overrides" => {}
+                "junctions" => options.junctions = junctions(&value)?,
+                "textures" => {
+                    options.textures = value.extract::<bool>().map_err(|_| {
+                        PyTypeError::new_err("`textures` must be a bool".to_owned())
+                    })?;
+                }
                 _ => extra.set_item(key, value)?,
             }
         }
@@ -64,6 +103,20 @@ impl Options {
         }
         options.overrides = dict_to_toml(&extra)?;
         Ok(options)
+    }
+}
+
+/// `value` as a junction tier: `"tier-a"` or `"tier-b"`.
+fn junctions(value: &Bound<'_, PyAny>) -> PyResult<Junctions> {
+    let text: String = value
+        .extract()
+        .map_err(|_| PyTypeError::new_err("`junctions` must be a str".to_owned()))?;
+    match text.as_str() {
+        "tier-a" => Ok(Junctions::TierA),
+        "tier-b" => Ok(Junctions::TierB),
+        other => Err(PyValueError::new_err(format!(
+            "junctions `{other}` is not \"tier-a\" or \"tier-b\""
+        ))),
     }
 }
 
@@ -93,9 +146,11 @@ pub fn age(age: Option<i64>) -> PyResult<u16> {
 /// Generation parameters of one plant, as the command line builds them: the plant and
 /// mesh seeded with `seed`, then scale and quality applied.
 pub fn params(seed: u64, age: u16, options: &Options) -> GenParams {
-    GenParams::new(seed, age)
+    let mut params = GenParams::new(seed, age)
         .with_scale(options.scale)
-        .with_quality(options.quality)
+        .with_quality(options.quality);
+    params.mesh.junctions = options.junctions;
+    params
 }
 
 /// The TOML text of a species argument (see the module documentation).

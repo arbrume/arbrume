@@ -69,6 +69,7 @@ color = [0.14, 0.12, 0.1]
 young_color = [0.13, 0.09, 0.06]
 young_radius = 0.035
 color_variation = 0.12
+pattern = { kind = "furrowed", feature_size = 0.04, stretch = 3.5, relief = 0.6 }
 
 [variation]
 age = [12, 22]

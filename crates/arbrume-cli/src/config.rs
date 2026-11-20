@@ -14,6 +14,8 @@
 //! scale = 1.0                     # default scale distribution
 //! growth_frames = 0               # frames of a growth sequence per plant, 0 for none
 //! annotations = "skeleton,labels" # ML annotations, as `--annotations`
+//! textures = "files"             # "none", "embed" or "files", like `--textures`
+//! junctions = "tier-b"           # "tier-a" (default) or "tier-b", like `--junctions`
 //! lod = { wind = "texcoord", billboard = "cloud" } # as `--wind`, `--billboard`; also
 //!                                 # `file`, `skin`, `instance_leaves` (docs/lod.md)
 //!
@@ -44,7 +46,8 @@ use std::sync::Arc;
 
 use arbrume_core::species::Species;
 use arbrume_gen::species_with_overrides;
-use arbrume_gen::{Distribution, GenParams, RandomSampler, Sampler, Surroundings};
+use arbrume_gen::{Distribution, GenParams, Junctions, RandomSampler, Sampler, Surroundings};
+use clap::ValueEnum;
 use serde::Deserialize;
 
 use crate::annotate::AnnotationSet;
@@ -52,6 +55,7 @@ use crate::batch::ThumbFormat;
 use crate::error::CliError;
 use crate::lods::{LodConfig, LodFile};
 use crate::source::{SpeciesSource, resolve, sanitize};
+use crate::textures::TextureChoice;
 
 /// One species of a batch.
 #[derive(Debug, Clone)]
@@ -98,6 +102,29 @@ pub struct Batch {
     pub entries: Vec<Entry>,
     /// Random plants to generate: their sampler and their number.
     pub random: Option<(RandomSampler, u32)>,
+    /// Procedural textures, when the config file or the command line chooses.
+    pub textures: Option<TextureChoice>,
+    /// How branches are joined, when the config file or the command line chooses.
+    pub junctions: Option<JunctionChoice>,
+}
+
+/// What `--junctions` asks for (docs/junctions.md).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum JunctionChoice {
+    /// A branch starts inside its parent with a flared collar: fast, not watertight.
+    TierA,
+    /// A branch is stitched into a hole in its parent: one closed bark surface.
+    TierB,
+}
+
+impl From<JunctionChoice> for Junctions {
+    fn from(choice: JunctionChoice) -> Self {
+        match choice {
+            JunctionChoice::TierA => Self::TierA,
+            JunctionChoice::TierB => Self::TierB,
+        }
+    }
 }
 
 /// Top level of a batch config file.
@@ -121,6 +148,8 @@ struct ConfigFile {
     #[serde(default)]
     lod: LodFile,
     surroundings: Option<Surroundings>,
+    textures: Option<TextureChoice>,
+    junctions: Option<JunctionChoice>,
     species: Vec<EntryFile>,
 }
 
@@ -246,6 +275,8 @@ pub fn load(path: &Path) -> Result<Batch, CliError> {
         lod: file.lod.config(),
         entries,
         random: None,
+        textures: file.textures,
+        junctions: file.junctions,
     })
 }
 

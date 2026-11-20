@@ -33,13 +33,16 @@ use crate::data::{ORGAN_KINDS, TreeData};
 use crate::job::{Options, SpeciesCache, age, params, seed, species_text};
 use crate::tree::{MeshPart, Organs, Skeleton, Tree};
 
-/// One job of a batch: a parsed species and the parameters of one plant.
-type Job = (Arc<Species>, GenParams);
+/// One job of a batch: a parsed species, the parameters of one plant and whether it
+/// carries textures.
+type Job = (Arc<Species>, GenParams, bool);
 
 /// Grows and meshes every job on the current `rayon` pool, in input order.
 fn run_jobs(jobs: &[Job]) -> Vec<Result<TreeData, GenError>> {
+    let cache = jobs.iter().any(|job| job.2).then(job::texture_cache);
     run_batch(jobs.len(), |generator, _, index| {
-        let (species, params) = &jobs[index];
+        let (species, params, textured) = &jobs[index];
+        generator.set_textures(cache.clone().filter(|_| *textured));
         generator
             .generate(species, params)
             .map(|plant| TreeData::new(Arc::clone(species), plant))
@@ -81,7 +84,9 @@ fn run_detached(py: Python<'_>, jobs: &[Job], threads: Option<i64>) -> PyResult<
 ///
 /// `species` is a preset name, a path to a species TOML file or TOML text. `seed` seeds
 /// the growth and the mesh; `age` is in growth cycles (default 10). Keyword options:
-/// `scale` (default 1), `quality` (mesh quality, default 1), `overrides` (a dict of
+/// `scale` (default 1), `quality` (mesh quality, default 1), `textures` (procedural
+/// bark and leaf textures on the materials, default `False`), `junctions` (`"tier-a"`,
+/// the default, or `"tier-b"` for one closed bark surface), `overrides` (a dict of
 /// dotted species paths to values), and any other keyword is one more override, e.g.
 /// `**{"foliage.length": 0.2}`. Raises `ValueError` for an invalid species or parameter.
 #[pyfunction]
@@ -97,7 +102,12 @@ fn generate(
     let options = Options::parse(options)?;
     let species = SpeciesCache::default().get(text, &options.overrides)?;
     let params = params(job::seed(seed)?, job::age(age)?, &options);
-    let plant = py.detach(|| arbrume_gen::generate(&species, &params));
+    let cache = options.textures.then(job::texture_cache);
+    let plant = py.detach(|| {
+        let mut generator = arbrume_gen::Generator::new();
+        generator.set_textures(cache);
+        generator.generate(&species, &params)
+    });
     let plant = plant.map_err(|e| gen_error(&e))?;
     Ok(Tree::new(TreeData::new(species, plant)))
 }
@@ -120,6 +130,7 @@ fn seed_jobs(
             Ok((
                 Arc::clone(&species),
                 params(plant_seed, plant_age, &options),
+                options.textures,
             ))
         })
         .collect()
@@ -158,7 +169,7 @@ fn dict_jobs(
         let options = Options::parse(Some(&merged))?;
         let species = cache.get(species_text(&species)?, &options.overrides)?;
         let params = params(seed(plant_seed)?, age(plant_age)?, &options);
-        built.push((species, params));
+        built.push((species, params, options.textures));
     }
     Ok(built)
 }
@@ -176,8 +187,8 @@ fn take<'py>(dict: &Bound<'py, PyDict>, key: &str) -> PyResult<Option<Bound<'py,
 ///
 /// Either `generate_many(species, seeds, age=None, **options)`, one tree per seed, or
 /// `generate_many(jobs, **defaults)` where `jobs` is a list of dicts with the keys of
-/// `generate` (`species` required; `seed`, `age`, `scale`, `quality`, `overrides`,
-/// dotted overrides). `threads` sets the number of worker threads (default: the global
+/// `generate` (`species` required; `seed`, `age`, `scale`, `quality`, `textures`, `junctions`,
+/// `overrides`, dotted overrides). `threads` sets the number of worker threads (default: the global
 /// `rayon` pool, all cores or `RAYON_NUM_THREADS`). The trees are in input order and
 /// equal those of `generate` on each job, whatever the number of threads.
 #[pyfunction]

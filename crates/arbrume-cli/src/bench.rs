@@ -14,15 +14,21 @@
 //! sparse shadow grid, with the buds sensed on the global pool and with the markers
 //! given to buds on one thread, then the throughput of a batch of plants grown one per
 //! task with the default options and with nothing parallel inside a plant.
+//!
+//! `--junctions` prints another table instead: the bark triangles of the same plant and
+//! the median time to mesh it (bark and leaves, reusing the working memory), with Tier A
+//! and with Tier B junctions (docs/junctions.md).
 
 use std::time::{Duration, Instant};
 
+use arbrume_core::mesh::TreeMesh;
 use arbrume_core::species::{GrowthMode, Species};
 use arbrume_export::{GlbOptions, write_glb};
 use arbrume_gen::{
     Distribution, GENERATOR, Generator, Plant, Sampler, metadata, preset, presets, run_batch,
 };
 use arbrume_grow::{EngineOptions, GridStorage, GrowParams, Surroundings, grow_in_with};
+use arbrume_mesh::{Junctions, MeshOptions, Mesher};
 use clap::Args;
 use rayon::prelude::*;
 
@@ -51,6 +57,9 @@ pub struct BenchArgs {
     /// Compare the engine options of the self-organizing mode instead.
     #[arg(long)]
     engine: bool,
+    /// Compare Tier A and Tier B junctions instead.
+    #[arg(long, conflicts_with = "engine")]
+    junctions: bool,
     /// Also compute these annotations, as `gen --annotations`.
     #[arg(long, value_name = "LIST")]
     annotations: Option<AnnotationSet>,
@@ -77,6 +86,9 @@ pub fn run(args: &BenchArgs) -> Result<(), CliError> {
     if args.engine {
         engine_table(&species, args);
         return Ok(());
+    }
+    if args.junctions {
+        return junction_table(&species, args);
     }
     println!(
         "| species | age | nodes | triangles | grow ms | mesh ms | export ms | file MB \
@@ -113,6 +125,58 @@ pub fn run(args: &BenchArgs) -> Result<(), CliError> {
                 ms(row.mesh),
                 ms(row.export),
                 row.bytes as f64 / 1e6
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Prints the bark triangles and the median meshing time of plant 0 of each species and
+/// age with Tier A and with Tier B junctions.
+fn junction_table(species: &[(String, Species)], args: &BenchArgs) -> Result<(), CliError> {
+    println!(
+        "| species | age | bark triangles A | bark triangles B | mesh ms A | mesh ms B | B / A |"
+    );
+    println!("|---|---|---|---|---|---|---|");
+    let (mut mesher, mut mesh) = (Mesher::new(), TreeMesh::default());
+    for (label, species) in species {
+        for &age in &args.ages {
+            let sampler = Sampler {
+                seed: 1,
+                age: Distribution::Fixed(f32::from(age)),
+                scale: Distribution::Fixed(1.0),
+                quality: args.quality,
+            };
+            sampler.validate().map_err(CliError::usage)?;
+            let params = sampler.params(0);
+            let plant = Generator::new()
+                .generate(species, &params)
+                .map_err(CliError::failed)?;
+            let mut columns = Vec::with_capacity(2);
+            for junctions in [Junctions::TierA, Junctions::TierB] {
+                let options = MeshOptions {
+                    junctions,
+                    ..params.mesh
+                };
+                let mut times = Vec::with_capacity(args.repeats);
+                for _ in 0..args.repeats {
+                    let start = Instant::now();
+                    mesher
+                        .mesh_into(&plant.graph, species, &options, &mut mesh)
+                        .map_err(CliError::failed)?;
+                    times.push(start.elapsed());
+                }
+                let counts = mesher
+                    .counts(&plant.graph, species, &options)
+                    .map_err(CliError::failed)?;
+                columns.push((counts.bark_triangles, median(times)));
+            }
+            let [(tri_a, time_a), (tri_b, time_b)] = [columns[0], columns[1]];
+            println!(
+                "| {label} | {age} | {tri_a} | {tri_b} | {:.3} | {:.3} | {:.2} |",
+                ms(time_a),
+                ms(time_b),
+                time_b.as_secs_f64() / time_a.as_secs_f64().max(1e-12)
             );
         }
     }

@@ -92,8 +92,8 @@ impl GenParams {
     }
 
     /// The same parameters with the level-of-detail controls of
-    /// `MeshOptions::with_quality(quality)`. The mesh seed, `max_cycle` and `parallel`
-    /// are kept.
+    /// `MeshOptions::with_quality(quality)`. The mesh seed, `max_cycle`, `parallel` and
+    /// junctions are kept.
     #[must_use]
     pub fn with_quality(mut self, quality: f32) -> Self {
         self.mesh = quality_options(&self.mesh, quality);
@@ -137,14 +137,15 @@ impl GenParams {
     }
 }
 
-/// `MeshOptions::with_quality(quality)` with the seed, `max_cycle` and `parallel` of
-/// `base`.
+/// `MeshOptions::with_quality(quality)` with the seed, `max_cycle`, `parallel` and
+/// junctions of `base`.
 #[must_use]
 pub(crate) fn quality_options(base: &MeshOptions, quality: f32) -> MeshOptions {
     MeshOptions {
         seed: base.seed,
         max_cycle: base.max_cycle,
         parallel: base.parallel,
+        junctions: base.junctions,
         ..MeshOptions::with_quality(quality)
     }
 }

@@ -61,6 +61,9 @@ brightness_variation = 0.4
 size_variation = 0.2
 orientation_variation_deg = 16.0
 twig = { leaves = 18, length = 0.3, inclination_deg = 42.0, bend_deg = 0.0, stem_radius = 0.0, terminal_leaf = false, radial = true, fins = 3, fin_width = 0.045, fin_shade = 0.65, variants = 4 }
+texture_variants = 2
+texture_resolution = 256
+venation = { kind = "none" }
 
 # Grey-brown plates low on the trunk, orange flaky bark on the limbs.
 [bark]
@@ -68,6 +71,7 @@ color = [0.17, 0.11, 0.085]
 young_color = [0.36, 0.17, 0.065]
 young_radius = 0.09
 color_variation = 0.15
+pattern = { kind = "plated", feature_size = 0.09, stretch = 1.6, coverage = 0.3, contrast = 0.5, relief = 0.6 }
 
 [variation]
 age = [14, 52]

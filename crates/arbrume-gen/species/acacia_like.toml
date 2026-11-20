@@ -70,12 +70,14 @@ hue_variation = 0.1
 brightness_variation = 0.3
 # A twig is one feathery compound leaf: two ranks of small leaflets.
 twig = { leaves = 16, length = 0.6, leaves_per_node = 2, divergence_deg = 0.0, inclination_deg = 65.0, bend_deg = 15.0, stem_radius = 0.0015, terminal_leaf = false }
+venation = { veins = 3 }
 
 [bark]
 color = [0.12, 0.1, 0.085]
 young_color = [0.16, 0.12, 0.08]
 young_radius = 0.04
 color_variation = 0.15
+pattern = { kind = "furrowed", feature_size = 0.03, stretch = 4.0, relief = 0.6, coverage = 0.4 }
 
 [variation]
 age = [24, 45]

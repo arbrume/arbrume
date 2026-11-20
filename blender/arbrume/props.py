@@ -1,8 +1,10 @@
 """Properties stored on plant objects, and the generated species parameter properties.
 
 ``Object.arbrume`` (:class:`ARBRUME_PG_plant`) holds what a plant is made from: the species
-(a preset name or the text of a species file), seed, age, scale, quality and the overrides
-as JSON text. Those are saved with the file, so a plant reopens editable.
+(a preset name or the text of a species file), seed, age, scale, quality, whether the
+plant carries procedural textures, how its branches are joined, and the overrides as JSON
+text. Those are saved with the
+file, so a plant reopens editable.
 
 ``Object.arbrume.params`` is a property group built at registration from the species
 schema (:func:`build_params_class`): one property per species parameter, with ``get`` and
@@ -116,6 +118,22 @@ class ARBRUME_PG_plant(bpy.types.PropertyGroup):
         min=0.01,
         soft_max=1.0,
         max=4.0,
+        update=_changed,
+    )
+    textures: BoolProperty(
+        name="Textures",
+        description="Procedural bark and leaf textures (image, normal map, alpha clip)",
+        default=True,
+        update=_changed,
+    )
+    junctions: EnumProperty(
+        name="Junctions",
+        description="How a branch is joined to its parent",
+        items=[
+            ("tier-a", "Collar", "Branches start inside their parent with a flared collar"),
+            ("tier-b", "Watertight", "One closed bark surface, slower to build"),
+        ],
+        default="tier-a",
         update=_changed,
     )
     overrides: StringProperty(

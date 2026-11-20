@@ -3,10 +3,12 @@
  *
  * Usage: node tools/validate_glb.mjs <file.glb | directory> ...
  * Directories are scanned (not recursively) for *.glb files. Infos and hints are printed but
- * do not fail the run. Install the validator first with `npm ci --prefix tools`.
+ * do not fail the run. Images referenced by URI (`arbrume gen --textures files`) are read
+ * relative to the file that references them. Install the validator first with
+ * `npm ci --prefix tools`.
  */
 import { readFile, readdir, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import validator from "gltf-validator";
 
 async function collect(paths) {
@@ -26,6 +28,8 @@ async function validate(file) {
   const report = await validator.validateBytes(new Uint8Array(await readFile(file)), {
     uri: file,
     maxIssues: 0,
+    externalResourceFunction: async (uri) =>
+      new Uint8Array(await readFile(join(dirname(file), decodeURIComponent(uri)))),
   });
   const { numErrors, numWarnings, numInfos, numHints, messages } = report.issues;
   console.log(`${file}: ${numErrors} errors, ${numWarnings} warnings, ${numInfos} infos, ${numHints} hints`);

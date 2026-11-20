@@ -27,6 +27,7 @@ mod scene;
 mod sheet;
 mod source;
 mod species_cmd;
+mod textures;
 
 use std::path::PathBuf;
 use std::process::ExitCode;

@@ -1,6 +1,7 @@
 //! Generator metadata written to the `extras` of exported files.
 
 use arbrume_core::species::Species;
+use arbrume_mesh::Junctions;
 use serde_json::{Value, json};
 
 use crate::plant::Plant;
@@ -44,6 +45,10 @@ pub fn metadata(species: &Species, plant: &Plant) -> Value {
             "leaf_fraction": mesh.leaf_fraction,
             "max_cycle": mesh.max_cycle,
             "seed": mesh.seed,
+            "junctions": match mesh.junctions {
+                Junctions::TierA => "tier-a",
+                Junctions::TierB => "tier-b",
+            },
         },
         "stats": plant.stats,
         "species": species,

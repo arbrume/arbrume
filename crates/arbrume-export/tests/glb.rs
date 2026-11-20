@@ -345,3 +345,47 @@ fn malformed_parts_are_rejected() {
         GlbError::NonFinitePosition { part: 0, vertex: 3 }
     ));
 }
+
+#[test]
+fn roughness_texture_is_the_metallic_roughness_texture_and_images_are_shared() {
+    let mut mesh = common::sample_mesh();
+    let leaf = &mut mesh.parts[1].material;
+    leaf.normal_texture = Some(common::TINY_PNG.to_vec());
+    leaf.roughness_texture = Some(common::TINY_PNG.to_vec());
+    let gltf = parse(&encode("roughness", &mesh));
+    assert_eq!(
+        gltf.images().count(),
+        1,
+        "one image for three identical textures"
+    );
+    let material = gltf.materials().nth(1).unwrap();
+    let pbr = material.pbr_metallic_roughness();
+    assert!(pbr.metallic_roughness_texture().is_some());
+    assert_eq!(pbr.metallic_factor(), 0.0);
+    assert!(material.normal_texture().is_some());
+}
+
+#[test]
+fn external_images_are_referenced_by_their_file_name() {
+    let mesh = common::sample_mesh();
+    let mut bytes = Vec::new();
+    let options = GlbOptions::default();
+    let images = arbrume_export::ImageStorage::External;
+    arbrume_export::write_glb_images(&mesh, &options, &[], images, &mut bytes).unwrap();
+    check_framing(&bytes);
+    let gltf = parse(&bytes);
+    let image = gltf.images().next().expect("one image");
+    let ImageSource::Uri { uri, .. } = image.source() else {
+        panic!("image must be referenced by URI");
+    };
+    let name = arbrume_export::image_file_name(&common::TINY_PNG);
+    assert_eq!(uri, name);
+    let extension = std::path::Path::new(&name).extension();
+    assert!(name.starts_with("arbrume_") && extension.is_some_and(|e| e == "png"));
+    assert_ne!(
+        name,
+        arbrume_export::image_file_name(b"\x89PNG\r\n\x1a\nother")
+    );
+    let embedded = parse(&encode("embedded", &mesh));
+    assert!(bytes.len() < embedded.blob.as_ref().unwrap().len() + 4096);
+}

@@ -14,25 +14,26 @@ use std::collections::BTreeSet;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use arbrume_core::species::Species;
 use arbrume_export::{ExtraAttribute, GlbOptions};
 use arbrume_gen::{Budget, Distribution, GENERATOR, GenParams, Generator, Plant};
-use arbrume_gen::{RandomSampler, Sampler};
-use arbrume_gen::{Stats, metadata, run_batch};
+use arbrume_gen::{Junctions, Stats, metadata, run_batch};
+use arbrume_gen::{RandomSampler, Sampler, TextureCache, TextureOptions};
 use arbrume_raster::{Renderer, ThumbnailOptions};
 use clap::{Args, ValueEnum};
 use serde::Serialize;
 use serde_json::Value;
 
 use crate::annotate::{self, AnnotationSet};
-use crate::config::{self, Batch, Defaults, Entry, Thumb};
+use crate::config::{self, Batch, Defaults, Entry, JunctionChoice, Thumb};
 use crate::error::CliError;
 use crate::lods::{self, LodArgs, LodConfig};
 use crate::progress::Progress;
 use crate::source::resolve;
+use crate::textures::{self, TextureChoice};
 
 /// Name of the manifest file in the output directory.
 pub const MANIFEST: &str = "manifest.jsonl";
@@ -102,6 +103,15 @@ pub struct GenArgs {
     /// json (see docs/annotations.md).
     #[arg(long, value_name = "LIST")]
     annotations: Option<AnnotationSet>,
+    /// Procedural bark and leaf textures: none, inside each file (embed), or as PNG
+    /// files next to the plants, shared by the plants of a species (files)
+    /// [default: files] (docs/textures.md).
+    #[arg(long, value_enum, value_name = "MODE")]
+    textures: Option<TextureChoice>,
+    /// How a branch is joined to its parent: tier-a (intersecting tubes with a collar)
+    /// or tier-b (one closed bark surface) [default: tier-a] (docs/junctions.md).
+    #[arg(long, value_enum, value_name = "TIER")]
+    junctions: Option<JunctionChoice>,
     /// Print nothing but errors.
     #[arg(long, short)]
     quiet: bool,
@@ -199,6 +209,8 @@ fn random_batch(args: &GenArgs) -> Result<Batch, CliError> {
         lod: LodConfig::default(),
         entries: Vec::new(),
         random: Some((sampler, args.count)),
+        textures: None,
+        junctions: None,
     })
 }
 
@@ -240,6 +252,8 @@ fn batch_from_flags(args: &GenArgs) -> Result<Batch, CliError> {
         lod: LodConfig::default(),
         entries: vec![entry],
         random: None,
+        textures: None,
+        junctions: None,
     })
 }
 
@@ -265,6 +279,13 @@ pub fn run(args: &GenArgs) -> Result<(), CliError> {
         batch.annotations = annotations;
     }
     batch.lod = args.lod.merge(batch.lod);
+    let texture_choice = args
+        .textures
+        .or(batch.textures)
+        .unwrap_or(TextureChoice::DEFAULT);
+    batch.textures = Some(texture_choice);
+    batch.junctions = args.junctions.or(batch.junctions);
+    batch.lod.images = texture_choice.storage();
     let chained = batch.lod.wind.is_some() || batch.lod.billboard.is_some();
     if batch.growth_frames > 0 && chained {
         return Err(CliError::usage(
@@ -324,6 +345,8 @@ struct Job<'a> {
     budget: Budget,
     /// Whether the plant comes from the random sampler.
     random: bool,
+    /// The preset a random plant was varied from, whose textures it takes.
+    texture_base: Option<Arc<Species>>,
 }
 
 impl Batch {
@@ -340,6 +363,11 @@ impl Batch {
         tasks
     }
 
+    /// The junctions of every plant of the batch.
+    fn junction_mode(&self) -> Junctions {
+        self.junctions.map_or(Junctions::TierA, Junctions::from)
+    }
+
     /// Resolves `task`.
     fn job(&self, task: Task) -> Result<Job<'_>, String> {
         let index = task.index;
@@ -347,6 +375,7 @@ impl Batch {
             let entry: &Entry = &self.entries[slot];
             let mut params = entry.sampler.params(index);
             params.surroundings.clone_from(&entry.surroundings);
+            params.mesh.junctions = self.junction_mode();
             return Ok(Job {
                 label: Cow::Borrowed(&entry.label),
                 species: Cow::Borrowed(&entry.species),
@@ -355,6 +384,7 @@ impl Batch {
                 index,
                 budget: Budget::NONE,
                 random: false,
+                texture_base: None,
             });
         }
         let (sampler, _) = self
@@ -364,10 +394,14 @@ impl Batch {
         let pick = sampler
             .pick(index)
             .map_err(|e| format!("random plant {index}: {e}"))?;
+        let texture_base = arbrume_gen::preset(&pick.preset).map(Arc::new);
+        let mut params = pick.params;
+        params.mesh.junctions = self.junction_mode();
         Ok(Job {
+            texture_base,
             label: Cow::Owned(pick.preset),
             species: Cow::Owned(pick.species),
-            params: pick.params,
+            params,
             base_seed: sampler.seed,
             index,
             budget: pick.budget,
@@ -390,6 +424,8 @@ struct Context<'a> {
     lod: LodConfig,
     manifest: Option<Mutex<File>>,
     progress: Progress,
+    /// Texture cache shared by the workers, when plants are textured.
+    textures: Option<Arc<TextureCache>>,
 }
 
 /// Generates every plant of `batch` that is not already complete.
@@ -432,9 +468,14 @@ fn execute(batch: &Batch, options: &RunOptions) -> Result<(), CliError> {
         lod: batch.lod,
         manifest,
         progress: Progress::new(tasks.len(), skipped, options.quiet),
+        textures: batch
+            .textures
+            .is_some_and(TextureChoice::textured)
+            .then(|| Arc::new(TextureCache::new(TextureOptions::default()))),
     };
     let work = || {
         run_batch(tasks.len(), |generator, plant, task| {
+            generator.set_textures(context.textures.clone());
             let result = batch
                 .job(tasks[task])
                 .and_then(|job| make_plant(&context, generator, plant, &job));
@@ -447,6 +488,9 @@ fn execute(batch: &Batch, options: &RunOptions) -> Result<(), CliError> {
         None => work(),
     };
     context.progress.finish();
+    if let (Some(cache), false) = (&context.textures, options.quiet) {
+        textures::summary(cache);
+    }
     report(&results, skipped, &context, options.quiet)
 }
 
@@ -609,6 +653,7 @@ fn make_plant(
 ) -> Result<(), String> {
     let index = job.index;
     let fail = |e: String| format!("{} plant {index}: {e}", job.label);
+    generator.set_texture_base(job.texture_base.clone());
     let written = if context.frames > 0 {
         write_sequence(context, generator, plant, job)
     } else {
@@ -929,6 +974,9 @@ fn write_file(
     let bytes = file.metadata().map_err(|e| e.to_string())?.len();
     drop(file);
     fs::rename(&temp, &path).map_err(|e| format!("{}: {e}", path.display()))?;
+    if config.images == arbrume_export::ImageStorage::External {
+        textures::write_images(out, [&plant.mesh])?;
+    }
     Ok(bytes)
 }
 

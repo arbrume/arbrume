@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import arbrume
+import numpy as np
 import pytest
 
 
@@ -75,3 +76,44 @@ def test_save_glb_names_the_node_after_the_file(tmp_path: Path, tree: arbrume.Tr
     tree.save_glb(path)
     assert path.read_bytes() == tree.to_glb(name="bush")
     assert tree.to_glb(name="bush") != tree.to_glb()
+
+
+def test_textures_put_png_images_on_the_materials() -> None:
+    plain = arbrume.generate("birch_like", seed=3, age=4, quality=0.3)
+    textured = arbrume.generate("birch_like", seed=3, age=4, quality=0.3, textures=True)
+    for part in plain.parts:
+        assert part.material["base_color_texture"] is None
+    materials = {part.kind: part.material for part in textured.parts}
+    for key in ("base_color_texture", "normal_texture", "roughness_texture"):
+        assert materials["bark"][key].startswith(b"\x89PNG")
+    assert materials["leaf"]["normal_texture"].startswith(b"\x89PNG")
+    assert materials["leaf"]["roughness_texture"] is None
+    assert materials["leaf"]["alpha_cutoff"] == 0.5
+    many = arbrume.generate_many("birch_like", [3], age=4, quality=0.3, textures=True)
+    assert many[0].parts[0].material == textured.parts[0].material
+    with pytest.raises(TypeError):
+        arbrume.generate("shrub", age=2, textures="yes")
+
+
+def _open_edges(part: arbrume.MeshPart) -> int:
+    """Edges used by one triangle only, once vertices of equal position are welded."""
+    _, welded = np.unique(part.vertices, axis=0, return_inverse=True)
+    triangles = welded.reshape(-1)[part.indices].reshape(-1, 3)
+    sides = [triangles[:, [0, 1]], triangles[:, [1, 2]], triangles[:, [2, 0]]]
+    edges = np.sort(np.concatenate(sides), axis=1)
+    _, counts = np.unique(edges, axis=0, return_counts=True)
+    return int((counts == 1).sum())
+
+
+def test_tier_b_junctions_close_the_bark() -> None:
+    tier_b = arbrume.generate("oak_like", seed=1, age=8, junctions="tier-b")
+    tier_a = arbrume.generate("oak_like", seed=1, age=8)
+    bark_b = next(part for part in tier_b.parts if part.kind == "bark")
+    bark_a = next(part for part in tier_a.parts if part.kind == "bark")
+    assert _open_edges(bark_b) == 0
+    assert _open_edges(bark_a) > 0
+    assert tier_b.metadata["mesh"]["junctions"] == "tier-b"
+    many = arbrume.generate_many("oak_like", [1], age=8, junctions="tier-b")
+    assert many[0].to_glb() == tier_b.to_glb()
+    with pytest.raises(ValueError, match="tier-c"):
+        arbrume.generate("oak_like", age=2, junctions="tier-c")

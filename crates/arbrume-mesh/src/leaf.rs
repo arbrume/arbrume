@@ -21,8 +21,11 @@
 //! base of the terminal leaflet and the others are evenly spaced below it. The petiole
 //! and the rachis are one thin triangle.
 //!
-//! A **card** leaf is a flat rectangle over the same extent, for an alpha-masked texture.
-//! Both kinds have texture coordinates over that rectangle, `v` from base to tip, so a
+//! A **card** leaf is a rectangle over the same extent, for an alpha-masked texture:
+//! flat when the fold and bend of the blade stay within the tolerance (two triangles),
+//! otherwise folded and bent like a blade, in one segment fewer than the blade would
+//! have, which gives it the same triangle count. Both kinds have texture coordinates
+//! over that rectangle (`arbrume_core::species::LeafLayout`), `v` from base to tip, so a
 //! leaf texture fits either.
 //!
 //! Triangles are counter-clockwise seen from the upper side; the leaf material is
@@ -66,21 +69,12 @@ struct Layout {
 
 impl Layout {
     fn new(foliage: &Foliage) -> Self {
-        let pairs = foliage.leaflet_pairs as f32;
-        let blade = 1.0 / (1.0 + 0.5 * pairs);
-        let widest = outline_fill(foliage, 2);
-        let half_blade = 0.5 * foliage.width_ratio * blade * widest;
-        let (sin, cos) = foliage.leaflet_angle_deg.to_radians().sin_cos();
-        let half_width = if foliage.leaflet_pairs == 0 {
-            half_blade
-        } else {
-            half_blade.max(blade * sin + half_blade * cos)
-        };
+        let layout = foliage.leaf_layout();
         Self {
-            petiole: foliage.petiole_length,
-            rachis: 1.0 - blade,
-            blade,
-            half_width,
+            petiole: layout.petiole,
+            rachis: layout.rachis,
+            blade: layout.blade,
+            half_width: layout.half_width,
         }
     }
 
@@ -137,17 +131,9 @@ pub(crate) fn midrib(t: f32, bend: f32) -> (Vec3, Vec3) {
 }
 
 /// Factor by which a blade of `segments` segments is widened so that its polygon has the
-/// area of the smooth outline: the mean of the outline over the mean of the polygon.
+/// area of the smooth outline (`Foliage::outline_fill`).
 fn outline_fill(foliage: &Foliage, segments: u32) -> f32 {
-    const SAMPLES: u32 = 64;
-    let mean = |count: u32, offset: f32| {
-        let widths = (0..count).map(|i| foliage.blade_width((i as f32 + offset) / count as f32));
-        widths.sum::<f32>() / count as f32
-    };
-    if segments < 2 {
-        return 2.0 * mean(SAMPLES, 0.5);
-    }
-    mean(SAMPLES, 0.5) / mean(segments, 0.0)
+    foliage.outline_fill(segments)
 }
 
 struct Builder<'a> {
@@ -158,6 +144,8 @@ struct Builder<'a> {
     fill: f32,
     /// Draw a blade of two segments as a flat diamond.
     flat: bool,
+    /// Draw a card as a flat rectangle.
+    flat_card: bool,
     /// Draw the petiole and rachis.
     stalked: bool,
     template: LeafTemplate,
@@ -283,16 +271,61 @@ impl Builder<'_> {
         self.blade(&Placement::new(end, 0.0, layout.blade));
     }
 
-    /// Adds the rectangle of a card leaf.
+    /// Adds the rectangle of a card leaf: flat, or folded and bent like a blade.
     fn card(&mut self) {
-        let whole = Placement::new(0.0, 0.0, 1.0);
-        let (length, half) = (self.layout.petiole + 1.0, self.layout.half_width);
-        let corners = [[0.0, -half], [length, -half], [length, half], [0.0, half]];
-        for corner in corners {
-            let flat = Vec2::from(corner);
-            self.vertex(&whole, flat.extend(0.0), Vec3::Z, flat);
+        if self.flat_card {
+            let whole = Placement::new(0.0, 0.0, 1.0);
+            let (length, half) = (self.layout.petiole + 1.0, self.layout.half_width);
+            let corners = [[0.0, -half], [length, -half], [length, half], [0.0, half]];
+            for corner in corners {
+                let flat = Vec2::from(corner);
+                self.vertex(&whole, flat.extend(0.0), Vec3::Z, flat);
+            }
+            self.template.indices.extend([0, 1, 2, 0, 2, 3]);
+        } else {
+            self.folded_card();
         }
-        self.template.indices.extend([0, 1, 2, 0, 2, 3]);
+    }
+
+    /// Adds a card folded about its axis by the fold angle and bent along it by the
+    /// curvature angle, in `segments - 1` segments of three vertices across.
+    fn folded_card(&mut self) {
+        let foliage = self.foliage;
+        let length = self.layout.petiole + 1.0;
+        let whole = Placement::new(0.0, 0.0, length);
+        let bend = foliage.curvature_deg.to_radians();
+        let (fold_sin, fold_cos) = foliage.fold_deg.to_radians().sin_cos();
+        let half = self.layout.half_width / length;
+        let spans = self.segments.saturating_sub(1).max(1);
+        for station in 0..=spans {
+            let t = station as f32 / spans as f32;
+            let (point, up) = midrib(t, bend);
+            let rise = up * (half * fold_sin);
+            let reach = Vec3::Y * (half * fold_cos);
+            let tilt = Vec3::Y * fold_sin;
+            let normal_left = up * fold_cos - tilt;
+            self.vertex(
+                &whole,
+                point + reach + rise,
+                normal_left,
+                Vec2::new(t, half),
+            );
+            self.vertex(&whole, point, up, Vec2::new(t, 0.0));
+            let normal_right = up * fold_cos + tilt;
+            self.vertex(
+                &whole,
+                point - reach + rise,
+                normal_right,
+                Vec2::new(t, -half),
+            );
+        }
+        let indices = &mut self.template.indices;
+        for span in 0..spans {
+            let (left, next) = (3 * span, 3 * span + 3);
+            let (mid, right) = (left + 1, left + 2);
+            indices.extend([mid, next + 1, next, mid, next, left]);
+            indices.extend([right, next + 2, next + 1, right, next + 1, mid]);
+        }
     }
 }
 
@@ -320,6 +353,7 @@ impl LeafTemplate {
             segments,
             fill: outline_fill(foliage, segments),
             flat: segments == 2 && rise.max(sag) < tolerance,
+            flat_card: segments <= 2 && rise < tolerance || rise.max(sag) < tolerance,
             stalked: foliage.leaflet_pairs > 0 || stalk_width >= tolerance,
             template: Self::default(),
         };
@@ -469,9 +503,40 @@ fold_deg = 40.0",
 
     #[test]
     fn card_is_one_flat_rectangle() {
-        let template = LeafTemplate::new(&foliage("geometry = \"card\""), 1e-6);
+        let text = "geometry = \"card\"
+fold_deg = 0.0
+curvature_deg = 0.0";
+        let template = LeafTemplate::new(&foliage(text), 1e-6);
         assert_eq!((template.positions.len(), template.indices.len()), (4, 6));
         check(&template);
         assert!(template.positions.iter().all(|p| p.z == 0.0));
+    }
+
+    #[test]
+    fn folded_card_has_the_triangles_of_the_outline_blade() {
+        for segments in 2..=6 {
+            let text = format!(
+                "segments = {segments}
+petiole_length = 0.1"
+            );
+            let outline = LeafTemplate::new(&foliage(&text), 1e-6);
+            let text = format!(
+                "{text}
+geometry = \"card\""
+            );
+            let card = LeafTemplate::new(&foliage(&text), 1e-6);
+            check(&card);
+            assert_eq!(
+                card.indices.len(),
+                outline.indices.len() - 3,
+                "outline has a stalk"
+            );
+            assert!(
+                card.positions.iter().any(|p| p.z > 0.01),
+                "the fold raises the edges"
+            );
+            let reach = card.positions.iter().map(|p| p.x).fold(0.0, f32::max);
+            assert!(reach > 1.0 && reach < 1.2, "{reach}");
+        }
     }
 }

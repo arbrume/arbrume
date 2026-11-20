@@ -21,6 +21,7 @@ fn material(color: [f32; 4], double_sided: bool) -> Material {
         alpha_cutoff: None,
         base_color_texture: None,
         normal_texture: None,
+        roughness_texture: None,
     }
 }
 

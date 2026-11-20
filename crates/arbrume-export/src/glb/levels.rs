@@ -49,6 +49,17 @@ impl Default for SkinOptions {
     }
 }
 
+/// Where the texture images of the materials go.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ImageStorage {
+    /// Inside the binary chunk of the file.
+    #[default]
+    Embed,
+    /// Referenced by a relative URI, the name [`image_file_name`](super::image_file_name)
+    /// gives the image; the caller writes the images next to the file.
+    External,
+}
+
 /// What the writer adds beyond the mesh buffers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ExportOptions {
@@ -56,6 +67,8 @@ pub struct ExportOptions {
     pub wind: WindLayout,
     /// A skeleton with skin weights, for meshes with wind data.
     pub skin: Option<SkinOptions>,
+    /// Where texture images go.
+    pub images: ImageStorage,
 }
 
 /// One level of detail of [`write_glb_levels`].

@@ -30,6 +30,7 @@
 
 use crate::axes::Mount;
 use crate::bark::BarkPlan;
+use crate::junction::{Foot, Junction};
 use arbrume_core::graph::{ChainId, PlantGraph};
 use arbrume_core::mesh::{MeshBuffers, WindBranch, WindTable, WindVertex};
 use glam::Vec3;
@@ -235,6 +236,15 @@ impl WindPlan {
         vertex
     }
 
+    /// The wind data of a footprint point of `junction`: that of its parent where the
+    /// point lies on it.
+    fn on_parent(&self, junction: &Junction, foot: &Foot) -> WindVertex {
+        self.at(
+            junction.hole.parent as usize,
+            junction.host.arc + foot.param[1],
+        )
+    }
+
     /// Writes the wind data of every bark vertex of `bark` into `buffers.wind`.
     pub(crate) fn fill_bark(&self, bark: &BarkPlan, buffers: &mut MeshBuffers) {
         buffers.wind.clear();
@@ -247,15 +257,57 @@ impl WindPlan {
             let out = &mut buffers.wind[tube.vertex_start..tube.vertex_start + tube.vertices];
             let mut slot = 0;
             for ring in tube.rings {
-                let value = self.at(chain, ring.arc);
                 let count = ring.sides as usize + 1;
-                out[slot..slot + count].fill(value);
+                let values = &mut out[slot..slot + count];
+                match (ring.skew, tube.own) {
+                    (Some((_, blend)), Some(own)) => self.fill_collar(chain, own, blend, values),
+                    _ => values.fill(self.at(chain, ring.arc)),
+                }
                 slot += count;
             }
             let length = self.lengths[index as usize];
             out[slot] = self.at(chain, length);
             slot += 1;
-            out[slot..].fill(self.at(chain, 0.0));
+            match tube.own {
+                Some(own) => self.fill_stitch(bark, own, &mut out[slot..]),
+                None => out[slot..].fill(self.at(chain, 0.0)),
+            }
+        }
+    }
+
+    /// Writes the wind data of a collar ring of `chain` at `blend`: that of the parent on
+    /// the footprint, that of the chain beyond.
+    fn fill_collar(
+        &self,
+        chain: usize,
+        own: (&Junction, &[Foot]),
+        blend: f32,
+        out: &mut [WindVertex],
+    ) {
+        let (junction, feet) = own;
+        for (corner, value) in out.iter_mut().enumerate() {
+            let foot = &feet[corner % feet.len()];
+            *value = if blend == 0.0 {
+                self.on_parent(junction, foot)
+            } else {
+                self.at(chain, foot.arc + (junction.collar.end - foot.arc) * blend)
+            };
+        }
+    }
+
+    /// Writes the wind data of the rim and footprint copies of a stitch: that of the
+    /// parent where they lie.
+    fn fill_stitch(&self, bark: &BarkPlan, own: (&Junction, &[Foot]), out: &mut [WindVertex]) {
+        let (junction, feet) = own;
+        let parent = junction.hole.parent as usize;
+        let rings = bark.tube(parent).rings;
+        let rim = junction.hole.rim_len();
+        for (k, value) in out[..rim].iter_mut().enumerate() {
+            let (row, _) = junction.hole.rim(k);
+            *value = self.at(parent, rings[row as usize].arc);
+        }
+        for (value, foot) in out[rim..].iter_mut().zip(feet) {
+            *value = self.on_parent(junction, foot);
         }
     }
 

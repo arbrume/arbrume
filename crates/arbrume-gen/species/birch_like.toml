@@ -55,6 +55,8 @@ color = [0.11, 0.29, 0.055]
 hue_variation = 0.15
 brightness_variation = 0.3
 twig = { leaves = 7, length = 0.24, inclination_deg = 60.0, bend_deg = 70.0, stem_radius = 0.0015 }
+venation = { veins = 7 }
+margin = { kind = "serrate", teeth = 18, depth = 0.08 }
 
 # White bark on the trunk and the limbs, dark on young wood.
 [bark]
@@ -63,6 +65,7 @@ young_color = [0.09, 0.05, 0.035]
 young_radius = 0.035
 color_variation = 0.12
 roughness = 0.7
+pattern = { kind = "smooth", feature_size = 0.05, stretch = 0.6, coverage = 0.45, contrast = 0.35, relief = 0.3, color = [0.04, 0.035, 0.03] }
 
 [variation]
 age = [10, 45]

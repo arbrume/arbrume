@@ -17,19 +17,23 @@
 //! the plans and the output buffers are each one allocation, reused from one mesh to the
 //! next by a `Mesher`.
 //!
-//! **Junctions.** A lateral axis starts on the centerline of its parent, inside it, so
-//! the two tubes intersect and no gap can open (as in Longay et al. 2012 and Raistrick et
-//! al. 2023). Where it comes out it is widened into a collar that narrows back over a few
-//! radii, which hides the seam and reads as the branch collar of a real tree. The surface
-//! is not watertight. A relay axis, which continues its parent at the same order, gets
-//! no collar.
+//! **Junctions.** With Tier A junctions (the default) a lateral axis starts on the
+//! centerline of its parent, inside it, so the two tubes intersect and no gap can open
+//! (as in Longay et al. 2012 and Raistrick et al. 2023). Where it comes out it is widened
+//! into a collar that narrows back over a few radii, which hides the seam and reads as
+//! the branch collar of a real tree. The surface is not watertight. A relay axis, which
+//! continues its parent at the same order, gets no collar. With Tier B junctions the
+//! child is stitched into a hole in its parent instead (`crate::junction`); the plan of a
+//! chain then also places the holes of its children, before they are planned.
 
-use crate::ring::{Axis, BaseProfile, Ring, Sweep, sample_axis};
-use crate::tube::{Circles, Style, Tint, TubeOut, tube_counts, write_tube};
-use crate::{MeshError, MeshOptions};
+use crate::junction::{Foot, Junction};
+use crate::ring::{Axis, BaseProfile, Ring, Sweep, frame_rings, sample_axis};
+use crate::tube::{Circles, Joins, Style, Tint, TubeOut, tube_counts, write_tube};
+use crate::{Junctions, MeshError, MeshOptions};
 use arbrume_core::graph::{ChainView, PlantGraph};
 use arbrume_core::mesh::MeshBuffers;
 use arbrume_core::rng::{Rng, Stream};
+use arbrume_core::species::Geometry;
 use arbrume_core::species::Species;
 use std::f32::consts::TAU;
 use std::ops::Range;
@@ -55,23 +59,37 @@ struct ChainPlan {
     index_start: usize,
     /// Texture mapping and lobes.
     style: Style,
+    /// Tier B junctions of its children, in [`BarkPlan::junctions`].
+    holes: Range<usize>,
+    /// Its own Tier B junction with its parent.
+    own: Option<usize>,
 }
 
 /// Result of pass 1. Kept between meshes so that its buffers are reused.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct BarkPlan {
-    rings: Vec<Ring>,
+    pub(crate) rings: Vec<Ring>,
     chains: Vec<ChainPlan>,
     /// Total number of vertices.
     pub vertices: usize,
     /// Total number of indices.
     pub indices: usize,
-    max_sides: u32,
+    pub(crate) max_sides: u32,
     /// Whether the tubes carry vertex colours.
     colored: bool,
     /// Reach of each chain: an upper bound of the distance from its origin to any node
     /// of the chains it bears, itself included. Filled only when it decides a cut.
     reach: Vec<f32>,
+    /// Tier B junctions, grouped by parent chain.
+    pub(crate) junctions: Vec<Junction>,
+    /// Footprint points of the junctions.
+    pub(crate) feet: Vec<Foot>,
+    /// Triangles of the stitches of the junctions.
+    pub(crate) stitches: Vec<[u32; 3]>,
+    /// Working memory of the junction planning.
+    pub(crate) scratch: crate::junction::Scratch,
+    /// Geometry of the species meshed.
+    pub(crate) geometry: Geometry,
 }
 
 impl BarkPlan {
@@ -93,6 +111,8 @@ pub(crate) struct TubeLayout<'a> {
     pub vertex_start: usize,
     /// Vertices of the tube.
     pub vertices: usize,
+    /// Its own Tier B junction and footprint.
+    pub own: Option<(&'a Junction, &'a [Foot])>,
 }
 
 impl BarkPlan {
@@ -109,12 +129,37 @@ impl BarkPlan {
             rings: &self.rings[plan.rings.clone()],
             vertex_start: plan.vertex_start,
             vertices: plan.vertices,
+            own: plan.own.map(|index| {
+                let junction = &self.junctions[index];
+                (junction, &self.feet[junction.feet.clone()])
+            }),
+        }
+    }
+
+    /// What the fill of chain `plan` reads about its junctions.
+    fn joins(&self, plan: &ChainPlan) -> Joins<'_> {
+        let own = plan.own.map(|index| &self.junctions[index]);
+        Joins {
+            holes: &self.junctions[plan.holes.clone()],
+            own,
+            feet: own.map_or(&[], |junction| &self.feet[junction.feet.clone()]),
+            stitches: &self.stitches,
+            parent: own.map(|junction| {
+                let parent = &self.chains[junction.hole.parent as usize];
+                (&self.rings[parent.rings.clone()], &parent.style)
+            }),
+            geometry: &self.geometry,
         }
     }
 }
 
 /// Base profile of the chain `view`, sampled as `axis`.
-fn base_profile(graph: &PlantGraph, view: &ChainView, axis: &Axis, sweep: &Sweep) -> BaseProfile {
+pub(crate) fn base_profile(
+    graph: &PlantGraph,
+    view: &ChainView,
+    axis: &Axis,
+    sweep: &Sweep,
+) -> BaseProfile {
     let radius = axis.radii[0];
     let Some(parent_radius) = view.parent_radius else {
         return BaseProfile::flare(sweep, axis.length(), radius);
@@ -188,6 +233,75 @@ fn fill_reach(graph: &PlantGraph, reach: &mut Vec<f32>) {
     }
 }
 
+/// Whether the chain `view`, cut to `nodes` nodes, is meshed by the rules of
+/// [`plan_bark`], its parent being kept or not.
+pub(crate) fn kept(
+    view: &ChainView,
+    nodes: usize,
+    options: &MeshOptions,
+    plan: &BarkPlan,
+    parent_kept: bool,
+) -> bool {
+    let far = !plan.reach.is_empty() && plan.reach[view.chain.index()] > options.max_drop_reach;
+    nodes > 0 && parent_kept && (view.radii[0] >= options.min_radius || far)
+}
+
+/// What the planning of every chain reads.
+struct Inputs<'a> {
+    graph: &'a PlantGraph,
+    species: &'a Species,
+    options: &'a MeshOptions,
+    sweep: &'a Sweep<'a>,
+}
+
+/// Samples the kept chain `view`, cut to `nodes` nodes, into the rings of `plan`, with
+/// its own Tier B junction `own` and, with Tier B junctions, the holes of its children;
+/// returns its style.
+fn sample_chain(
+    plan: &mut BarkPlan,
+    inputs: &Inputs,
+    view: &ChainView,
+    nodes: usize,
+    own: Option<usize>,
+) -> Style {
+    let (start, holes_start) = (plan.rings.len(), plan.junctions.len());
+    let tier_b = inputs.options.junctions == Junctions::TierB;
+    let mut axis = Axis {
+        origin: view.origin,
+        positions: &view.positions[..nodes],
+        radii: &view.radii[..nodes],
+        profile: BaseProfile::Plain,
+        stops: &[],
+        extend: 0.0,
+    };
+    axis.profile = base_profile(inputs.graph, view, &axis, inputs.sweep);
+    if tier_b {
+        let context = crate::junction::Context {
+            graph: inputs.graph,
+            sweep: inputs.sweep,
+            options: inputs.options,
+        };
+        crate::junction::plan_children(plan, &context, &axis, view.chain, own);
+    }
+    let stops = std::mem::take(&mut plan.scratch.stops);
+    let sampled = Axis {
+        stops: &stops,
+        extend: plan.scratch.extend,
+        ..axis
+    };
+    sample_axis(&sampled, inputs.sweep, &mut plan.rings);
+    plan.scratch.stops = stops;
+    if let Some(own) = own {
+        crate::junction::collar_rings_into(plan, own, start);
+    }
+    frame_rings(&mut plan.rings[start..]);
+    if tier_b {
+        crate::junction::place_holes(plan, start, holes_start, own);
+    }
+    let radius = axis.radii[0].max(MIN_STYLE_RADIUS);
+    style(inputs.species, view, radius, inputs.options.seed)
+}
+
 /// Pass 1: samples every kept chain into `plan` and counts its tube. The buffers of
 /// `plan` are reused.
 pub(crate) fn plan_bark(
@@ -206,6 +320,14 @@ pub(crate) fn plan_bark(
     plan.max_sides = sweep.max_sides();
     plan.colored = species.bark.has_vertex_colors();
     plan.reach.clear();
+    plan.junctions.clear();
+    plan.feet.clear();
+    plan.stitches.clear();
+    plan.geometry.clone_from(&species.geometry);
+    let tier_b = options.junctions == Junctions::TierB;
+    if tier_b {
+        plan.scratch.start(graph);
+    }
     if options.min_radius > 0.0 && options.max_drop_reach.is_finite() {
         fill_reach(graph, &mut plan.reach);
     }
@@ -227,28 +349,37 @@ pub(crate) fn plan_bark(
             closed_base: false,
             tint: None,
         };
-        let far = !plan.reach.is_empty() && plan.reach[chain.index()] > options.max_drop_reach;
-        if nodes > 0 && parent_kept && (view.radii[0] >= options.min_radius || far) {
-            let mut axis = Axis {
-                origin: view.origin,
-                positions: &view.positions[..nodes],
-                radii: &view.radii[..nodes],
-                profile: BaseProfile::Plain,
+        let own = if tier_b && !view.attach.is_none() {
+            plan.scratch.own(chain.index())
+        } else {
+            None
+        };
+        let joined = !tier_b || view.attach.is_none() || own.is_some();
+        let holes_start = plan.junctions.len();
+        if kept(&view, nodes, options, plan, parent_kept) && joined {
+            let inputs = Inputs {
+                graph,
+                species,
+                options,
+                sweep: &sweep,
             };
-            axis.profile = base_profile(graph, &view, &axis, &sweep);
-            sample_axis(&axis, &sweep, &mut plan.rings);
-            let radius = axis.radii[0].max(MIN_STYLE_RADIUS);
-            chain_style = style(species, &view, radius, options.seed);
+            chain_style = sample_chain(plan, &inputs, &view, nodes, own);
         }
-        let (vertices, indices) = tube_counts(&plan.rings[start..], chain_style.closed_base);
-        plan.chains.push(ChainPlan {
+        let mut chain_plan = ChainPlan {
             rings: start..plan.rings.len(),
-            vertices,
-            indices,
+            vertices: 0,
+            indices: 0,
             vertex_start: plan.vertices,
             index_start: plan.indices,
             style: chain_style,
-        });
+            holes: holes_start..plan.junctions.len(),
+            own: own.filter(|_| plan.rings.len() > start),
+        };
+        let joins = plan.joins(&chain_plan);
+        let (vertices, indices) =
+            tube_counts(&plan.rings[start..], chain_style.closed_base, &joins);
+        (chain_plan.vertices, chain_plan.indices) = (vertices, indices);
+        plan.chains.push(chain_plan);
         plan.vertices += vertices;
         plan.indices += indices;
     }
@@ -300,7 +431,7 @@ impl Run<'_> {
 /// What every fill task reads.
 #[derive(Clone, Copy)]
 struct Filler<'a> {
-    rings: &'a [Ring],
+    plan: &'a BarkPlan,
     circles: &'a Circles,
 }
 
@@ -318,8 +449,9 @@ impl Filler<'_> {
                 indices: own.indices,
                 base: chain.vertex_start as u32,
             };
-            let rings = &self.rings[chain.rings.clone()];
-            write_tube(rings, &chain.style, self.circles, &mut out);
+            let rings = &self.plan.rings[chain.rings.clone()];
+            let joins = self.plan.joins(chain);
+            write_tube(rings, &chain.style, self.circles, &joins, &mut out);
         }
     }
 
@@ -363,10 +495,7 @@ pub(crate) fn fill_bark(
     buffers.colors.resize(colored, [0.0; 4]);
     buffers.indices.resize(plan.indices, 0);
     circles.ensure(plan.max_sides);
-    let filler = Filler {
-        rings: &plan.rings,
-        circles,
-    };
+    let filler = Filler { plan, circles };
     let run = Run {
         positions: &mut buffers.positions,
         normals: &mut buffers.normals,

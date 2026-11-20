@@ -35,6 +35,8 @@ SETTINGS_FIELDS = (
     "age",
     "scale",
     "quality",
+    "textures",
+    "junctions",
     "overrides",
     "live_update",
 )
@@ -288,7 +290,12 @@ class ARBRUME_OT_scatter(bpy.types.Operator):
         ]
         threads = plant.preferences().threads or None
         return arbrume.generate_many(
-            jobs, threads=threads, scale=args["scale"], quality=args["quality"]
+            jobs,
+            threads=threads,
+            scale=args["scale"],
+            quality=args["quality"],
+            textures=args["textures"],
+            junctions=args["junctions"],
         )
 
     def execute(self, context):

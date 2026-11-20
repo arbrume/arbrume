@@ -170,6 +170,11 @@ def test_live_properties(ext, obj) -> None:
     check_counts(ext, obj, "after per-order constant")
     obj.arbrume.quality = 0.5
     check(len(obj.data.polygons) != before, "quality changes the mesh")
+    coarse = len(obj.data.polygons)
+    obj.arbrume.junctions = "tier-b"
+    check_counts(ext, obj, "after watertight junctions")
+    check(len(obj.data.polygons) != coarse, "watertight junctions change the mesh")
+    obj.arbrume.junctions = "tier-a"
 
 
 def curve_points(ext, obj, path: str, order: int) -> list:

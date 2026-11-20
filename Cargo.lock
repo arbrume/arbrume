@@ -128,6 +128,7 @@ dependencies = [
  "arbrume-lod",
  "arbrume-mesh",
  "arbrume-raster",
+ "arbrume-texture",
  "criterion",
  "glam",
  "gltf",
@@ -211,6 +212,16 @@ dependencies = [
  "glam",
  "jpeg-encoder",
  "png",
+]
+
+[[package]]
+name = "arbrume-texture"
+version = "0.0.1"
+dependencies = [
+ "arbrume-core",
+ "glam",
+ "png",
+ "rayon",
 ]
 
 [[package]]

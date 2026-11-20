@@ -67,12 +67,16 @@ brightness_variation = 0.4
 size_variation = 0.25
 orientation_variation_deg = 14.0
 twig = { leaves = 8, length = 0.52, inclination_deg = 50.0, bend_deg = 45.0, stem_radius = 0.003, terminal_leaf = false, radial = true, fins = 4, fin_width = 0.034, fin_shade = 0.65, variants = 5 }
+texture_variants = 2
+texture_resolution = 256
+venation = { kind = "none" }
 
 [bark]
 color = [0.16, 0.10, 0.075]
 young_color = [0.2, 0.12, 0.06]
 young_radius = 0.03
 color_variation = 0.15
+pattern = { kind = "plated", feature_size = 0.03, stretch = 1.2, coverage = 0.2, contrast = 0.3, relief = 0.4 }
 
 [variation]
 age = [12, 50]

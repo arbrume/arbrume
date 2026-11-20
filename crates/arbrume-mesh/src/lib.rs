@@ -44,6 +44,7 @@
 
 mod axes;
 mod bark;
+mod junction;
 mod leaf;
 mod leaves;
 pub mod lod;
@@ -51,13 +52,14 @@ mod options;
 mod provenance;
 mod ring;
 pub mod synthetic;
+pub mod topology;
 mod tube;
 mod twig;
 pub mod wind;
 
 pub use leaves::LeafInstance;
 pub use lod::{LodLevel, LodOptions};
-pub use options::{DEFAULT_TOLERANCE, MeshError, MeshOptions, OrphanLeaves};
+pub use options::{DEFAULT_TOLERANCE, Junctions, MeshError, MeshOptions, OrphanLeaves};
 pub use provenance::mesh_provenance;
 
 use arbrume_core::graph::PlantGraph;
@@ -107,6 +109,7 @@ fn opaque(name: &str, color: [f32; 3], roughness: f32, double_sided: bool) -> Ma
         alpha_cutoff: None,
         base_color_texture: None,
         normal_texture: None,
+        roughness_texture: None,
     }
 }
 

@@ -16,7 +16,7 @@ pub enum PartKind {
     Billboard,
 }
 
-/// Surface description of one part. Textures are optional and embedded.
+/// Surface description of one part. Textures are optional.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Material {
     /// Material name written to the export.
@@ -31,10 +31,14 @@ pub struct Material {
     pub alpha_cutoff: Option<f32>,
     /// Encoded PNG or JPEG bytes of the base colour texture.
     pub base_color_texture: Option<Vec<u8>>,
-    /// Encoded PNG bytes of the tangent-space normal texture (glTF convention: `+Y`
-    /// towards increasing `v` of `TEXCOORD_0` as stored). Its alpha channel may carry
-    /// other data, which glTF readers ignore.
+    /// Encoded PNG bytes of the tangent-space normal texture (glTF convention: `+X`
+    /// towards increasing `u`, `+Y` towards decreasing `v` of `TEXCOORD_0`, up the
+    /// image). Its alpha channel may carry other data, which glTF readers ignore.
     pub normal_texture: Option<Vec<u8>>,
+    /// Encoded PNG bytes of the roughness texture, read from its green channel (the
+    /// glTF metallic-roughness texture; the material is not metallic). It multiplies
+    /// `roughness`.
+    pub roughness_texture: Option<Vec<u8>>,
 }
 
 /// Indexed triangle buffers. `normals`, `uvs`, `colors` and `wind` are either empty or

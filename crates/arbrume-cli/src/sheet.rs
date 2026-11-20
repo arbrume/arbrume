@@ -23,7 +23,7 @@ use clap::{Args, ValueEnum};
 use glam::Vec3;
 use rayon::prelude::*;
 
-use crate::config::load_surroundings;
+use crate::config::{JunctionChoice, load_surroundings};
 use crate::error::CliError;
 use crate::scene::{add_occluders, merge};
 use crate::source::resolve;
@@ -63,6 +63,9 @@ pub struct SheetArgs {
     /// Part of the plant to frame.
     #[arg(long, value_enum, default_value_t = View::Full)]
     view: View,
+    /// How branches are joined, as `gen --junctions`.
+    #[arg(long, value_enum, value_name = "TIER", default_value = "tier-a")]
+    junctions: JunctionChoice,
     /// Show this many plants of the random sampler instead of species and ages.
     #[arg(long)]
     random: Option<u32>,
@@ -142,6 +145,7 @@ fn species_cells(args: &SheetArgs) -> Result<(Vec<Cell>, u32), CliError> {
                     let seed = plant_seed(u64::from(seed) + 1, 0);
                     let quality = args.quality.unwrap_or(1.0);
                     let mut params = GenParams::new(seed, age).with_quality(quality);
+                    params.mesh.junctions = args.junctions.into();
                     params.surroundings.clone_from(&surroundings);
                     cells.push(Cell {
                         label: format!("{} age {age}", source.label),
@@ -167,7 +171,8 @@ fn random_cells(args: &SheetArgs, count: u32) -> Result<(Vec<Cell>, u32), CliErr
     let azimuth = args.azimuths.first().copied().unwrap_or(20.0);
     let cells = (args.offset..args.offset + count)
         .map(|index| {
-            let pick = sampler.pick(index).map_err(CliError::failed)?;
+            let mut pick = sampler.pick(index).map_err(CliError::failed)?;
+            pick.params.mesh.junctions = args.junctions.into();
             Ok(Cell {
                 label: format!("{index} {} age {}", pick.preset, pick.params.age),
                 species: pick.species,

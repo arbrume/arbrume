@@ -6,7 +6,8 @@
 //! the albedo by the texel colour. A PNG normal texture perturbs the shading normal in
 //! the tangent frame of each triangle, derived from its texture coordinates (glTF
 //! convention). Textures are decoded once per render; JPEG textures are ignored.
-//! Sampling is bilinear with clamped edges, and `v` grows downwards in the image, as in
+//! Sampling is bilinear and repeats the texture outside `[0, 1]` (the default sampler of
+//! glTF, which tiled bark textures rely on), and `v` grows downwards in the image, as in
 //! glTF.
 
 use glam::{Vec2, Vec4};
@@ -68,10 +69,10 @@ impl Texture {
         })
     }
 
-    /// The texel at column `x`, row `y`, clamped to the image.
+    /// The texel at column `x`, row `y`, wrapped around the image.
     fn texel(&self, x: i64, y: i64) -> Vec4 {
-        let x = x.clamp(0, i64::from(self.width) - 1) as usize;
-        let y = y.clamp(0, i64::from(self.height) - 1) as usize;
+        let x = x.rem_euclid(i64::from(self.width)) as usize;
+        let y = y.rem_euclid(i64::from(self.height)) as usize;
         self.texels[y * self.width as usize + x]
     }
 

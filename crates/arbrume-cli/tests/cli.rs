@@ -303,11 +303,17 @@ fn species_commands_and_info() {
 }
 
 /// File name to contents of every file of `dir` with the extension `extension`.
+/// The files of `dir` with `extension`, by name, the shared texture images
+/// (`arbrume_*.png`) left out.
 fn files_with(dir: &Path, extension: &str) -> BTreeMap<String, Vec<u8>> {
+    let texture = |p: &Path| {
+        p.file_name()
+            .is_some_and(|n| n.to_string_lossy().starts_with("arbrume_"))
+    };
     fs::read_dir(dir)
         .unwrap()
         .map(|entry| entry.unwrap().path())
-        .filter(|p| p.extension().is_some_and(|e| e == extension))
+        .filter(|p| p.extension().is_some_and(|e| e == extension) && !texture(p))
         .map(|p| {
             (
                 p.file_name().unwrap().to_string_lossy().into_owned(),
@@ -503,4 +509,98 @@ fn surroundings_and_growth_frames() {
     let mut args = species.to_vec();
     args.extend(["--out", path(&out), "--growth-frames", "2", "--lods", "2"]);
     assert_eq!(arbrume(&args).status.code(), Some(2));
+}
+
+/// Texture images of `dir` (`arbrume_*.png`).
+fn texture_images(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| {
+            let png = Path::new(name)
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("png"));
+            name.starts_with("arbrume_") && png
+        })
+        .collect();
+    names.sort();
+    names
+}
+
+#[test]
+fn textures_are_embedded_shared_as_files_or_left_out() {
+    let run = |mode: &str| {
+        let dir = tempfile::tempdir().unwrap();
+        let args = [
+            "gen",
+            "--species",
+            "birch_like",
+            "--count",
+            "2",
+            "--age",
+            "4",
+        ];
+        let mut args = args.to_vec();
+        args.extend(["--quality", "0.3", "--quiet", "--textures", mode, "--out"]);
+        args.push(path(dir.path()));
+        ok(&args);
+        dir
+    };
+    let files = run("files");
+    let images = texture_images(files.path());
+    assert_eq!(
+        images.len(),
+        5,
+        "bark albedo, normal, roughness, leaf albedo, normal"
+    );
+    for bytes in glb_files(files.path()).values() {
+        let json = glb_json(bytes);
+        let uris: Vec<&str> = json["images"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|image| image["uri"].as_str().unwrap())
+            .collect();
+        assert_eq!(uris.len(), 5);
+        assert!(uris.iter().all(|uri| images.iter().any(|name| name == uri)));
+    }
+    let embed = run("embed");
+    assert_eq!(texture_images(embed.path()), Vec::<String>::new());
+    let embedded = glb_files(embed.path());
+    for bytes in embedded.values() {
+        let json = glb_json(bytes);
+        assert_eq!(json["images"].as_array().unwrap().len(), 5);
+        assert!(json["images"][0]["bufferView"].is_number());
+    }
+    let none = run("none");
+    for bytes in glb_files(none.path()).values() {
+        assert!(glb_json(bytes).get("images").is_none());
+    }
+    let sizes = |dir: &Path| glb_files(dir).values().map(Vec::len).sum::<usize>();
+    assert!(sizes(embed.path()) > sizes(files.path()));
+    let config = tempfile::tempdir().unwrap();
+    let file = config.path().join("batch.toml");
+    let text = "textures = \"none\"\n[[species]]\npreset = \"shrub\"\ncount = 1\nage = 3\n";
+    fs::write(&file, text).unwrap();
+    let out = config.path().join("out");
+    let out_text = out.to_str().unwrap();
+    ok(&[
+        "gen",
+        "--config",
+        file.to_str().unwrap(),
+        "--out",
+        out_text,
+        "--quiet",
+    ]);
+    assert_eq!(texture_images(&out), Vec::<String>::new());
+    let bad = arbrume(&[
+        "gen",
+        "--species",
+        "shrub",
+        "--textures",
+        "maybe",
+        "--out",
+        out_text,
+    ]);
+    assert_eq!(bad.status.code(), Some(2));
 }

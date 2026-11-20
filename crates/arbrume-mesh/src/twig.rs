@@ -31,13 +31,20 @@
 //! darkened by `twig.fin_shade`, two triangles each (four when the twig bends). The fins
 //! of successive nodes join into a ribbon, which gives a needle-clad shoot its bulk.
 //!
+//! **Texture atlas.** Texture coordinates point into the leaf atlas of the species
+//! (`Foliage::atlas`): without a twig there is one variant per leaf cell of the atlas,
+//! each leaf of a twig takes the cell `(variant + leaf) mod cells`, the stem samples the
+//! opaque stalk at `LeafAtlas::STEM_UV` of the first cell, and the fins span the needle
+//! spray cell, `u` across and `v` along the twig. The geometry does not depend on the
+//! atlas.
+//!
 //! Every variant has the same number of vertices and indices, so instances keep a fixed
 //! size in the buffers. The variants depend on the species, the tolerance and the mesh
 //! seed only.
 
 use crate::leaf::{LeafTemplate, midrib};
 use arbrume_core::rng::{Rng, Stream};
-use arbrume_core::species::{Bark, Foliage};
+use arbrume_core::species::{Bark, Foliage, LeafAtlas};
 use glam::Vec3;
 use std::f32::consts::TAU;
 
@@ -88,6 +95,10 @@ struct TwigBuilder<'a> {
     leaf_scale: f32,
     /// Leaves on the twig, at most `twig.leaves`.
     leaves: u32,
+    /// Texture atlas of the leaves.
+    atlas: LeafAtlas,
+    /// Index of the variant, which shifts the atlas cell of each leaf.
+    variant: u32,
     out: LeafTemplate,
 }
 
@@ -99,8 +110,8 @@ impl TwigBuilder<'_> {
         (point * self.length, tangent, up)
     }
 
-    /// Appends the species leaf in `frame`.
-    fn add_leaf(&mut self, frame: &LeafFrame) {
+    /// Appends the species leaf in `frame`, textured with atlas cell `cell`.
+    fn add_leaf(&mut self, frame: &LeafFrame, cell: u32) {
         let across = frame.up.cross(frame.forward);
         let turn = |v: Vec3| frame.forward * v.x + across * v.y + frame.up * v.z;
         let base = self.out.positions.len() as u32;
@@ -109,7 +120,9 @@ impl TwigBuilder<'_> {
         out.positions
             .extend(positions.map(|&p| frame.origin + turn(p) * frame.scale));
         out.normals.extend(leaf.normals.iter().map(|&n| turn(n)));
-        out.uvs.extend_from_slice(&leaf.uvs);
+        let atlas = self.atlas;
+        out.uvs
+            .extend(leaf.uvs.iter().map(|&uv| atlas.map(cell, uv)));
         out.tints
             .extend(std::iter::repeat_n(frame.tint, leaf.positions.len()));
         out.indices.extend(leaf.indices.iter().map(|i| base + i));
@@ -168,11 +181,11 @@ impl TwigBuilder<'_> {
                 + node as f32 * twig.divergence_deg.to_radians()
                 + TAU * slot as f32 / per_node as f32;
             let frame = self.leaf_frame(t, Some(azimuth), rng);
-            self.add_leaf(&frame);
+            self.add_leaf(&frame, self.leaf_cell(index));
         }
         if terminal > 0 {
             let frame = self.leaf_frame(1.0, None, rng);
-            self.add_leaf(&frame);
+            self.add_leaf(&frame, self.leaf_cell(laterals));
         }
     }
 
@@ -211,19 +224,34 @@ impl TwigBuilder<'_> {
         }
     }
 
-    /// Adds a stem vertex and returns its index.
-    fn vertex(&mut self, position: Vec3, normal: Vec3) -> u32 {
-        self.tinted_vertex(position, normal, self.stem_tint)
+    /// Atlas cell of leaf `index` of the twig.
+    const fn leaf_cell(&self, index: u32) -> u32 {
+        (self.variant + index) % self.atlas.leaf_cells
     }
 
-    /// Adds a vertex with no leaf texture and returns its index.
-    fn tinted_vertex(&mut self, position: Vec3, normal: Vec3, tint: [f32; 3]) -> u32 {
+    /// Adds a stem vertex and returns its index.
+    fn vertex(&mut self, position: Vec3, normal: Vec3) -> u32 {
+        let uv = self.atlas.map(0, LeafAtlas::STEM_UV);
+        self.tinted_vertex(position, normal, self.stem_tint, uv)
+    }
+
+    /// Adds a vertex that is not part of a leaf and returns its index.
+    fn tinted_vertex(&mut self, position: Vec3, normal: Vec3, tint: [f32; 3], uv: [f32; 2]) -> u32 {
         let out = &mut self.out;
         out.positions.push(position);
         out.normals.push(normal);
-        out.uvs.push([0.5, 0.0]);
+        out.uvs.push(uv);
         out.tints.push(tint);
         (out.positions.len() - 1) as u32
+    }
+
+    /// Atlas coordinates of the point `uv` of a fin: in the spray cell, or the stalk of
+    /// the first leaf cell for an atlas without one.
+    fn fin_uv(&self, uv: [f32; 2]) -> [f32; 2] {
+        match self.atlas.spray_cell() {
+            Some(cell) => self.atlas.map(cell, uv),
+            None => self.atlas.map(0, LeafAtlas::STEM_UV),
+        }
     }
 
     /// Adds the fins, the first one at the azimuth `phase` around the stem.
@@ -242,8 +270,9 @@ impl TwigBuilder<'_> {
                 let across = up.cross(tangent) * cos + up * sin;
                 let normal = tangent.cross(across);
                 let reach = across * (half * (1.0 - FIN_TAPER * t));
-                self.tinted_vertex(center - reach, normal, tint);
-                self.tinted_vertex(center + reach, normal, tint);
+                let (low, high) = (self.fin_uv([0.0, t]), self.fin_uv([1.0, t]));
+                self.tinted_vertex(center - reach, normal, tint, low);
+                self.tinted_vertex(center + reach, normal, tint, high);
             }
             for span in 0..spans {
                 let (right, left) = (first + 2 * span, first + 2 * span + 1);
@@ -269,13 +298,20 @@ impl TemplateSet {
     ) -> Self {
         let leaf = LeafTemplate::new(foliage, tolerance);
         let twig = &foliage.twig;
+        let atlas = foliage.atlas();
         if !twig.enabled() {
-            let flutter = vec![flutter_of(&leaf)];
+            let flutter = flutter_of(&leaf);
+            let variants: Vec<LeafTemplate> = (0..atlas.leaf_cells)
+                .map(|cell| LeafTemplate {
+                    uvs: leaf.uvs.iter().map(|&uv| atlas.map(cell, uv)).collect(),
+                    ..leaf.clone()
+                })
+                .collect();
             return Self {
-                variants: vec![leaf],
+                flutter: vec![flutter; variants.len()],
+                variants,
                 base_color: foliage.color,
                 stem_vertices: 0,
-                flutter,
             };
         }
         let leaves = if twig.leaves == 0 {
@@ -289,11 +325,7 @@ impl TemplateSet {
             (twig.leaves as f32 / leaves as f32).sqrt()
         };
         let stem = bark.color_at(0.0);
-        let has_stem = twig.stem_radius > 0.0;
-        let base_color: [f32; 3] = std::array::from_fn(|channel| {
-            let other = if has_stem { stem[channel] } else { 0.0 };
-            foliage.color[channel].max(other).max(1e-6)
-        });
+        let base_color = foliage.material_color(bark);
         let ratio =
             |color: [f32; 3]| std::array::from_fn(|channel| color[channel] / base_color[channel]);
         let mut stem_vertices = 0;
@@ -308,6 +340,8 @@ impl TemplateSet {
                     stem_tint: ratio(stem),
                     leaf_scale,
                     leaves,
+                    atlas,
+                    variant,
                     out: LeafTemplate::default(),
                 };
                 let mut rng = Rng::new(seed, u32::MAX - variant, Stream::FOLIAGE);
@@ -362,7 +396,13 @@ mod tests {
     #[test]
     fn without_a_twig_the_set_is_the_single_leaf() {
         let set = set("segments = 3");
-        assert_eq!(set.variants.len(), 1);
+        assert_eq!(set.variants.len(), 4, "one variant per atlas cell");
+        assert!(
+            set.variants
+                .iter()
+                .all(|v| v.positions == set.variants[0].positions)
+        );
+        assert_ne!(set.variants[0].uvs, set.variants[1].uvs);
         assert_eq!(set.instance_counts(), (8 + 3, 24 + 3));
         assert_eq!(set.variants[0].tints, vec![[1.0; 3]; 11]);
         assert_eq!(set.base_color, Species::default().foliage.color);
@@ -391,6 +431,36 @@ mod tests {
         let length = 0.2 / Species::default().foliage.length;
         let reach = set.variants[0].positions.iter().map(|p| p.x);
         assert!(reach.fold(0.0, f32::max) > length);
+    }
+
+    #[test]
+    fn texture_coordinates_stay_in_their_atlas_cells() {
+        let species = Species::from_toml_str(
+            "[foliage]
+texture_variants = 3
+             twig = { leaves = 5, fins = 2, fin_width = 0.03, variants = 2 }",
+        )
+        .unwrap();
+        let atlas = species.foliage.atlas();
+        assert_eq!(atlas.spray_cell(), Some(3));
+        let set = TemplateSet::thinned(&species.foliage, &species.bark, 1e-4, 7, 1.0);
+        let cells: Vec<[f32; 4]> = (0..4).map(|cell| atlas.cell_rect(cell)).collect();
+        let inside = |uv: &[f32; 2], r: &[f32; 4]| {
+            (r[0] - 1e-6..=r[2] + 1e-6).contains(&uv[0])
+                && (r[1] - 1e-6..=r[3] + 1e-6).contains(&uv[1])
+        };
+        for variant in &set.variants {
+            assert!(
+                variant
+                    .uvs
+                    .iter()
+                    .all(|uv| cells.iter().any(|r| inside(uv, r)))
+            );
+            assert!(
+                variant.uvs.iter().any(|uv| inside(uv, &cells[3])),
+                "fins use the spray"
+            );
+        }
     }
 
     #[test]

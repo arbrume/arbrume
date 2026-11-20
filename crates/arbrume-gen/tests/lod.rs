@@ -343,6 +343,7 @@ fn chains_are_identical_whatever_the_thread_count() {
             let export = ExportOptions {
                 wind: WindLayout::TexCoord,
                 skin: Some(SkinOptions::default()),
+                ..ExportOptions::default()
             };
             chain_glb(&levels, &export)
         })
@@ -360,6 +361,7 @@ fn custom_wind_layout_and_cross_billboard_export() {
     let export = ExportOptions {
         wind: WindLayout::Custom,
         skin: None,
+        ..ExportOptions::default()
     };
     let bytes = chain_glb(&levels, &export);
     let gltf = gltf::Gltf::from_slice(&bytes).unwrap();

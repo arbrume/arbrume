@@ -56,12 +56,15 @@ color = [0.065, 0.18, 0.035]
 hue_variation = 0.1
 brightness_variation = 0.35
 twig = { leaves = 7, length = 0.24, inclination_deg = 50.0, bend_deg = 10.0, stem_radius = 0.0025 }
+venation = { veins = 5, angle_deg = 50.0 }
+margin = { kind = "lobed", depth = 0.45 }
 
 [bark]
 color = [0.1, 0.09, 0.078]
 young_color = [0.12, 0.09, 0.06]
 young_radius = 0.05
 color_variation = 0.2
+pattern = { kind = "furrowed", feature_size = 0.05, stretch = 3.5, coverage = 0.45, relief = 0.8, contrast = 0.35 }
 
 [variation]
 age = [30, 70]

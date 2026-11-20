@@ -1,12 +1,16 @@
 //! The generator and batch generation over the `rayon` thread pool.
 
+use std::borrow::Cow;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use arbrume_core::graph::PlantGraph;
+use arbrume_core::mesh::TreeMesh;
 use arbrume_core::species::Species;
 use arbrume_grow::{Surroundings, grow_in};
 use arbrume_mesh::{DEFAULT_TOLERANCE, MeshCounts, MeshOptions, Mesher};
+use arbrume_texture::{TextureCache, textured_species};
 
 use crate::params::{GenError, GenParams, quality_options};
 use crate::plant::{Plant, Stats, Timings};
@@ -58,9 +62,15 @@ impl Budget {
 /// before generating the next, one [`Plant`] passed to [`Generator::generate_into`],
 /// whose mesh buffers are then reused. The result never depends on what the generator
 /// was used for before.
+///
+/// With [`Generator::set_textures`], every mesh it builds carries the procedural
+/// textures of its species, from a cache shared by the batch, and its leaves are
+/// meshed as `arbrume_texture::textured_species` asks.
 #[derive(Debug, Clone, Default)]
 pub struct Generator {
     pub(crate) mesher: Mesher,
+    textures: Option<Arc<TextureCache>>,
+    texture_base: Option<Arc<Species>>,
 }
 
 impl Generator {
@@ -68,6 +78,58 @@ impl Generator {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Textures every mesh built from now on with `cache`, or with none.
+    pub fn set_textures(&mut self, cache: Option<Arc<TextureCache>>) {
+        self.textures = cache;
+    }
+
+    /// Takes the textures of `base` for the plants generated from now on, which are
+    /// individuals varied from it (`Species::varied`, `RandomSampler`), so that they
+    /// share one texture set; `None` takes those of the species generated.
+    pub fn set_texture_base(&mut self, base: Option<Arc<Species>>) {
+        self.texture_base = base;
+    }
+
+    /// The texture cache of the generator, if any.
+    #[must_use]
+    pub fn textures(&self) -> Option<&Arc<TextureCache>> {
+        self.textures.as_ref()
+    }
+
+    /// `species` as the mesher sees it: with textures, its leaves become cards.
+    pub(crate) fn meshed<'s>(&self, species: &'s Species) -> Cow<'s, Species> {
+        if self.textures.is_some() {
+            textured_species(species)
+        } else {
+            Cow::Borrowed(species)
+        }
+    }
+
+    /// Puts the textures of `species` (or of the texture base) on `mesh`, a mesh of
+    /// `species`, when the generator has textures.
+    pub(crate) fn texture(&self, species: &Species, mesh: &mut TreeMesh) {
+        if let Some(cache) = &self.textures {
+            let source = self.texture_base.as_deref().unwrap_or(species);
+            cache.get(source).apply(mesh, species);
+        }
+    }
+
+    /// Moves the texture coordinates of the leaf templates of `leaves`, of `species`, to
+    /// the atlas of the textures, when the generator has textures.
+    pub(crate) fn remap_templates(
+        &self,
+        species: &Species,
+        leaves: &mut arbrume_mesh::LeafInstances,
+    ) {
+        if let Some(cache) = &self.textures {
+            let source = self.texture_base.as_deref().unwrap_or(species);
+            let textures = cache.get(source);
+            for template in &mut leaves.templates {
+                textures.remap(species, &mut template.uvs);
+            }
+        }
     }
 
     /// Same as [`generate`], reusing the memory of the generator.
@@ -123,6 +185,8 @@ impl Generator {
         let surroundings = params.surroundings.as_deref().unwrap_or(&open);
         let graph = grow_in(species, &params.grow_params(), surroundings);
         let grown = Instant::now();
+        let meshed = self.meshed(species);
+        let (textured, species) = (species, meshed.as_ref());
         let mut options = params.mesh;
         if *budget != Budget::NONE {
             let mut quality = (DEFAULT_TOLERANCE / options.tolerance).sqrt();
@@ -137,6 +201,7 @@ impl Generator {
         }
         self.mesher
             .mesh_into(&graph, species, &options, &mut plant.mesh)?;
+        self.texture(textured, &mut plant.mesh);
         let timings = Timings {
             grow: grown - start,
             mesh: grown.elapsed(),
@@ -158,8 +223,10 @@ impl Generator {
         options: &MeshOptions,
         plant: &mut Plant,
     ) -> Result<(), GenError> {
+        let meshed = self.meshed(species);
         self.mesher
-            .mesh_into(graph, species, options, &mut plant.mesh)?;
+            .mesh_into(graph, &meshed, options, &mut plant.mesh)?;
+        self.texture(species, &mut plant.mesh);
         Ok(())
     }
 
@@ -177,8 +244,10 @@ impl Generator {
         options: &MeshOptions,
     ) -> Result<Duration, GenError> {
         let start = Instant::now();
+        let meshed = self.meshed(species);
         self.mesher
-            .mesh_into(&plant.graph, species, options, &mut plant.mesh)?;
+            .mesh_into(&plant.graph, &meshed, options, &mut plant.mesh)?;
+        self.texture(species, &mut plant.mesh);
         let elapsed = start.elapsed();
         plant.params.mesh = *options;
         plant.stats.set_mesh(&plant.mesh);
@@ -199,7 +268,8 @@ impl Generator {
         species: &Species,
     ) -> Result<arbrume_core::mesh::MeshProvenance, GenError> {
         let options = &plant.params.mesh;
-        Ok(self.mesher.provenance(&plant.graph, species, options)?)
+        let meshed = self.meshed(species);
+        Ok(self.mesher.provenance(&plant.graph, &meshed, options)?)
     }
 }
 

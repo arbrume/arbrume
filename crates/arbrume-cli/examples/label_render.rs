@@ -124,6 +124,7 @@ fn point_mesh(cloud: &PointCloud, size: f32) -> TreeMesh {
             alpha_cutoff: None,
             base_color_texture: None,
             normal_texture: None,
+            roughness_texture: None,
         },
         buffers: MeshBuffers::default(),
     };

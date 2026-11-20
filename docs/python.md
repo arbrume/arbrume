@@ -74,7 +74,14 @@ the `overrides` of a batch config file (see [](cli.md)); since dotted names are 
 valid Python keywords, pass them with `**{...}` or as `overrides={...}`. `age` defaults
 to 10 cycles, `scale` and `quality` to 1. The mesh is seeded with the plant seed, as in
 the command line, so `generate(s, seed=arbrume.plant_seed(base, i), ...)` gives plant
-`i` of `arbrume gen --seed base`.
+`i` of `arbrume gen --seed base`. With `textures=True` the materials of the parts carry
+the procedural textures of the species ([Textures](textures.md)) as PNG bytes in
+`part.material` (`base_color_texture`, `normal_texture`, `roughness_texture`) and the
+leaves are cards cut by the alpha of the texture; the textures of each species are
+synthesized once and kept for the process (the cache is emptied beyond 32 species).
+With `junctions="tier-b"` the branches are stitched into their parents and the bark of
+each stem is one closed surface once vertices of equal position are welded
+([Junctions](junctions.md)); the default is `"tier-a"`.
 
 Errors raise `ValueError` with the message of the Rust error (invalid species file,
 unknown or invalid override, invalid scale, quality, seed or age),

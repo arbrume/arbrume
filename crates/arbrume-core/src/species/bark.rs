@@ -1,9 +1,31 @@
 //! Bark layer: the surface of trunk and branches.
 //!
-//! All defaults are starting points for tuning, not measured values.
+//! Besides its colours, a species describes the relief of its bark with a
+//! [`BarkPattern`], from which `arbrume-texture` synthesizes tileable albedo, normal and
+//! roughness maps (see `docs/textures.md`). All defaults are starting points for tuning,
+//! not measured values.
 
 use super::{SpeciesError, check_color, check_range};
 use serde::{Deserialize, Serialize};
+
+/// Smallest texture resolution of a species, in texels.
+pub const MIN_TEXTURE_RESOLUTION: u32 = 16;
+/// Largest texture resolution of a species, in texels.
+pub const MAX_TEXTURE_RESOLUTION: u32 = 4096;
+
+/// Fails unless `value` is a power of two within the texture resolutions.
+pub(super) fn check_resolution(field: &'static str, value: u32) -> Result<(), SpeciesError> {
+    let range = MIN_TEXTURE_RESOLUTION..=MAX_TEXTURE_RESOLUTION;
+    if value.is_power_of_two() && range.contains(&value) {
+        return Ok(());
+    }
+    Err(SpeciesError::Invalid {
+        field,
+        reason: format!(
+            "{value} is not a power of two in [{MIN_TEXTURE_RESOLUTION}, {MAX_TEXTURE_RESOLUTION}]"
+        ),
+    })
+}
 
 /// Bark parameters of a species.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -28,6 +50,12 @@ pub struct Bark {
     /// Path of the bark texture, relative to the species file.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub texture: Option<String>,
+    /// Width and height in texels of the synthesized bark texture, which covers one
+    /// repeat of `texture_size`: a power of two from [`MIN_TEXTURE_RESOLUTION`] to
+    /// [`MAX_TEXTURE_RESOLUTION`].
+    pub texture_resolution: u32,
+    /// Pattern of the synthesized bark texture.
+    pub pattern: BarkPattern,
 }
 
 impl Default for Bark {
@@ -40,7 +68,106 @@ impl Default for Bark {
             roughness: 0.9,
             texture_size: [0.5, 0.5],
             texture: None,
+            texture_resolution: 512,
+            pattern: BarkPattern::default(),
         }
+    }
+}
+
+/// Family of bark relief synthesized for a species.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BarkKind {
+    /// Smooth bark with lenticels, short marks stretched around the axis (birch,
+    /// cherry, beech).
+    Smooth,
+    /// Long ridges along the axis separated by an interlaced network of furrows (oak,
+    /// ash, poplar, old maple).
+    #[default]
+    Furrowed,
+    /// Plates or scales separated by cracks (pine, old pear, some spruces).
+    Plated,
+    /// Thin fibres along the axis that part and merge (cedar, cypress, redwood).
+    Fibrous,
+    /// Patches of outer bark shed to reveal younger layers of other colours (plane,
+    /// eucalyptus, paperbark birch).
+    Peeling,
+}
+
+/// Relief and colour pattern of the synthesized bark texture.
+///
+/// Sizes are physical, in meters on the bark surface; the synthesizer rounds them so
+/// that a whole number of features fits in one repeat of `bark.texture_size`, which is
+/// what makes the texture tile.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct BarkPattern {
+    /// Family of the pattern.
+    pub kind: BarkKind,
+    /// Typical spacing of the features around the axis, in meters: furrows, plates,
+    /// fibres, lenticels or patches.
+    pub feature_size: f32,
+    /// Length of a feature along the axis divided by its width, from 0.1 to 100: above
+    /// 1 features are stretched along the axis, below 1 around it.
+    pub stretch: f32,
+    /// Depth of the relief relative to `feature_size`, in `[0, 1]`; it scales the
+    /// normal map.
+    pub relief: f32,
+    /// Fraction of the surface taken by the secondary features, in `[0, 1]`: width of
+    /// furrows and cracks, density of lenticels, area of shed patches.
+    pub coverage: f32,
+    /// How irregular the features are, in `[0, 1]`: amount of domain warping and of
+    /// jitter of their size.
+    pub irregularity: f32,
+    /// Variation of the colour from one plate, patch or ridge to the next, and of the
+    /// low-frequency mottling, in `[0, 1]`.
+    pub contrast: f32,
+    /// Linear RGB colour of the secondary features (furrow bottoms, cracks, lenticels,
+    /// younger layers under shed patches); by default `bark.color` darkened to 35 %.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<[f32; 3]>,
+    /// Variation of the roughness over the texture, in `[0, 1]`: furrows and cracks
+    /// are rougher than ridges and plates.
+    pub roughness_variation: f32,
+}
+
+impl Default for BarkPattern {
+    fn default() -> Self {
+        Self {
+            kind: BarkKind::default(),
+            feature_size: 0.04,
+            stretch: 3.0,
+            relief: 0.5,
+            coverage: 0.35,
+            irregularity: 0.5,
+            contrast: 0.3,
+            color: None,
+            roughness_variation: 0.3,
+        }
+    }
+}
+
+impl BarkPattern {
+    /// Colour of the secondary features of a bark of main colour `color`.
+    #[must_use]
+    pub fn secondary_color(&self, color: [f32; 3]) -> [f32; 3] {
+        self.color.unwrap_or(color.map(|channel| 0.35 * channel))
+    }
+
+    fn validate(&self) -> Result<(), SpeciesError> {
+        let size = self.feature_size;
+        check_range("bark.pattern.feature_size", size, 1e-4, f32::MAX)?;
+        check_range("bark.pattern.stretch", self.stretch, 0.1, 100.0)?;
+        check_range("bark.pattern.relief", self.relief, 0.0, 1.0)?;
+        check_range("bark.pattern.coverage", self.coverage, 0.0, 1.0)?;
+        let irregularity = self.irregularity;
+        check_range("bark.pattern.irregularity", irregularity, 0.0, 1.0)?;
+        check_range("bark.pattern.contrast", self.contrast, 0.0, 1.0)?;
+        if let Some(color) = self.color {
+            check_color("bark.pattern.color", color)?;
+        }
+        let variation = self.roughness_variation;
+        check_range("bark.pattern.roughness_variation", variation, 0.0, 1.0)
     }
 }
 
@@ -81,6 +208,8 @@ impl Bark {
         check_range("bark.roughness", self.roughness, 0.0, 1.0)?;
         let [around, along] = self.texture_size;
         check_range("bark.texture_size", around, f32::MIN_POSITIVE, f32::MAX)?;
-        check_range("bark.texture_size", along, f32::MIN_POSITIVE, f32::MAX)
+        check_range("bark.texture_size", along, f32::MIN_POSITIVE, f32::MAX)?;
+        check_resolution("bark.texture_resolution", self.texture_resolution)?;
+        self.pattern.validate()
     }
 }

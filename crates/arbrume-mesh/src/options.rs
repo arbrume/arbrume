@@ -76,6 +76,20 @@ pub struct MeshOptions {
     /// on every part and [`TreeMesh::wind`](arbrume_core::mesh::TreeMesh), see
     /// [`crate::wind`].
     pub wind: bool,
+    /// How a lateral axis is joined to its parent: see [`Junctions`].
+    pub junctions: Junctions,
+}
+
+/// How [`mesh_tree`](crate::mesh_tree) joins a lateral axis to its parent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Junctions {
+    /// The child starts inside its parent with a flared collar, the two tubes
+    /// intersecting: fast, not watertight.
+    #[default]
+    TierA,
+    /// The child is stitched into a hole cut in its parent: the bark is one closed
+    /// surface once vertices of equal position are welded (see `crate::junction`).
+    TierB,
 }
 
 /// What [`MeshOptions::min_radius`] does to the leaves of the axes it drops.
@@ -105,6 +119,7 @@ impl Default for MeshOptions {
             orphan_leaves: OrphanLeaves::Keep,
             twig_leaf_fraction: 1.0,
             wind: false,
+            junctions: Junctions::TierA,
         }
     }
 }

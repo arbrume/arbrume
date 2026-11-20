@@ -1,10 +1,11 @@
 //! Tube surface: vertices and triangles stretched over the rings of one axis.
 //!
 //! **Frame.** Each ring needs a direction from which angles around it are counted. It is
-//! carried from ring to ring by parallel transport: the direction of the previous ring is
-//! turned by the smallest rotation that takes the previous tangent onto the new one. This
-//! is the frame of Prusinkiewicz et al. (2001, eq. 10) with no rotation about the heading,
-//! the rotation-minimizing frame: the surface does not twist however the axis bends, and
+//! carried from ring to ring by parallel transport (`crate::ring::frame_rings`, run when
+//! the rings are planned): the direction of the previous ring is turned by the smallest
+//! rotation that takes the previous tangent onto the new one. This is the frame of
+//! Prusinkiewicz et al. (2001, eq. 10) with no rotation about the heading, the
+//! rotation-minimizing frame: the surface does not twist however the axis bends, and
 //! unlike the Frenet frame it is defined on straight parts and does not flip at
 //! inflection points. The first direction points as far down as the tangent allows, which
 //! puts the texture seam on the underside of a branch.
@@ -18,15 +19,26 @@
 //! number of sides the band is a strip of quads; otherwise the two rings are zipped,
 //! advancing on the ring whose next side has its middle at the smaller angle, so each
 //! vertex of the coarser ring fans out to the sides of the finer ring nearest to it.
-//! Both cases give `m + n` triangles. The tip is closed by a fan to one apex vertex slightly beyond the last ring.
-//! Front faces are counter-clockwise seen from outside.
+//! Both cases give `m + n` triangles. The tip is closed by a fan to one apex vertex
+//! slightly beyond the last ring. Front faces are counter-clockwise seen from outside.
+//!
+//! **Junctions.** With Tier B junctions (`crate::junction`) the quads of a parent over
+//! the hole of a child are left out, the first rings of a child are the skewed rings of
+//! its collar, and the child writes, after its tube, the rim of its hole and its
+//! footprint in the frame of the parent, and the triangles between them.
 //!
 //! **Texture coordinates.** `u` runs around the ring and covers a whole number of
 //! repeats, `v` is proportional to arc length; see [`Style`].
 
+use crate::junction::{Foot, Junction};
 use crate::ring::Ring;
+use arbrume_core::species::Geometry;
 use glam::Vec3;
 use std::f32::consts::TAU;
+
+/// Most sides of a collar ring, whose side count is that of a plain ring of its radius
+/// (`geometry::MAX_RADIAL_SEGMENTS` of the species schema).
+const RING_LIMIT: usize = 64;
 
 /// Height of the tip cap, in radii of the last ring.
 const CAP_HEIGHT: f32 = 0.5;
@@ -139,9 +151,28 @@ pub(crate) struct TubeOut<'a> {
     pub base: u32,
 }
 
+/// The junctions an axis takes part in: the holes cut in it for its children, and its
+/// own junction with its parent. All empty with Tier A junctions.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Joins<'a> {
+    /// Junctions of the children of the axis.
+    pub holes: &'a [Junction],
+    /// Junction of the axis with its parent.
+    pub own: Option<&'a Junction>,
+    /// Footprint of the own junction.
+    pub feet: &'a [Foot],
+    /// Triangles of the stitches of all junctions, see `Junction::stitch`.
+    pub stitches: &'a [[u32; 3]],
+    /// Rings and style of the parent, when the axis has its own junction.
+    pub parent: Option<(&'a [Ring], &'a Style)>,
+    /// Geometry of the species, for the collar profile.
+    pub geometry: &'a Geometry,
+}
+
 /// Number of vertices and of indices of the tube over `rings`, with a fan closing its
-/// base when `closed_base`.
-pub(crate) fn tube_counts(rings: &[Ring], closed_base: bool) -> (usize, usize) {
+/// base when `closed_base`, the cells of the holes of `joins` left out and the stitch of
+/// its own junction.
+pub(crate) fn tube_counts(rings: &[Ring], closed_base: bool, joins: &Joins) -> (usize, usize) {
     let (Some(first), Some(last)) = (rings.first(), rings.last()) else {
         return (0, 0);
     };
@@ -151,32 +182,22 @@ pub(crate) fn tube_counts(rings: &[Ring], closed_base: bool) -> (usize, usize) {
         .windows(2)
         .map(|pair| (pair[0].sides + pair[1].sides) as usize)
         .sum();
+    let cut: usize = joins
+        .holes
+        .iter()
+        .map(|junction| {
+            let hole = &junction.hole;
+            2 * ((hole.rows[1] - hole.rows[0]) * hole.columns) as usize
+        })
+        .sum();
     let extra = if closed_base { foot + 2 } else { 1 };
-    (vertices + extra, 3 * (bands + last.sides as usize + foot))
-}
-
-/// Direction of the first vertex of the first ring: as far down as possible while
-/// orthogonal to `tangent`, or along X for a vertical axis.
-fn seam_direction(tangent: Vec3) -> Vec3 {
-    let down = Vec3::NEG_Y.reject_from_normalized(tangent);
-    if down.length_squared() > 1e-4 {
-        down.normalize()
-    } else {
-        Vec3::X.reject_from_normalized(tangent).normalize()
-    }
-}
-
-/// Parallel transport of the unit vector `normal`, orthogonal to `from`, to the tangent
-/// `to`: the rotation about `from x to` that takes `from` onto `to`, applied to `normal`.
-pub(crate) fn transport(normal: Vec3, from: Vec3, to: Vec3) -> Vec3 {
-    let cosine = from.dot(to);
-    if cosine < -0.999 {
-        return normal
-            .reject_from_normalized(to)
-            .normalize_or(to.any_orthonormal_vector());
-    }
-    let moved = normal - (from + to) * (normal.dot(to) / (1.0 + cosine));
-    moved.reject_from_normalized(to).normalize_or(normal)
+    let stitch = joins.own.map_or(0, |junction| {
+        junction.hole.rim_len() + junction.sides as usize
+    });
+    (
+        vertices + extra + stitch,
+        3 * (bands - cut + last.sides as usize + foot + stitch),
+    )
 }
 
 /// Slopes along the axis of the radius and of the lobe amplitude at ring `index`, by
@@ -195,13 +216,39 @@ fn slopes(rings: &[Ring], index: usize) -> (f32, f32) {
     }
 }
 
-/// Orientation of one ring.
-#[derive(Debug, Clone, Copy)]
-struct Frame {
-    /// Direction of angle 0.
-    normal: Vec3,
-    /// Direction of a quarter turn: `tangent x normal`.
-    binormal: Vec3,
+/// Position and unit normal of corner `corner` of ring `index` of `rings`, whose unit
+/// circle point is `[cos, sin]`.
+///
+/// Every vertex of a round or lobed ring is computed here, so that a copy of a ring
+/// vertex written elsewhere (the rim of a junction) has exactly the same position. With
+/// the radius `rho(a, s) = radius(s) + lobe(s) sin(lobes a)`, the normal of a lobed ring
+/// is `radial - (rho_a / rho) tangential - rho_s tangent`, normalized.
+fn ring_corner(
+    rings: &[Ring],
+    index: usize,
+    [cos, sin]: [f32; 2],
+    corner: usize,
+    lobes: u32,
+) -> (Vec3, Vec3) {
+    let ring = &rings[index];
+    let (slope, lobe_slope) = slopes(rings, index);
+    let binormal = ring.tangent.cross(ring.normal);
+    let radial = ring.normal * cos + binormal * sin;
+    if ring.lobe > 0.0 {
+        let count = lobes as f32;
+        let phase = count * TAU * (corner % ring.sides as usize) as f32 / ring.sides as f32;
+        let (wave_sin, wave_cos) = phase.sin_cos();
+        let rho = ring.radius + ring.lobe * wave_sin;
+        let around = ring.lobe * count * wave_cos / rho;
+        let along = slope + lobe_slope * wave_sin;
+        let tangential = binormal * cos - ring.normal * sin;
+        let normal = (radial - tangential * around - ring.tangent * along).normalize();
+        (ring.center + radial * rho, normal)
+    } else {
+        let shrink = (1.0 + slope * slope).sqrt().recip();
+        let axial = ring.tangent * (-slope * shrink);
+        (ring.center + radial * ring.radius, radial * shrink + axial)
+    }
 }
 
 /// Write position in the buffers of one axis.
@@ -209,32 +256,64 @@ struct Writer<'a, 'b> {
     out: &'b mut TubeOut<'a>,
     style: &'b Style,
     circles: &'b Circles,
+    joins: &'b Joins<'b>,
     vertex: usize,
     index: usize,
 }
 
 impl Writer<'_, '_> {
-    /// Writes the vertices of a round ring.
-    fn round_ring(&mut self, ring: &Ring, frame: &Frame, slope: f32) {
+    /// Writes the vertices of ring `index` of `rings`, round or lobed.
+    fn ring(&mut self, rings: &[Ring], index: usize) {
+        let ring = &rings[index];
         let unit = self.circles.of(ring.sides);
-        let range = self.vertex..self.vertex + unit.len();
-        let shrink = (1.0 + slope * slope).sqrt().recip();
-        let axial = ring.tangent * (-slope * shrink);
         let u_step = self.style.u_repeats / ring.sides as f32;
         let v = self.style.v_offset + ring.arc * self.style.v_scale;
-        let positions = self.out.positions[range.clone()].iter_mut();
-        let normals = self.out.normals[range.clone()].iter_mut();
-        let uvs = self.out.uvs[range].iter_mut();
-        for (corner, (((position, normal), uv), &[cos, sin])) in
-            positions.zip(normals).zip(uvs).zip(unit).enumerate()
-        {
-            let radial = frame.normal * cos + frame.binormal * sin;
-            *position = (ring.center + radial * ring.radius).to_array();
-            *normal = (radial * shrink + axial).to_array();
-            *uv = [corner as f32 * u_step, v];
+        for (corner, &point) in unit.iter().enumerate() {
+            let (position, normal) = ring_corner(rings, index, point, corner, self.style.lobes);
+            let at = self.vertex + corner;
+            self.out.positions[at] = position.to_array();
+            self.out.normals[at] = normal.to_array();
+            self.out.uvs[at] = [corner as f32 * u_step, v];
         }
         self.paint(self.vertex..self.vertex + unit.len(), ring.radius);
         self.vertex += unit.len();
+    }
+
+    /// Writes the vertices of a collar ring at `blend`, 0 at the footprint and 1 at the
+    /// first round ring. The normal of a vertex is that of the collar as meshed: the
+    /// cross product of the chord between its neighbours around the ring and the chord
+    /// between its neighbours on the rings before and after, so that it agrees with the
+    /// skewed quads around it.
+    fn collar_ring(&mut self, sides: u32, junction: &Junction, blend: f32) {
+        let u_step = self.style.u_repeats / sides as f32;
+        let step = 1.0 / junction.rings as f32;
+        let (geometry, feet) = (self.joins.geometry, self.joins.feet);
+        let unit = self.circles.of(sides);
+        let n = sides as usize;
+        let ring = |blend: f32| {
+            let mut points = [Vec3::ZERO; RING_LIMIT];
+            for (k, point) in points.iter_mut().enumerate().take(n) {
+                *point = junction.collar.position(geometry, unit[k], &feet[k], blend);
+            }
+            points
+        };
+        let (before, after) = (ring((blend - step).max(0.0)), ring((blend + step).min(1.0)));
+        let here = ring(blend);
+        for (corner, &point) in unit.iter().enumerate() {
+            let foot = &feet[corner % n];
+            let (position, smooth, arc, radius) =
+                junction.collar.vertex(geometry, point, foot, blend);
+            let around = here[(corner + 1) % n] - here[(corner + n - 1) % n];
+            let along = after[corner % n] - before[corner % n];
+            let normal = around.cross(along).normalize_or(smooth);
+            let at = self.vertex + corner;
+            self.out.positions[at] = position.to_array();
+            self.out.normals[at] = normal.to_array();
+            let v = self.style.v_offset + arc * self.style.v_scale;
+            self.out.uvs[at] = [corner as f32 * u_step, v];
+            self.paint(at..at + 1, radius);
+        }
+        self.vertex += n + 1;
     }
 
     /// Writes the colour of the vertices `range`, which lie on an axis of `radius`.
@@ -242,32 +321,6 @@ impl Writer<'_, '_> {
         if let Some(tint) = &self.style.tint {
             self.out.colors[range].fill(tint.at(radius));
         }
-    }
-
-    /// Writes the vertices of a ring with buttress lobes. With the radius
-    /// `rho(a, s) = radius(s) + lobe(s) sin(lobes a)`, the normal of the surface is
-    /// `radial - (rho_a / rho) tangential - rho_s tangent`, normalized.
-    fn lobed_ring(&mut self, ring: &Ring, frame: &Frame, slope: (f32, f32)) {
-        let unit = self.circles.of(ring.sides);
-        let lobes = self.style.lobes as f32;
-        let u_step = self.style.u_repeats / ring.sides as f32;
-        let v = self.style.v_offset + ring.arc * self.style.v_scale;
-        for (corner, &[cos, sin]) in unit.iter().enumerate() {
-            let phase = lobes * TAU * (corner % ring.sides as usize) as f32 / ring.sides as f32;
-            let (wave_sin, wave_cos) = phase.sin_cos();
-            let rho = ring.radius + ring.lobe * wave_sin;
-            let around = ring.lobe * lobes * wave_cos / rho;
-            let along = slope.0 + slope.1 * wave_sin;
-            let radial = frame.normal * cos + frame.binormal * sin;
-            let tangential = frame.binormal * cos - frame.normal * sin;
-            let normal = (radial - tangential * around - ring.tangent * along).normalize();
-            let at = self.vertex + corner;
-            self.out.positions[at] = (ring.center + radial * rho).to_array();
-            self.out.normals[at] = normal.to_array();
-            self.out.uvs[at] = [corner as f32 * u_step, v];
-        }
-        self.paint(self.vertex..self.vertex + unit.len(), ring.radius);
-        self.vertex += unit.len();
     }
 
     /// Writes one triangle from vertex numbers local to the axis.
@@ -278,10 +331,23 @@ impl Writer<'_, '_> {
         self.index += 3;
     }
 
-    /// Joins ring `a` (first vertex `a_start`, `a_sides` sides) to the next ring `b`.
-    fn band(&mut self, a_start: usize, a_sides: usize, b_start: usize, b_sides: usize) {
+    /// Joins ring `a` (first vertex, sides) to the next ring `b`, leaving out the cells
+    /// of row `row` that a hole covers.
+    fn band(
+        &mut self,
+        (a_start, a_sides): (usize, usize),
+        (b_start, b_sides): (usize, usize),
+        row: u32,
+    ) {
         if a_sides == b_sides {
+            let holes = self.joins.holes;
             for side in 0..a_sides {
+                if holes
+                    .iter()
+                    .any(|junction| junction.hole.covers(row, side as u32))
+                {
+                    continue;
+                }
                 let (a, b) = (a_start + side, b_start + side);
                 self.triangle(a, a + 1, b);
                 self.triangle(a + 1, b + 1, b);
@@ -335,15 +401,72 @@ impl Writer<'_, '_> {
             self.triangle(start + (side + 1) % sides, start + side, center);
         }
     }
+
+    /// Writes the rim and the footprint of the own junction in the frame of the parent,
+    /// and the triangles between them.
+    fn stitch(&mut self, junction: &Junction, parent: &[Ring], parent_style: &Style) {
+        let hole = &junction.hole;
+        let u_step = parent_style.u_repeats / hole.sides as f32;
+        let rim_start = self.vertex;
+        for k in 0..hole.rim_len() {
+            let (row, column) = hole.rim(k);
+            let ring = &parent[row as usize];
+            let local = (column % hole.sides) as usize;
+            let point = self.circles.of(hole.sides)[local];
+            let (position, normal) =
+                ring_corner(parent, row as usize, point, local, parent_style.lobes);
+            let v = parent_style.v_offset + ring.arc * parent_style.v_scale;
+            let uv = [column as f32 * u_step, v];
+            self.copy(position, normal, uv, parent_style, ring.radius);
+        }
+        let host = &junction.host;
+        for (k, foot) in self.joins.feet.iter().enumerate() {
+            let unit = self.circles.of(junction.sides)[k];
+            let (position, ..) = junction.collar.vertex(self.joins.geometry, unit, foot, 0.0);
+            let radial = (position - host.origin).reject_from_normalized(host.tangent);
+            let [column, height] = foot.param;
+            let v = parent_style.v_offset + (host.arc + height) * parent_style.v_scale;
+            let normal = radial.normalize_or(hole.normal);
+            self.copy(
+                position,
+                normal,
+                [column * u_step, v],
+                parent_style,
+                host.radius,
+            );
+        }
+        for &[a, b, c] in &self.joins.stitches[junction.stitch.clone()] {
+            let local = |k: u32| rim_start + k as usize;
+            self.triangle(local(a), local(b), local(c));
+        }
+    }
+
+    /// Writes one vertex of the stitch with the colour `style` has at `radius`.
+    fn copy(&mut self, position: Vec3, normal: Vec3, uv: [f32; 2], style: &Style, radius: f32) {
+        let at = self.vertex;
+        self.out.positions[at] = position.to_array();
+        self.out.normals[at] = normal.to_array();
+        self.out.uvs[at] = uv;
+        if let Some(tint) = &style.tint {
+            self.out.colors[at] = tint.at(radius);
+        }
+        self.vertex += 1;
+    }
 }
 
 /// Writes the tube over `rings` into `out`, whose slices must have exactly the lengths
-/// given by [`tube_counts`].
+/// given by [`tube_counts`] for the same `joins`.
 ///
 /// # Panics
 ///
 /// Panics when the slices of `out` do not have those lengths.
-pub(crate) fn write_tube(rings: &[Ring], style: &Style, circles: &Circles, out: &mut TubeOut) {
+pub(crate) fn write_tube(
+    rings: &[Ring],
+    style: &Style,
+    circles: &Circles,
+    joins: &Joins,
+    out: &mut TubeOut,
+) {
     let Some(first) = rings.first() else {
         return;
     };
@@ -351,32 +474,28 @@ pub(crate) fn write_tube(rings: &[Ring], style: &Style, circles: &Circles, out: 
         out,
         style,
         circles,
+        joins,
         vertex: 0,
         index: 0,
     };
-    let mut normal = seam_direction(first.tangent);
-    let mut previous = (0, 0, first.tangent);
+    let mut previous = (0, 0);
     for (index, ring) in rings.iter().enumerate() {
-        normal = transport(normal, previous.2, ring.tangent);
-        let frame = Frame {
-            normal,
-            binormal: ring.tangent.cross(normal),
-        };
         let start = writer.vertex;
-        let slope = slopes(rings, index);
-        if ring.lobe > 0.0 {
-            writer.lobed_ring(ring, &frame, slope);
-        } else {
-            writer.round_ring(ring, &frame, slope.0);
+        match (ring.skew, joins.own) {
+            (Some((_, blend)), Some(junction)) => writer.collar_ring(ring.sides, junction, blend),
+            _ => writer.ring(rings, index),
         }
         if index > 0 {
-            writer.band(previous.0, previous.1, start, ring.sides as usize);
+            writer.band(previous, (start, ring.sides as usize), index as u32 - 1);
         }
-        previous = (start, ring.sides as usize, ring.tangent);
+        previous = (start, ring.sides as usize);
     }
     writer.cap(&rings[rings.len() - 1], previous.0);
     if style.closed_base {
         writer.foot(first);
+    }
+    if let (Some(junction), Some((parent, parent_style))) = (joins.own, joins.parent) {
+        writer.stitch(junction, parent, parent_style);
     }
     assert_eq!(writer.vertex, writer.out.positions.len());
     assert_eq!(writer.index, writer.out.indices.len());
@@ -384,8 +503,9 @@ pub(crate) fn write_tube(rings: &[Ring], style: &Style, circles: &Circles, out: 
 
 #[cfg(test)]
 mod tests {
-    use super::{Circles, Style, TubeOut, transport, tube_counts, write_tube};
-    use crate::ring::Ring;
+    use super::{Circles, Joins, Style, TubeOut, tube_counts, write_tube};
+    use crate::ring::{Ring, frame_rings, transport};
+    use arbrume_core::species::Geometry;
     use glam::Vec3;
 
     const STYLE: Style = Style {
@@ -406,7 +526,19 @@ mod tests {
     }
 
     fn tube(rings: &[Ring], style: &Style) -> Tube {
-        let (vertices, indices) = tube_counts(rings, style.closed_base);
+        let geometry = Geometry::default();
+        let joins = Joins {
+            holes: &[],
+            own: None,
+            feet: &[],
+            stitches: &[],
+            parent: None,
+            geometry: &geometry,
+        };
+        let mut rings = rings.to_vec();
+        frame_rings(&mut rings);
+        let rings = &rings[..];
+        let (vertices, indices) = tube_counts(rings, style.closed_base, &joins);
         let colored = if style.tint.is_some() { vertices } else { 0 };
         let mut tube = Tube {
             positions: vec![[0.0; 3]; vertices],
@@ -423,7 +555,7 @@ mod tests {
             indices: &mut tube.indices,
             base: 0,
         };
-        write_tube(rings, style, &Circles::new(64), &mut out);
+        write_tube(rings, style, &Circles::new(64), &joins, &mut out);
         tube
     }
 
@@ -439,6 +571,8 @@ mod tests {
                     radius: 0.1,
                     lobe: 0.0,
                     sides: sides(step),
+                    normal: Vec3::ZERO,
+                    skew: None,
                 }
             })
             .collect()
@@ -522,7 +656,16 @@ mod tests {
     fn rings_of_different_sides_are_zipped() {
         let rings = arc_rings(|step| [12, 12, 9, 7, 7, 4, 3, 5, 8][step]);
         let tube = tube(&rings, &STYLE);
-        let (vertices, indices) = tube_counts(&rings, false);
+        let geometry = Geometry::default();
+        let joins = Joins {
+            holes: &[],
+            own: None,
+            feet: &[],
+            stitches: &[],
+            parent: None,
+            geometry: &geometry,
+        };
+        let (vertices, indices) = tube_counts(&rings, false, &joins);
         assert_eq!(
             (tube.positions.len(), tube.indices.len()),
             (vertices, indices)

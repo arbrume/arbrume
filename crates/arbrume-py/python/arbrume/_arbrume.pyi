@@ -20,6 +20,8 @@ def generate(
     *,
     scale: float = 1.0,
     quality: float = 1.0,
+    textures: bool = False,
+    junctions: Literal["tier-a", "tier-b"] = "tier-a",
     overrides: dict[str, Any] | None = None,
     **dotted_overrides: Any,
 ) -> Tree:
@@ -33,6 +35,8 @@ def generate_many(
     threads: int | None = None,
     scale: float = 1.0,
     quality: float = 1.0,
+    textures: bool = False,
+    junctions: Literal["tier-a", "tier-b"] = "tier-a",
     overrides: dict[str, Any] | None = None,
     **dotted_overrides: Any,
 ) -> list[Tree]:

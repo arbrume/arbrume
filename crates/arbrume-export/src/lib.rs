@@ -4,7 +4,7 @@ pub mod annotations;
 pub mod glb;
 
 pub use glb::{
-    AttributeData, ExportOptions, ExtraAttribute, GlbError, GlbLevel, GlbOptions,
-    InstanceTransform, LeafInstancing, SkinOptions, WindLayout, write_glb, write_glb_file,
-    write_glb_levels, write_glb_with,
+    AttributeData, ExportOptions, ExtraAttribute, GlbError, GlbLevel, GlbOptions, ImageStorage,
+    InstanceTransform, LeafInstancing, SkinOptions, WindLayout, image_file_name, write_glb,
+    write_glb_file, write_glb_images, write_glb_levels, write_glb_with,
 };

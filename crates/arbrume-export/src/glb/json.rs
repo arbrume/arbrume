@@ -144,6 +144,8 @@ pub(super) struct Pbr {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_color_texture: Option<TextureInfo>,
     pub metallic_factor: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metallic_roughness_texture: Option<TextureInfo>,
     pub roughness_factor: f32,
 }
 
@@ -160,7 +162,10 @@ pub(super) struct Texture {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct Image {
-    pub buffer_view: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub buffer_view: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uri: Option<String>,
     pub mime_type: &'static str,
 }
 

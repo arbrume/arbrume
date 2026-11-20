@@ -57,12 +57,14 @@ color = [0.065, 0.18, 0.035]
 hue_variation = 0.1
 brightness_variation = 0.35
 twig = { leaves = 7, length = 0.24, inclination_deg = 50.0, bend_deg = 10.0, stem_radius = 0.0025 }
+venation = { kind = "open" }
 
 [bark]
 color = [0.1, 0.09, 0.078]
 young_color = [0.12, 0.09, 0.06]
 young_radius = 0.05
 color_variation = 0.2
+pattern = { kind = "peeling", feature_size = 0.09, stretch = 1.3, coverage = 0.45, contrast = 0.6, irregularity = 0.8, color = [0.5, 0.46, 0.3] }
 
 [variation]
 age = [10, 30]

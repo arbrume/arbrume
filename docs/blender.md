@@ -23,6 +23,14 @@ species preset, seed, age (by default the oldest age suggested by the species), 
 quality. Everything else is in the sidebar of the 3D view (`N`), tab **Arbrume**, for the
 active plant:
 
+- **Textures.** With *Textures* on (the default), the plant carries the procedural bark
+  and leaf textures of its species ([Textures](textures.md)), synthesized once per
+  species and kept by the extension for the session.
+- **Junctions.** *Collar* (the default) starts each branch inside its parent; *Watertight*
+  stitches it into its parent, so the bark of each stem is one closed surface
+  ([Junctions](junctions.md)). The imported mesh keeps one vertex per side of each
+  texture seam: before a Subdivision Surface modifier or a 3D print, run *Merge by
+  Distance* with distance 0, which keeps the seams in the UV maps.
 - **Species, seed, age, scale, quality.** Every change regenerates the plant at once
   (*Live update*); turn it off for very large plants and press *Regenerate*. The age slider
   scrubs growth: the plant is generated again at each age. The panel shows the triangle
@@ -102,8 +110,16 @@ attribute where Blender reads it as free normals, else
 `normals_split_custom_set_from_vertices`). The attribute API copies each buffer in one
 call. Bark and leaves are two material slots of one mesh, which keeps a regeneration to
 one upload and lets scattered copies share one datablock. Materials are created once per
-species and material values: a Principled BSDF whose base colour is the material colour
-multiplied by the colour attribute.
+species, material values and textures: a Principled BSDF whose base colour is the
+material colour multiplied by the colour attribute. A textured part adds Image Texture
+nodes, the images packed in the file and named after a hash of their bytes so plants of a
+species share them: the base colour image multiplies the material colour, its alpha goes
+through a *Greater Than* node at the alpha cutoff into the BSDF alpha (an alpha clip that
+works in Cycles and EEVEE), the normal image (non-colour) feeds a tangent-space *Normal
+Map* node on the UV map, and the roughness image (green channel, non-colour) times the
+roughness factor feeds the roughness. The UV map is flipped vertically (`v` becomes
+`1 - v`) because Blender puts the origin of images at the bottom, glTF at the top; the
+normal maps then need no change, since both conventions point `+y` up the image.
 
 ## Building the extension
 

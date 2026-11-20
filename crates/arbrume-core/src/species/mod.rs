@@ -42,19 +42,24 @@ mod bark;
 mod foliage;
 mod geometry;
 mod growth;
+mod leaf_texture;
 mod variation;
 
 pub use architecture::{
     Architecture, AxisCategory, AxisOrientation, BranchTiming, Branching, BranchingPattern,
     GrowthRhythm, Phyllotaxis,
 };
-pub use bark::Bark;
+pub use bark::{Bark, BarkKind, BarkPattern, MAX_TEXTURE_RESOLUTION, MIN_TEXTURE_RESOLUTION};
 pub use foliage::{
     BladeShape, Foliage, LeafGeometry, MAX_BLADE_SEGMENTS, MAX_LEAFLET_PAIRS, MAX_TWIG_FINS,
     MAX_TWIG_LEAVES, MAX_TWIG_VARIANTS, Twig,
 };
 pub use geometry::{Geometry, RadiusModel};
 pub use growth::{Allocation, Growth, GrowthMode, SelfOrganization, Sensing};
+pub use leaf_texture::{
+    BladePlacement, LeafAtlas, LeafLayout, MAX_TEXTURE_VARIANTS, MAX_VEINS, Margin, MarginKind,
+    Venation, VenationKind,
+};
 pub use variation::{JITTERABLE, Variation};
 
 use crate::curve::OrderCurve;
@@ -265,6 +270,46 @@ mod tests {
             ("[foliage]\nwidth_ratio = -1.0", "foliage.width_ratio"),
             ("[bark]\ncolor = [0.2, 0.2, 3.0]", "bark.color"),
             (
+                "[bark]\ntexture_resolution = 500",
+                "bark.texture_resolution",
+            ),
+            (
+                "[bark]\ntexture_resolution = 8192",
+                "bark.texture_resolution",
+            ),
+            (
+                "[bark]\npattern = { stretch = 0.0 }",
+                "bark.pattern.stretch",
+            ),
+            (
+                "[bark]\npattern = { coverage = 1.5 }",
+                "bark.pattern.coverage",
+            ),
+            (
+                "[bark]\npattern = { color = [0.1, 2.0, 0.1] }",
+                "bark.pattern.color",
+            ),
+            (
+                "[foliage]\ntexture_variants = 0",
+                "foliage.texture_variants",
+            ),
+            (
+                "[foliage]\ntexture_resolution = 3",
+                "foliage.texture_resolution",
+            ),
+            (
+                "[foliage]\nvenation = { angle_deg = 90.0 }",
+                "foliage.venation.angle_deg",
+            ),
+            (
+                "[foliage]\nvenation = { veins = 100 }",
+                "foliage.venation.veins",
+            ),
+            (
+                "[foliage]\nmargin = { depth = 0.95 }",
+                "foliage.margin.depth",
+            ),
+            (
                 "[architecture]\nphyllotaxis = { leaves_per_node = 0 }",
                 "architecture.phyllotaxis",
             ),
@@ -274,6 +319,27 @@ mod tests {
                 Err(SpeciesError::Invalid { field, .. }) => assert_eq!(field, expected),
                 other => panic!("{text}: expected an invalid `{expected}`, got {other:?}"),
             }
+        }
+    }
+
+    #[test]
+    fn texture_tables_parse_and_reject_unknown_keys() {
+        let species = Species::from_toml_str(
+            "[bark]\npattern = { kind = \"plated\", feature_size = 0.08 }\n\
+             [foliage]\nvenation = { kind = \"open\" }\nmargin = { kind = \"lobed\" }",
+        )
+        .unwrap();
+        assert_eq!(species.bark.pattern.kind, super::BarkKind::Plated);
+        assert_eq!(species.foliage.venation.kind, super::VenationKind::Open);
+        assert_eq!(species.foliage.margin.kind, super::MarginKind::Lobed);
+        for text in [
+            "[bark]\npattern = { knd = \"plated\" }",
+            "[bark]\npattern = { kind = \"scaly\" }",
+            "[foliage]\nvenation = { veinz = 3 }",
+            "[foliage]\nmargin = { kind = \"wavy\" }",
+        ] {
+            let result = Species::from_toml_str(text);
+            assert!(matches!(result, Err(SpeciesError::Parse(_))), "{text}");
         }
     }
 

@@ -18,7 +18,9 @@ mod tangent;
 mod wind;
 
 pub use instancing::{InstanceTransform, LeafInstancing};
-pub use levels::{ExportOptions, GlbLevel, SkinOptions, WindLayout, write_glb_levels};
+pub use levels::{
+    ExportOptions, GlbLevel, ImageStorage, SkinOptions, WindLayout, write_glb_levels,
+};
 
 use std::borrow::Cow;
 use std::fs::File;
@@ -211,8 +213,27 @@ pub fn write_glb_with(
     extra: &[ExtraAttribute],
     out: impl Write,
 ) -> Result<(), GlbError> {
+    write_glb_images(mesh, options, extra, ImageStorage::Embed, out)
+}
+
+/// Same as [`write_glb_with`], with the texture images stored as `images` says: with
+/// [`ImageStorage::External`] the file references them by the names of
+/// [`image_file_name`], and the caller writes them next to it.
+///
+/// # Errors
+/// Same as [`write_glb_with`].
+pub fn write_glb_images(
+    mesh: &TreeMesh,
+    options: &GlbOptions,
+    extra: &[ExtraAttribute],
+    images: ImageStorage,
+    out: impl Write,
+) -> Result<(), GlbError> {
     check_extra(mesh, extra)?;
-    let export = ExportOptions::default();
+    let export = ExportOptions {
+        images,
+        ..ExportOptions::default()
+    };
     let mut builder = Builder::new(options, &export);
     builder.mesh = Some(mesh);
     for (index, part) in mesh.parts.iter().enumerate() {
@@ -268,6 +289,23 @@ const fn pad4(len: usize) -> usize {
 /// Encodes little-endian `u32` words of a glb or chunk header.
 fn header<const N: usize>(words: &[u32; N]) -> Vec<u8> {
     words.iter().flat_map(|w| w.to_le_bytes()).collect()
+}
+
+/// File name of an image referenced by URI ([`ImageStorage::External`]): `arbrume_`,
+/// a 64-bit FNV-1a hash of the bytes in hexadecimal and the extension of the format, so
+/// that the same image always has the same name and different images different names
+/// (barring a hash collision).
+#[must_use]
+pub fn image_file_name(bytes: &[u8]) -> String {
+    let hash = bytes.iter().fold(0xCBF2_9CE4_8422_2325_u64, |hash, &byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01B3)
+    });
+    let extension = if image_mime(bytes) == Some("image/jpeg") {
+        "jpg"
+    } else {
+        "png"
+    };
+    format!("arbrume_{hash:016x}.{extension}")
 }
 
 /// Returns the MIME type of PNG or JPEG bytes from their magic numbers.
@@ -371,6 +409,8 @@ struct Builder<'a> {
     /// Joints of the skin of the mesh being added, when skinned.
     skinning: Option<skin::Skinning>,
     materials: Vec<json::Material<'a>>,
+    /// Images already added, by content: their bytes and texture index.
+    added: Vec<(&'a [u8], u32)>,
     textures: Vec<Texture>,
     images: Vec<Image>,
     accessors: Vec<Accessor>,
@@ -391,6 +431,7 @@ impl<'a> Builder<'a> {
             extensions_used: Vec::new(),
             skinning: None,
             materials: Vec::new(),
+            added: Vec::new(),
             textures: Vec::new(),
             images: Vec::new(),
             accessors: Vec::new(),
@@ -452,8 +493,12 @@ impl<'a> Builder<'a> {
             }
             _ => None,
         };
+        let roughness = match &part.material.roughness_texture {
+            Some(bytes) if textured => Some(self.add_texture(index, bytes)?),
+            _ => None,
+        };
         self.materials
-            .push(material(&part.material, texture, normal));
+            .push(material(&part.material, [texture, normal, roughness]));
         self.primitives.push(Primitive {
             attributes,
             indices,
@@ -519,17 +564,32 @@ impl<'a> Builder<'a> {
         (self.accessors.len() - 1) as u32
     }
 
+    /// Adds the image `bytes` and a texture of it, or returns the texture of the same
+    /// image added before: a file holds each distinct image once.
     fn add_texture(&mut self, part: usize, bytes: &'a [u8]) -> Result<u32, GlbError> {
+        if let Some(&(_, texture)) = self.added.iter().find(|(seen, _)| *seen == bytes) {
+            return Ok(texture);
+        }
         let mime_type = image_mime(bytes).ok_or(GlbError::ImageFormat { part })?;
-        let buffer_view = self.layout.push(Payload::Bytes(bytes), None);
-        self.images.push(Image {
-            buffer_view,
-            mime_type,
-        });
+        let image = match self.export.images {
+            ImageStorage::Embed => Image {
+                buffer_view: Some(self.layout.push(Payload::Bytes(bytes), None)),
+                uri: None,
+                mime_type,
+            },
+            ImageStorage::External => Image {
+                buffer_view: None,
+                uri: Some(image_file_name(bytes)),
+                mime_type,
+            },
+        };
+        self.images.push(image);
         self.textures.push(Texture {
             source: (self.images.len() - 1) as u32,
         });
-        Ok((self.textures.len() - 1) as u32)
+        let texture = (self.textures.len() - 1) as u32;
+        self.added.push((bytes, texture));
+        Ok(texture)
     }
 
     /// Moves the primitives added so far into a mesh named `name` (the file name when
@@ -680,15 +740,17 @@ fn bounds(part: usize, positions: &[[f32; 3]]) -> Result<([f32; 3], [f32; 3]), G
     Ok((min, max))
 }
 
-/// glTF material of one part; `texture` and `normal` are the base colour and normal
-/// texture indices when embedded.
-fn material(material: &Material, texture: Option<u32>, normal: Option<u32>) -> json::Material<'_> {
+/// glTF material of one part; `textures` are the indices of the base colour, normal
+/// and roughness textures, when written.
+fn material(material: &Material, textures: [Option<u32>; 3]) -> json::Material<'_> {
+    let [texture, normal, roughness] = textures;
     json::Material {
         name: &material.name,
         pbr_metallic_roughness: Pbr {
             base_color_factor: material.base_color,
             base_color_texture: texture.map(|index| TextureInfo { index }),
             metallic_factor: 0.0,
+            metallic_roughness_texture: roughness.map(|index| TextureInfo { index }),
             roughness_factor: material.roughness,
         },
         double_sided: material.double_sided,
