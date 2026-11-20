@@ -13,6 +13,7 @@ ORGAN_KINDS: tuple[str, ...]
 _Species = str | os.PathLike[str]
 _Float32 = npt.NDArray[np.float32]
 _Surroundings = dict[str, Any] | str | os.PathLike[str]
+_Water = float | dict[str, Any]
 _Guides = dict[str, Any] | str | os.PathLike[str]
 _Soil = dict[str, Any] | str | os.PathLike[str]
 _Roots = bool | Literal["tap", "heart", "plate", "fibrous"] | dict[str, Any]
@@ -27,6 +28,7 @@ def generate(
     textures: bool = False,
     junctions: Literal["tier-a", "tier-b"] = "tier-a",
     surroundings: _Surroundings | None = None,
+    water: _Water | None = None,
     guides: _Guides | None = None,
     roots: _Roots | None = None,
     soil: _Soil | None = None,
@@ -46,6 +48,7 @@ def generate_many(
     textures: bool = False,
     junctions: Literal["tier-a", "tier-b"] = "tier-a",
     surroundings: _Surroundings | None = None,
+    water: _Water | None = None,
     guides: _Guides | None = None,
     roots: _Roots | None = None,
     soil: _Soil | None = None,
@@ -64,6 +67,7 @@ def generate_stand(
     textures: bool = False,
     junctions: Literal["tier-a", "tier-b"] = "tier-a",
     surroundings: _Surroundings | None = None,
+    water: _Water | None = None,
     overrides: dict[str, Any] | None = None,
     **dotted_overrides: Any,
 ) -> list[Tree]:
@@ -90,6 +94,7 @@ def growth_frames(
     textures: bool = False,
     junctions: Literal["tier-a", "tier-b"] = "tier-a",
     surroundings: _Surroundings | None = None,
+    water: _Water | None = None,
     guides: _Guides | None = None,
     roots: _Roots | None = None,
     soil: _Soil | None = None,

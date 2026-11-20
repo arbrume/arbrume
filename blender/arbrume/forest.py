@@ -34,6 +34,7 @@ import arbrume
 
 from . import plant
 from .logic import forest as logic
+from .logic import water
 
 TINT = "arbrume_tint"
 FOREST_KEY = "arbrume_forest"
@@ -280,6 +281,22 @@ class ARBRUME_OT_add_forest(bpy.types.Operator):
         description="Optional forest.toml; its terrain is replaced by the mesh",
         subtype="FILE_PATH",
     )
+    water: EnumProperty(
+        name="Water",
+        description="Water over the terrain: aquatic species stand under it, the others above",
+        items=[
+            ("NONE", "None", "Dry land"),
+            ("HEIGHT", "Height", "Water surface at a height"),
+            ("OBJECT", "Object", "Water surface at the top of an object, such as a plane"),
+        ],
+        default="NONE",
+    )
+    water_height: FloatProperty(
+        name="Water Height", description="Height of the water surface", default=0.0
+    )
+    water_object: StringProperty(
+        name="Water Object", description="Object whose top is the water surface"
+    )
 
     def draw(self, context) -> None:
         layout = self.layout
@@ -295,8 +312,13 @@ class ARBRUME_OT_add_forest(bpy.types.Operator):
             "resolution",
             "viewport_level",
             "config",
+            "water",
         ):
             layout.prop(self, name)
+        if self.water == "HEIGHT":
+            layout.prop(self, "water_height")
+        elif self.water == "OBJECT":
+            layout.prop_search(self, "water_object", context.scene, "objects")
 
     def invoke(self, context, event):
         active = context.active_object
@@ -312,6 +334,7 @@ class ARBRUME_OT_add_forest(bpy.types.Operator):
             "lods": self.lods,
             "billboard": self.billboard,
             "textures": self.textures,
+            "water_level": self._water_level(),
         }
         config = logic.forest_config(grid, heights, logic.parse_mix(self.mix), options)
         if not self.config:
@@ -323,6 +346,12 @@ class ARBRUME_OT_add_forest(bpy.types.Operator):
         loaded.setdefault("placement", {}).update(config.get("placement", {}))
         loaded.setdefault("seed", self.seed)
         return loaded, path.parent
+
+    def _water_level(self) -> float | None:
+        """Height of the water surface in world Z, ``None`` for dry land."""
+        surface = bpy.data.objects.get(self.water_object) if self.water == "OBJECT" else None
+        top = plant.object_top(surface) if surface is not None else None
+        return water.water_level(self.water, self.water_height, top)
 
     def execute(self, context):
         obj = context.scene.objects.get(self.terrain)

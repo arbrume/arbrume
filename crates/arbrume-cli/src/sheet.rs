@@ -80,6 +80,9 @@ pub struct SheetArgs {
     /// Surroundings file applied to every plant; its obstacles are drawn.
     #[arg(long, value_name = "FILE", conflicts_with = "random")]
     surroundings: Option<PathBuf>,
+    /// Water of aquatic plants, as `gen` takes it.
+    #[command(flatten)]
+    water: crate::water::WaterArgs,
     /// Show K frames of the growth of the oldest age, one column each.
     #[arg(long, value_name = "K", conflicts_with = "random")]
     growth_frames: Option<u16>,
@@ -126,6 +129,7 @@ fn species_cells(args: &SheetArgs) -> Result<(Vec<Cell>, u32), CliError> {
         .as_deref()
         .map(load_surroundings)
         .transpose()?;
+    let surroundings = args.water.apply(surroundings)?;
     let oldest = args.ages.iter().copied().max().unwrap_or(0);
     let spacing = args.spacing;
     let columns: Vec<(u16, Variant)> = match (args.growth_frames, args.row) {

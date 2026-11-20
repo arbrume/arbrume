@@ -288,6 +288,25 @@ same mesh parts, skeleton and organ sites. A leaf keeps its place in the random 
 order from one frame to the next, so with `quality` below 1 the frames thin out the
 same leaves.
 
+### Water
+
+Aquatic species ([Underwater plants](underwater.md)) grow under water. The `water`
+keyword of `generate`, `generate_many` and `growth_frames` is the height of the water
+surface above the base of the plant, or a dict with `surface`, `current` (m/s, `[x, y,
+z]`), `attenuation` (per meter) and `density` (kg/m³); a `surroundings` dict takes the
+same as its `water` key, and `water` replaces it. Land species ignore the water.
+
+```python
+kelp = arbrume.generate("kelp_like", seed=3, age=14, water=8.0)
+bent = arbrume.generate(
+    "kelp_like", seed=3, age=14, water={"surface": 8.0, "current": [0.3, 0.0, 0.0]}
+)
+lily = arbrume.generate("water_lily_like", seed=1, age=6, surroundings={"water": {"surface": 1.2}})
+```
+
+`arbrume.forest` places aquatic species under `placement.water_level`
+([Forests](forest.md#aquatic-species)).
+
 ## Guides: painted strokes
 
 The `guides` keyword of `generate`, `generate_many` and `growth_frames` steers a

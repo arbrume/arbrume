@@ -242,6 +242,14 @@ impl Exclusions {
     /// Density factor at `(x, z)` on `terrain`: 0 excluded, 1 free.
     #[must_use]
     pub fn factor(&self, terrain: &Terrain, x: f32, z: f32) -> f32 {
+        self.factor_for(terrain, x, z, false)
+    }
+
+    /// [`Exclusions::factor`] for a species that grows on land, or under water when
+    /// `underwater`: then the ground below the water level is free and the ground
+    /// above it, or any ground when there is no water level, is excluded.
+    #[must_use]
+    pub fn factor_for(&self, terrain: &Terrain, x: f32, z: f32, underwater: bool) -> f32 {
         let mut factor = 1.0;
         for (exclusion, b) in self.shapes.iter().zip(&self.bounds) {
             if x < b[0] || z < b[1] || x > b[2] || z > b[3] {
@@ -260,9 +268,10 @@ impl Exclusions {
             let [w, d] = terrain.size();
             factor *= 1.0 - mask.at((x - u0) / w, (z - v0) / d).clamp(0.0, 1.0);
         }
-        if let Some(level) = self.water_level
-            && terrain.height(x, z) < level
-        {
+        let wet = self
+            .water_level
+            .is_some_and(|level| terrain.height(x, z) < level);
+        if wet != underwater {
             return 0.0;
         }
         factor

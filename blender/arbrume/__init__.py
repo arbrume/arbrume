@@ -67,6 +67,7 @@ def register() -> None:
     for section in STATE.sections:
         _register(ui.make_section_panel(section))
     _register(ui.VIEW3D_PT_arbrume_surroundings)
+    _register(ui.VIEW3D_PT_arbrume_water)
     _register(ui.VIEW3D_PT_arbrume_tools)
     brush.register()
     _register(brush.VIEW3D_PT_arbrume_brush)

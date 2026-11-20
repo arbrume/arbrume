@@ -95,6 +95,9 @@ pub struct GenArgs {
     /// Soil file: ground surface and resource patches the roots grow in (docs/roots.md).
     #[arg(long, value_name = "FILE")]
     soil: Option<PathBuf>,
+    /// Water of aquatic plants (docs/underwater.md).
+    #[command(flatten)]
+    water: crate::water::WaterArgs,
     /// Write each plant as a growth sequence of K frames instead of one file.
     #[arg(long, value_name = "K")]
     growth_frames: Option<u16>,
@@ -347,6 +350,9 @@ pub fn run(args: &GenArgs) -> Result<(), CliError> {
     }
     batch.lod = args.lod.merge(batch.lod);
     crate::roots::apply(&mut batch, args.roots, args.soil.as_deref())?;
+    for entry in &mut batch.entries {
+        entry.surroundings = args.water.apply(entry.surroundings.take())?;
+    }
     let texture_choice = args
         .textures
         .or(batch.textures)

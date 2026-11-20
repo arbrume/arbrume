@@ -310,6 +310,7 @@ mod tests {
         let surroundings = Surroundings {
             envelope: None,
             occluders: vec![Occluder::obstacle(wall.clone())],
+            water: None,
         };
         let cx = context(&species);
         let mut stage = Climb::new(Straight, &cx, &surroundings);
@@ -356,6 +357,7 @@ mod tests {
         let surroundings = Surroundings {
             envelope: None,
             occluders: vec![Occluder::obstacle(post.clone())],
+            water: None,
         };
         let cx = context(&species);
         let mut stage = Climb::new(Straight, &cx, &surroundings);
@@ -385,6 +387,7 @@ mod tests {
         let surroundings = Surroundings {
             envelope: None,
             occluders: vec![Occluder::obstacle(wall)],
+            water: None,
         };
         let cx = context(&species);
         let stage = Climb::new(Straight, &cx, &surroundings);

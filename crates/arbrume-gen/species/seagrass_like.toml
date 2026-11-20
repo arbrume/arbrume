@@ -1,0 +1,96 @@
+# Seagrass-like plant: an eelgrass meadow. A rhizome creeps just under the sand and
+# branches; each of its nodes bears a ramet, a short shoot with a sheath of long strap
+# leaves that arch over in the water. Ramets towards the front of the clone are young.
+#
+# Typical size at age 10 in 1.5 m of water: a patch of about 60 ramets, 2 to 3 m
+# across, leaves up to 0.7 m. Every value is a starting point chosen by eye, not a
+# measurement; the clonal architecture follows the descriptions cited in
+# docs/underwater.md.
+
+schema_version = 0
+name = "Seagrass-like plant"
+
+[architecture]
+branching = "monopodial"
+growth_rhythm = "continuous"
+branching_pattern = "diffuse"
+branch_timing = "proleptic"
+max_order = 0
+phyllotaxis = { leaves_per_node = 1, divergence_deg = 180.0 }
+
+[growth]
+stems = 1
+axis_length = 0.06
+shoot_length = 0.03
+internode_length = 0.015
+branch_probability = 0.0
+direction_variation = 6.0
+gravitropic_setpoint = 0.0
+tropism_weight = 0.1
+
+[geometry]
+radius_model = "tapered"
+radius_ratio = 0.05
+taper = [[0.0, 1.0], [1.0, 0.7]]
+flare = 0.0
+collar_flare = 0.0
+radial_segments = [3, 5]
+
+[foliage]
+length = 0.6
+width_ratio = 0.012
+shape = "strap"
+segments = 12
+fold_deg = 0.0
+curvature_deg = 45.0
+twist_deg = 50.0
+petiole_length = 0.0
+inclination_deg = 10.0
+per_node = 2
+retention_cycles = 30
+size_along_axis = [[0.0, 0.6], [1.0, 1.0]]
+color = [0.12, 0.3, 0.06]
+roughness = 0.4
+hue_variation = 0.1
+brightness_variation = 0.3
+size_variation = 0.35
+orientation_variation_deg = 20.0
+texture_resolution = 128
+venation = { kind = "parallel", veins = 3 }
+
+[bark]
+color = [0.25, 0.22, 0.12]
+young_color = [0.2, 0.3, 0.1]
+young_radius = 0.003
+roughness = 0.5
+texture_resolution = 32
+pattern = { kind = "smooth", feature_size = 0.005, coverage = 0.0, relief = 0.05 }
+
+[aquatic]
+water_depth = 1.5
+buoyancy = 0.3
+stiffness = 2.0e6
+stem_buoyancy = 0.0
+leaf_lift = 0.2
+leaf_flex = 0.5
+
+[aquatic.rhizome]
+axes = 2
+spacing = 0.1
+extension = 2
+branch_probability = 0.15
+branch_angle_deg = 50.0
+wander_deg = 12.0
+max_order = 2
+radius = 0.0025
+burial = 0.6
+max_ramets = 60
+
+[variation]
+age = [6, 14]
+scale = [0.8, 1.2]
+weight = 0.0
+
+[variation.jitter]
+"foliage.length" = 0.2
+"foliage.color" = 0.12

@@ -59,6 +59,7 @@ if bpy is not None:
     import forest_steps
     import roots_steps
     import surroundings_steps
+    import water_steps
 
 MODULE = "bl_ext.user_default.arbrume"
 FAILURES: list[str] = []
@@ -757,6 +758,7 @@ def run_inside(argv: list[str]) -> int | None:
     brush_steps.run(ext, check, work)
     forest_steps.run(ext, check, out)
     roots_steps.run(ext, check)
+    water_steps.run(ext, check)
     ext = test_reregister(ext)
     start = time.perf_counter()
     timings = time_upload(ext)

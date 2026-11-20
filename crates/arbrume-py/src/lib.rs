@@ -34,6 +34,7 @@ mod roots;
 mod stand;
 mod surroundings;
 mod tree;
+mod water;
 
 use std::sync::Arc;
 
@@ -103,8 +104,10 @@ fn run_detached(py: Python<'_>, jobs: &[Job], threads: Option<i64>) -> PyResult<
 /// `scale` (default 1), `quality` (mesh quality, default 1), `textures` (procedural
 /// bark and leaf textures on the materials, default `False`), `junctions` (`"tier-a"`,
 /// the default, or `"tier-b"` for one closed bark surface), `surroundings` (a dict with
-/// `envelope` and `occluders`, or the path of a surroundings TOML file; read by species
-/// in the self-organizing mode), `guides` (strokes and freezes: a dict, JSON text or the
+/// `envelope`, `occluders` and `water`, or the path of a surroundings TOML file; read by
+/// species in the self-organizing mode, and the water by aquatic species), `water` (the
+/// height of the water surface, or a dict of `surface`, `current`, `attenuation` and
+/// `density`; replaces the water of `surroundings`, see `docs/underwater.md`), `guides` (strokes and freezes: a dict, JSON text or the
 /// path of a JSON file; read by species in the self-organizing mode), `roots` (a bool, a
 /// habit name or a dict: the root system, see `docs/roots.md`), `soil` (a dict or the path of
 /// a TOML file: ground and resources for the roots), `overrides` (a dict of

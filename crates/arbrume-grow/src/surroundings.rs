@@ -22,6 +22,7 @@
 //! simulation.
 
 use crate::distance_field::DistanceField;
+use crate::water::Water;
 use arbrume_core::graph::Aabb;
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
@@ -398,6 +399,9 @@ pub struct Surroundings {
     pub envelope: Option<Shape>,
     /// Volumes that block growth or cast shade.
     pub occluders: Vec<Occluder>,
+    /// Water the plant stands in, read by aquatic species only; `None` for none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub water: Option<Water>,
 }
 
 impl Surroundings {
@@ -407,10 +411,12 @@ impl Surroundings {
         Self {
             envelope: None,
             occluders: Vec::new(),
+            water: None,
         }
     }
 
-    /// `true` when there is neither envelope nor occluder.
+    /// `true` when there is neither envelope nor occluder. Water blocks nothing and is
+    /// not counted.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.envelope.is_none() && self.occluders.is_empty()
@@ -484,7 +490,7 @@ impl Surroundings {
                 return Err(format!("shade {} is not a positive number", occluder.shade));
             }
         }
-        Ok(())
+        self.water.as_ref().map_or(Ok(()), Water::validate)
     }
 }
 
@@ -572,6 +578,7 @@ mod tests {
                 radius: 10.0,
             }),
             occluders: vec![Occluder::obstacle(wall)],
+            water: None,
         };
         surroundings.validate().unwrap();
         assert!(surroundings.blocked(Vec3::new(1.2, 1.0, 0.0)));
@@ -616,6 +623,7 @@ mod tests {
         let bad = Surroundings {
             envelope: Some(empty),
             occluders: Vec::new(),
+            water: None,
         };
         assert!(bad.validate().is_err());
     }

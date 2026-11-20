@@ -185,6 +185,7 @@ fn marker_surroundings(standing: &Standing, shared: &Surroundings) -> Option<Sur
             standing.position,
         )),
         occluders: shared.occluders.clone(),
+        water: None,
     })
 }
 

@@ -302,10 +302,15 @@ fn surroundings_shape_self_organizing_plants_only() {
     let surroundings = Surroundings {
         envelope: None,
         occluders: vec![Occluder::obstacle(wall.clone())],
+        water: None,
     };
     let open = GenParams::new(5, 12).with_quality(0.4);
     let walled = open.clone().with_surroundings(surroundings);
-    for (name, species) in competing_presets() {
+    // The submerged presets are a few decimeters wide at this age and miss the wall.
+    let on_land = competing_presets()
+        .into_iter()
+        .filter(|(_, s)| s.aquatic.is_none());
+    for (name, species) in on_land {
         let (free, held) = (
             generate(&species, &open).unwrap(),
             generate(&species, &walled).unwrap(),
@@ -330,6 +335,7 @@ fn surroundings_shape_self_organizing_plants_only() {
     let empty = Surroundings {
         envelope: Some(flat),
         occluders: Vec::new(),
+        water: None,
     };
     let result = generate(&parametric, &open.with_surroundings(empty));
     assert!(matches!(

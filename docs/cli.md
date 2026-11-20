@@ -71,6 +71,9 @@ configuration or species files.
 | `--guides FILE` | | JSON file of crown, limb and erase strokes and freezes that steer each plant ([Brush](brush.md)) |
 | `--roots HABIT` | `species` | root system of every plant: `tap`, `heart`, `plate` or `fibrous` replace the `[roots]` of the species, `species` keeps it, `none` removes it ([Roots](roots.md)); not applied to `--random` plants |
 | `--soil FILE` | | TOML file of the ground surface and resource patches the roots grow in ([Roots](roots.md)) |
+| `--water-depth M` | the species' | height of the water surface above the base of each aquatic plant ([Underwater plants](underwater.md)) |
+| `--current X,Z` | still | steady current along X and Z, m/s |
+| `--water-attenuation K` | 0.2 | attenuation of light in the water, per meter |
 | `--growth-frames K` | | write each plant as `K` frames of its growth instead of one file; excludes `--lods` above 1, `--wind`, `--billboard` and `--random` |
 | `--out DIR` | | output directory, created if missing |
 | `--jobs J` | all cores | worker threads; without it `RAYON_NUM_THREADS` applies |
@@ -158,6 +161,18 @@ arbrume gen --species broadleaf --roots plate --soil soil.toml --surroundings ro
 ```
 
 The soil is not written to the metadata of the file.
+
+**Water.** A species with an `[aquatic]` table grows under water
+([Underwater plants](underwater.md)). The water is part of the surroundings, a `[water]`
+table of a `--surroundings` file (`surface`, `current`, `attenuation`, `density`), and
+`--water-depth`, `--current` and `--water-attenuation` set or change it for every plant
+of the run, also in `arbrume sheet`. Without them an aquatic species grows in still water
+as deep as its `aquatic.water_depth`; land species ignore the water.
+
+```sh
+arbrume gen --species kelp_like --age 14 --water-depth 8 --current 0.2,0 --out kelp
+arbrume sheet --species water_lily_like --ages 5,8 --water-depth 1.2 --out lily.png
+```
 
 **Growth sequences.** With `--growth-frames K` a plant is grown once and written as it
 stood at `K` ages spread evenly over its growth, the last being the full-grown plant:

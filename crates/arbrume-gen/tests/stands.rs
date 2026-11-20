@@ -123,6 +123,7 @@ fn the_plants_of_a_stand_share_one_surroundings() {
             min: Vec3::new(2.0, 0.0, -3.0),
             max: Vec3::new(2.3, 3.0, 3.0),
         })],
+        water: None,
     };
     let params = GenParams::new(1, 6).with_quality(0.4);
     let walled = params.clone().with_surroundings(wall);

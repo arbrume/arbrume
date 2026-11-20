@@ -38,6 +38,10 @@
 //! shoots with [`climbing::Climb`], which holds them to the blocking occluders of the
 //! surroundings and the ground, and its grown graph is dressed by [`climbing::dress`].
 //!
+//! A species with an `[aquatic]` layer grows under water, its shoots rising to the
+//! surface of the [`Water`] of its surroundings, bent by its current and floated on its
+//! surface: see [`aquatic`]. With a rhizome it grows a meadow of clonal shoots.
+//!
 //! A species with a `[roots]` layer grows a root system below its collar, in the same
 //! graph and by the same cycle: see [`grow_rooted`] and [`roots`].
 //!
@@ -58,6 +62,7 @@
 //! each on its own.
 
 pub mod allocation;
+pub mod aquatic;
 mod bend;
 pub mod climbing;
 pub mod competition;
@@ -78,6 +83,7 @@ mod shoot;
 pub mod stage;
 pub mod stand;
 pub mod surroundings;
+pub mod water;
 
 pub use allocation::{ResourceFate, borchert_honda, priority_weight};
 pub use competition::{Competition, EngineOptions, default_envelope, shadow_params};
@@ -100,6 +106,7 @@ pub use stage::{
 };
 pub use stand::{Standing, grow_together, grow_together_with};
 pub use surroundings::{Occluder, Shape, Surroundings, VoxelMask};
+pub use water::Water;
 
 use arbrume_core::graph::PlantGraph;
 use arbrume_core::species::{GrowthMode, Species};
@@ -189,6 +196,9 @@ pub fn grow_in_with(
     surroundings: &Surroundings,
     options: EngineOptions,
 ) -> PlantGraph {
+    if species.aquatic.is_some() {
+        return aquatic::grow_underwater(species, params, surroundings, options);
+    }
     let cx = params.context(species);
     let mut graph = finish(grow_plant(&cx, surroundings, options), &cx);
     climbing::dress(&mut graph, &cx, surroundings, glam::Vec3::ZERO);
@@ -204,6 +214,17 @@ pub fn grow_timeline(
     params: &GrowParams,
     surroundings: &Surroundings,
 ) -> GrowthRecord {
+    if species.aquatic.is_some() {
+        let graph =
+            aquatic::grow_underwater(species, params, surroundings, EngineOptions::default());
+        let shown = graph.organs().len();
+        return GrowthRecord {
+            graph,
+            lasting: vec![u16::MAX; shown],
+            shown,
+            age: params.age,
+        };
+    }
     let cx = params.context(species);
     let plant = grow_plant(&cx, surroundings, EngineOptions::default());
     let mut lasting = Vec::new();

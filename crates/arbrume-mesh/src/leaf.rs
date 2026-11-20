@@ -31,7 +31,8 @@
 //! Triangles are counter-clockwise seen from the upper side; the leaf material is
 //! double-sided.
 
-use arbrume_core::species::Foliage;
+use crate::ripple::Ripple;
+use arbrume_core::species::{BladeShape, Foliage};
 use glam::{Vec2, Vec3};
 use std::f32::consts::PI;
 
@@ -148,6 +149,8 @@ struct Builder<'a> {
     flat_card: bool,
     /// Draw the petiole and rachis.
     stalked: bool,
+    /// Twist and undulation of the blades.
+    ripple: Ripple,
     template: LeafTemplate,
 }
 
@@ -216,19 +219,20 @@ impl Builder<'_> {
             let rise = up * (width * fold_sin);
             let reach = Vec3::Y * (width * fold_cos);
             let tilt = Vec3::Y * fold_sin;
-            self.vertex(
-                place,
-                point + reach + rise,
-                up * fold_cos - tilt,
-                Vec2::new(t, width),
+            let midrib = (point, up);
+            let (left, left_normal) =
+                self.ripple
+                    .apply(t, midrib, (point + reach + rise, up * fold_cos - tilt), 1.0);
+            self.vertex(place, left, left_normal, Vec2::new(t, width));
+            let (mid, mid_normal) = self.ripple.apply(t, midrib, (point, up), 0.0);
+            self.vertex(place, mid, mid_normal, Vec2::new(t, 0.0));
+            let (right, right_normal) = self.ripple.apply(
+                t,
+                midrib,
+                (point - reach + rise, up * fold_cos + tilt),
+                -1.0,
             );
-            self.vertex(place, point, up, Vec2::new(t, 0.0));
-            self.vertex(
-                place,
-                point - reach + rise,
-                up * fold_cos + tilt,
-                Vec2::new(t, -width),
-            );
+            self.vertex(place, right, right_normal, Vec2::new(t, -width));
         }
         let (point, up) = midrib(1.0, bend);
         let tip = self.vertex(place, point, up, Vec2::X);
@@ -303,21 +307,20 @@ impl Builder<'_> {
             let rise = up * (half * fold_sin);
             let reach = Vec3::Y * (half * fold_cos);
             let tilt = Vec3::Y * fold_sin;
-            let normal_left = up * fold_cos - tilt;
-            self.vertex(
-                &whole,
-                point + reach + rise,
-                normal_left,
-                Vec2::new(t, half),
+            let midrib = (point, up);
+            let (left, normal_left) =
+                self.ripple
+                    .apply(t, midrib, (point + reach + rise, up * fold_cos - tilt), 1.0);
+            self.vertex(&whole, left, normal_left, Vec2::new(t, half));
+            let (mid, mid_normal) = self.ripple.apply(t, midrib, (point, up), 0.0);
+            self.vertex(&whole, mid, mid_normal, Vec2::new(t, 0.0));
+            let (right, normal_right) = self.ripple.apply(
+                t,
+                midrib,
+                (point - reach + rise, up * fold_cos + tilt),
+                -1.0,
             );
-            self.vertex(&whole, point, up, Vec2::new(t, 0.0));
-            let normal_right = up * fold_cos + tilt;
-            self.vertex(
-                &whole,
-                point - reach + rise,
-                normal_right,
-                Vec2::new(t, -half),
-            );
+            self.vertex(&whole, right, normal_right, Vec2::new(t, -half));
         }
         let indices = &mut self.template.indices;
         for span in 0..spans {
@@ -339,12 +342,21 @@ impl LeafTemplate {
     /// of the smooth outline: a coarse leaf covers as much as a fine one. With
     /// `Foliage::segments` at 1 every blade is one triangle.
     pub(crate) fn new(foliage: &Foliage, tolerance: f32) -> Self {
+        if foliage.shape == BladeShape::Pad {
+            return crate::pad::template(foliage, tolerance);
+        }
         let layout = Layout::new(foliage);
         let width = foliage.length * foliage.width_ratio * layout.blade;
+        let ripple = Ripple::new(foliage);
+        let bend = foliage.curvature_deg.to_radians();
+        let rippled = ripple.segments(foliage.length * layout.blade, width, bend, tolerance);
         let ideal = (PI * (width / (16.0 * tolerance)).sqrt()).ceil() as u32;
         let most = foliage.segments.max(1);
-        let segments = ideal.clamp(most.min(2), most);
-        let rise = 0.5 * width * foliage.fold_deg.to_radians().sin();
+        let segments = ideal.max(rippled).clamp(most.min(2), most);
+        let mut rise = 0.5 * width * foliage.fold_deg.to_radians().sin();
+        if !ripple.is_flat() {
+            rise = rise.max(width);
+        }
         let sag = foliage.length * layout.blade * foliage.curvature_deg.to_radians().abs() / 8.0;
         let stalk_width = 2.0 * STALK_HALF_WIDTH * foliage.length;
         let mut builder = Builder {
@@ -355,6 +367,7 @@ impl LeafTemplate {
             flat: segments == 2 && rise.max(sag) < tolerance,
             flat_card: segments <= 2 && rise < tolerance || rise.max(sag) < tolerance,
             stalked: foliage.leaflet_pairs > 0 || stalk_width >= tolerance,
+            ripple,
             template: Self::default(),
         };
         if foliage.uses_cards() {

@@ -166,6 +166,7 @@ fn roots_go_around_a_rock() {
     let surroundings = Surroundings {
         envelope: None,
         occluders: vec![Occluder::obstacle(rock.clone())],
+        water: None,
     };
     for mode in MODES {
         let species = rooted(RootHabit::Tap, mode);

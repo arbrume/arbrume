@@ -32,6 +32,7 @@ fn around(shape: Shape) -> Surroundings {
     Surroundings {
         envelope: None,
         occluders: vec![Occluder::obstacle(shape)],
+        water: None,
     }
 }
 
@@ -168,6 +169,7 @@ fn creeper_covers_rocks_without_entering_them() {
     let surroundings = Surroundings {
         envelope: None,
         occluders: rocks.iter().cloned().map(Occluder::obstacle).collect(),
+        water: None,
     };
     let graph = grown("creeper_like", 10, &surroundings);
     let mut on_rock = 0;

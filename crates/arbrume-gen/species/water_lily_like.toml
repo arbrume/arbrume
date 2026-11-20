@@ -1,0 +1,97 @@
+# Water-lily-like plant: a thick rhizome on the mud bears crowns of long, flexible
+# petioles that rise through the water, each ending in a round notched pad lying flat
+# on the surface.
+#
+# Typical size at age 6 in 0.9 m of water: three crowns, pads 25 to 30 cm across,
+# the group about 2 m across on the surface. Every value is a starting point chosen by
+# eye, not a measurement; the habit follows the descriptions cited in
+# docs/underwater.md.
+
+schema_version = 0
+name = "Water-lily-like plant"
+
+[architecture]
+branching = "monopodial"
+growth_rhythm = "continuous"
+branching_pattern = "diffuse"
+branch_timing = "proleptic"
+max_order = 0
+
+[growth]
+stems = 7
+stem_spread = 0.04
+stem_angle = 32.0
+axis_length = 1.5
+shoot_length = 0.5
+length_variation = 0.25
+internode_length = 0.1
+branch_probability = 0.0
+branching_angle_variation = 18.0
+direction_variation = 3.0
+gnarl = 18.0
+gravitropic_setpoint = 38.0
+tropism_weight = 0.15
+
+[geometry]
+radius_model = "tapered"
+radius_ratio = 0.003
+taper = [[0.0, 1.0], [1.0, 0.85]]
+flare = 0.0
+collar_flare = 0.0
+radial_segments = [4, 6]
+
+[foliage]
+length = 0.28
+width_ratio = 1.0
+shape = "pad"
+segments = 4
+fold_deg = 0.0
+curvature_deg = 0.0
+petiole_length = 0.0
+inclination_deg = 0.0
+retention_cycles = 60
+color = [0.06, 0.2, 0.05]
+roughness = 0.25
+hue_variation = 0.12
+brightness_variation = 0.25
+size_variation = 0.2
+orientation_variation_deg = 4.0
+texture_resolution = 256
+venation = { kind = "open", veins = 14 }
+
+[bark]
+color = [0.3, 0.22, 0.12]
+young_color = [0.35, 0.28, 0.14]
+young_radius = 0.01
+roughness = 0.5
+texture_resolution = 64
+pattern = { kind = "smooth", feature_size = 0.01, coverage = 0.0, relief = 0.05 }
+
+[aquatic]
+water_depth = 0.9
+buoyancy = 0.02
+surface = "stop"
+stiffness = 1.5e6
+stem_buoyancy = 0.0
+pads = true
+
+[aquatic.rhizome]
+axes = 1
+spacing = 0.16
+extension = 1
+branch_probability = 0.0
+max_order = 0
+radius = 0.025
+burial = 0.5
+max_ramets = 3
+
+[variation]
+age = [4, 9]
+scale = [0.85, 1.2]
+weight = 0.0
+
+[variation.jitter]
+"growth.axis_length" = 0.15
+"growth.stem_angle" = 0.2
+"foliage.length" = 0.15
+"foliage.color" = 0.1

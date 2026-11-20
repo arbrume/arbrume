@@ -391,7 +391,10 @@ impl<'a> Grid<'a> {
                 } else {
                     1.0
                 };
-                if keep >= suits * self.exclusions.factor(self.terrain, x, z) {
+                let free = self
+                    .exclusions
+                    .factor_for(self.terrain, x, z, rule.underwater);
+                if keep >= suits * free {
                     continue;
                 }
                 out.push(Candidate {

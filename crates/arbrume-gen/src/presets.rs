@@ -13,6 +13,10 @@ const PRESETS: &[(&str, &str)] = &[
     ("bamboo_like", include_str!("../species/bamboo_like.toml")),
     ("birch_like", include_str!("../species/birch_like.toml")),
     ("broadleaf", include_str!("../species/broadleaf.toml")),
+    (
+        "bull_kelp_like",
+        include_str!("../species/bull_kelp_like.toml"),
+    ),
     ("conifer", include_str!("../species/conifer.toml")),
     ("creeper_like", include_str!("../species/creeper_like.toml")),
     ("cypress_like", include_str!("../species/cypress_like.toml")),
@@ -31,6 +35,7 @@ const PRESETS: &[(&str, &str)] = &[
     ),
     ("hedge_shrub", include_str!("../species/hedge_shrub.toml")),
     ("ivy_like", include_str!("../species/ivy_like.toml")),
+    ("kelp_like", include_str!("../species/kelp_like.toml")),
     ("larch_like", include_str!("../species/larch_like.toml")),
     ("maple_like", include_str!("../species/maple_like.toml")),
     (
@@ -53,8 +58,16 @@ const PRESETS: &[(&str, &str)] = &[
     ),
     ("pine_like", include_str!("../species/pine_like.toml")),
     ("poplar_like", include_str!("../species/poplar_like.toml")),
+    (
+        "ribbon_grass_like",
+        include_str!("../species/ribbon_grass_like.toml"),
+    ),
     ("rosette_herb", include_str!("../species/rosette_herb.toml")),
     ("sapling", include_str!("../species/sapling.toml")),
+    (
+        "seagrass_like",
+        include_str!("../species/seagrass_like.toml"),
+    ),
     ("shrub", include_str!("../species/shrub.toml")),
     (
         "spreading_decurrent",
@@ -78,6 +91,14 @@ const PRESETS: &[(&str, &str)] = &[
         include_str!("../species/upright_shrub.toml"),
     ),
     ("vine_like", include_str!("../species/vine_like.toml")),
+    (
+        "water_lily_like",
+        include_str!("../species/water_lily_like.toml"),
+    ),
+    (
+        "waterweed_like",
+        include_str!("../species/waterweed_like.toml"),
+    ),
     ("willow_like", include_str!("../species/willow_like.toml")),
 ];
 

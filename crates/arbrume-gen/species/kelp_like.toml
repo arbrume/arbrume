@@ -1,0 +1,103 @@
+# Kelp-like plant: a giant kelp. A conical holdfast of branched haptera grips the
+# rock; a dozen fronds rise from it, each a long buoyant stipe bearing ruffled blades
+# with a gas float at the base of each blade. Fronds longer than the water is deep
+# spread along the surface as a canopy.
+#
+# Typical size at age 14 in 10 m of water: fronds 10 to 18 m long, the canopy 6 to 8 m
+# across. Every value is a starting point chosen by eye, not a measurement; the
+# morphology (holdfast, stipes, a float per blade, surface canopy) follows the
+# descriptions cited in docs/underwater.md.
+
+schema_version = 0
+name = "Kelp-like alga"
+
+[architecture]
+branching = "monopodial"
+growth_rhythm = "continuous"
+branching_pattern = "diffuse"
+branch_timing = "proleptic"
+max_order = 0
+phyllotaxis = { leaves_per_node = 1, divergence_deg = 180.0 }
+
+[growth]
+stems = 12
+stem_spread = 0.05
+stem_angle = 6.0
+axis_length = 14.0
+shoot_length = 1.4
+length_variation = 0.4
+internode_length = [[0.0, 0.12], [0.02, 0.45], [1.0, 0.45]]
+branch_probability = 0.0
+branching_angle_variation = 12.0
+direction_variation = 6.0
+gnarl = 14.0
+gravitropic_setpoint = 0.0
+tropism_weight = 0.04
+
+[geometry]
+radius_model = "tapered"
+radius_ratio = 0.0005
+taper = [[0.0, 1.0], [1.0, 0.55]]
+flare = 0.0
+collar_flare = 0.0
+radial_segments = [3, 8]
+
+[foliage]
+length = 0.55
+width_ratio = 0.16
+shape = "lanceolate"
+segments = 10
+fold_deg = 4.0
+curvature_deg = 20.0
+undulation = 0.5
+undulation_waves = 7.0
+twist_deg = 25.0
+petiole_length = 0.1
+inclination_deg = 40.0
+retention_cycles = 60
+color = [0.3, 0.2, 0.045]
+roughness = 0.35
+hue_variation = 0.06
+brightness_variation = 0.25
+size_variation = 0.25
+orientation_variation_deg = 10.0
+texture_resolution = 256
+venation = { kind = "none" }
+
+[bark]
+color = [0.26, 0.17, 0.04]
+young_color = [0.33, 0.23, 0.05]
+young_radius = 0.004
+roughness = 0.35
+texture_resolution = 64
+pattern = { kind = "smooth", feature_size = 0.01, coverage = 0.0, relief = 0.05 }
+
+[aquatic]
+water_depth = 10.0
+buoyancy = 0.3
+surface = "spread"
+stiffness = 4.0e6
+stem_buoyancy = 0.02
+leaf_lift = 0.4
+leaf_flex = 0.6
+blade_float = 0.08
+float_color = [0.3, 0.22, 0.05]
+
+[aquatic.holdfast]
+haptera = 14
+reach = 0.32
+radius = 0.012
+forks = 2
+variation = 0.35
+
+[variation]
+age = [8, 20]
+scale = [0.8, 1.2]
+weight = 0.0
+
+[variation.jitter]
+"growth.axis_length" = 0.2
+"growth.stems" = 0.3
+"growth.stem_angle" = 0.3
+"foliage.length" = 0.15
+"foliage.color" = 0.1

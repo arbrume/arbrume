@@ -15,6 +15,9 @@ use serde::{Deserialize, Serialize};
 /// Largest value of [`Foliage::segments`].
 pub const MAX_BLADE_SEGMENTS: u32 = 16;
 
+/// Half-angle in radians of the notch of a [`BladeShape::Pad`], at its centre.
+pub const PAD_NOTCH_HALF_ANGLE: f32 = 0.12;
+
 /// Largest value of [`Foliage::leaflet_pairs`].
 pub const MAX_LEAFLET_PAIRS: u32 = 32;
 
@@ -37,6 +40,13 @@ pub enum BladeShape {
     Lanceolate,
     /// Nearly parallel sides with a short point at both ends.
     Needle,
+    /// A long ribbon of nearly constant width with a rounded tip: seagrass, eelgrass,
+    /// tape grass, kelp blades.
+    Strap,
+    /// A round floating leaf with a narrow notch from its edge to its centre, where the
+    /// petiole is attached (a water lily pad). The blade is centred on the organ site
+    /// and is never meshed as a card.
+    Pad,
 }
 
 impl BladeShape {
@@ -44,11 +54,12 @@ impl BladeShape {
     #[must_use]
     pub const fn exponents(self) -> (f32, f32) {
         match self {
-            Self::Elliptic => (0.5, 0.5),
+            Self::Elliptic | Self::Pad => (0.5, 0.5),
             Self::Ovate => (0.45, 0.9),
             Self::Obovate => (0.9, 0.45),
             Self::Lanceolate => (0.5, 1.5),
             Self::Needle => (0.15, 0.3),
+            Self::Strap => (0.1, 0.2),
         }
     }
 }
@@ -237,6 +248,14 @@ pub struct Foliage {
     /// Total angle in degrees by which the blade bends from base to tip, positive
     /// towards its lower side (drooping), negative towards its upper side.
     pub curvature_deg: f32,
+    /// Total twist of the blade about its midrib from base to tip, in degrees: the
+    /// spiral of a ribbon leaf. 0 for a flat blade.
+    pub twist_deg: f32,
+    /// Amplitude of the waves of the margin out of the plane of the blade, as a
+    /// fraction of its half-width: the ruffled edge of a kelp blade. 0 for none.
+    pub undulation: f32,
+    /// Number of waves of the margin along the blade.
+    pub undulation_waves: f32,
     /// Length of the petiole (leaf stalk) divided by the leaf length, 0 for a sessile
     /// leaf.
     pub petiole_length: f32,
@@ -294,6 +313,9 @@ impl Default for Foliage {
             segments: 4,
             fold_deg: 15.0,
             curvature_deg: 25.0,
+            twist_deg: 0.0,
+            undulation: 0.0,
+            undulation_waves: 4.0,
             petiole_length: 0.15,
             leaflet_pairs: 0,
             leaflet_angle_deg: 55.0,
@@ -353,6 +375,9 @@ impl Foliage {
         check_range("foliage.segments", segments, 1.0, MAX_BLADE_SEGMENTS as f32)?;
         check_range("foliage.fold_deg", self.fold_deg, 0.0, 90.0)?;
         check_range("foliage.curvature_deg", self.curvature_deg, -180.0, 180.0)?;
+        check_range("foliage.twist_deg", self.twist_deg, -720.0, 720.0)?;
+        check_range("foliage.undulation", self.undulation, 0.0, 2.0)?;
+        check_range("foliage.undulation_waves", self.undulation_waves, 0.0, 32.0)?;
         check_range("foliage.petiole_length", self.petiole_length, 0.0, f32::MAX)?;
         let pairs = self.leaflet_pairs as f32;
         check_range(

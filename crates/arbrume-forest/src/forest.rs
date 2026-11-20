@@ -70,8 +70,15 @@ impl Forest {
                 config.rule(s, &species[s].1, radii)
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let (instances, placement) =
+        let (mut instances, placement) =
             place(&terrain, &exclusions, &rules, &config.place_settings())?;
+        let fits: Vec<bool> = config
+            .species
+            .iter()
+            .map(|entry| entry.fit_depth.unwrap_or(true))
+            .collect();
+        let level = config.placement.water_level;
+        crate::underwater::fit_to_water(&mut instances, &specs, &rules, &fits, level);
         let coupled = match (&config.coupled, grow) {
             (Some(c), true) => {
                 let settings = CoupledSettings {

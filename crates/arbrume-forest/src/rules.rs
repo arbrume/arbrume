@@ -32,6 +32,9 @@ pub struct SpeciesRule {
     pub trunk_radius: f32,
     /// Extra depth the base is sunk by, in meters.
     pub sink: f32,
+    /// The species grows under water: it stands only where the ground is below the
+    /// water level of the exclusions, instead of only above it.
+    pub underwater: bool,
 }
 
 impl Default for SpeciesRule {
@@ -52,6 +55,7 @@ impl Default for SpeciesRule {
             tint: 0.0,
             trunk_radius: 0.0,
             sink: 0.0,
+            underwater: false,
         }
     }
 }

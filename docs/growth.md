@@ -235,7 +235,7 @@ use arbrume_grow::{GrowParams, Occluder, Shape, Surroundings, grow_in};
 use glam::Vec3;
 
 let wall = Shape::Box { min: Vec3::new(1.5, 0.0, -8.0), max: Vec3::new(2.0, 9.0, 8.0) };
-let surroundings = Surroundings { envelope: None, occluders: vec![Occluder::obstacle(wall)] };
+let surroundings = Surroundings { occluders: vec![Occluder::obstacle(wall)], ..Surroundings::none() };
 let graph = grow_in(&species, &GrowParams { seed: 1, age: 20, scale: 1.0 }, &surroundings);
 ```
 
@@ -452,6 +452,7 @@ here with a resource), so their values do not carry over.
 pub struct Surroundings {
     pub envelope: Option<Shape>,   // volume the crown may fill
     pub occluders: Vec<Occluder>,  // volumes that block growth, cast shade, or both
+    pub water: Option<Water>,      // read by aquatic species only (docs/underwater.md)
 }
 pub struct Occluder { pub shape: Shape, pub blocks: bool, pub shade: f32 }
 ```

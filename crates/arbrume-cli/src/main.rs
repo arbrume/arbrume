@@ -40,6 +40,7 @@ mod source;
 mod species_cmd;
 mod stand;
 mod textures;
+mod water;
 
 use std::path::PathBuf;
 use std::process::ExitCode;

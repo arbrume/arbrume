@@ -16,9 +16,10 @@ import time
 from dataclasses import dataclass
 
 import bpy
+from mathutils import Vector
 
 from . import surroundings
-from .logic import brush, meshdata
+from .logic import brush, meshdata, water
 from .logic.roots import roots_argument
 from .logic.species import Source, generate
 from .logic.values import load_overrides
@@ -88,7 +89,30 @@ def generation_args(settings: bpy.types.PropertyGroup) -> dict:
         "junctions": str(getattr(settings, "junctions", "tier-a")),
         "guides": brush.argument(str(getattr(settings, "guides", ""))),
         "roots": roots_argument(str(getattr(settings, "roots", "species"))),
+        "water": water_of(settings),
     }
+
+
+def object_top(obj: bpy.types.Object | None) -> float | None:
+    """World height of the top of the bounding box of ``obj``, ``None`` without one."""
+    if obj is None:
+        return None
+    corners = [obj.matrix_world @ Vector(corner) for corner in obj.bound_box]
+    return max(corner.z for corner in corners)
+
+
+def water_of(settings: bpy.types.PropertyGroup) -> dict | None:
+    """The ``water`` keyword of a plant: its surface and current (see
+    :mod:`.logic.water`)."""
+    mode = str(getattr(settings, "water_mode", "SPECIES"))
+    surface_object = getattr(settings, "water_object", None)
+    return water.water_argument(
+        mode,
+        float(getattr(settings, "water_height", 2.0)),
+        object_top(surface_object) if mode == "OBJECT" else None,
+        float(settings.id_data.matrix_world.translation.z),
+        tuple(getattr(settings, "water_current", (0.0, 0.0))),
+    )
 
 
 def surroundings_of(obj: bpy.types.Object) -> tuple[dict | None, surroundings.Report]:

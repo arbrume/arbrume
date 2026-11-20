@@ -14,6 +14,7 @@
 //! | `[variation]` | [`Variation`] | how individuals differ: age and scale ranges, jitter |
 //! | `[climbing]` | [`Climbing`] | optional: how a climbing plant finds and holds a support |
 //! | `[roots]` | [`Roots`] | optional: the root system below the collar |
+//! | `[aquatic]` | [`Aquatic`] | optional: growth under water, up to and along its surface |
 //!
 //! `bark.texture`, `bark.normal_texture`, `foliage.texture` and `foliage.normal_texture`
 //! name image files that replace the synthesized textures; relative paths are resolved
@@ -44,6 +45,7 @@
 //! assert!(species.growth.branching_angle.eval(0, 1.0) < 36.0);
 //! ```
 
+mod aquatic;
 mod architecture;
 mod bark;
 mod climbing;
@@ -54,6 +56,9 @@ mod leaf_texture;
 mod roots;
 mod variation;
 
+pub use aquatic::{
+    Aquatic, Holdfast, MAX_HAPTERA, MAX_RAMETS, MAX_RHIZOME_AXES, Rhizome, SurfaceHabit, TipFloat,
+};
 pub use architecture::{
     Architecture, AxisCategory, AxisOrientation, BranchTiming, Branching, BranchingPattern,
     GrowthRhythm, Phyllotaxis,
@@ -62,7 +67,7 @@ pub use bark::{Bark, BarkKind, BarkPattern, MAX_TEXTURE_RESOLUTION, MIN_TEXTURE_
 pub use climbing::{Attachment, Climbing};
 pub use foliage::{
     BladeShape, Foliage, LeafGeometry, MAX_BLADE_SEGMENTS, MAX_LEAFLET_PAIRS, MAX_TWIG_FINS,
-    MAX_TWIG_LEAVES, MAX_TWIG_VARIANTS, Twig,
+    MAX_TWIG_LEAVES, MAX_TWIG_VARIANTS, PAD_NOTCH_HALF_ANGLE, Twig,
 };
 pub use geometry::{Geometry, RadiusModel};
 pub use growth::{Allocation, Growth, GrowthMode, SelfOrganization, Sensing};
@@ -138,6 +143,9 @@ pub struct Species {
         skip_serializing_if = "Option::is_none"
     )]
     pub roots: Option<Roots>,
+    /// Growth under water; `None` for a land plant.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aquatic: Option<Aquatic>,
     /// Directory against which relative texture paths are resolved: the directory of
     /// the species pack or file the species was loaded from. Not read from nor written
     /// to the file; `None` resolves them against the current directory.
@@ -158,6 +166,7 @@ impl Default for Species {
             variation: Variation::default(),
             climbing: None,
             roots: None,
+            aquatic: None,
             asset_dir: None,
         }
     }
@@ -243,6 +252,15 @@ impl Species {
         }
         if let Some(roots) = &self.roots {
             roots.validate()?;
+        }
+        if let Some(aquatic) = &self.aquatic {
+            if self.climbing.is_some() {
+                return Err(SpeciesError::Invalid {
+                    field: "aquatic",
+                    reason: "a species cannot both climb and grow under water".to_owned(),
+                });
+            }
+            aquatic.validate()?;
         }
         self.variation.validate()
     }

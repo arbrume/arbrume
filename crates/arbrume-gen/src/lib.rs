@@ -60,7 +60,8 @@ mod timeline;
 
 pub use arbrume_grow::{Ground, HeightField, Resource, Soil};
 pub use arbrume_grow::{
-    GuideReport, Guides, Occluder, Shape, Stroke, StrokeKind, StrokeReport, Surroundings, VoxelMask,
+    GuideReport, Guides, Occluder, Shape, Stroke, StrokeKind, StrokeReport, Surroundings,
+    VoxelMask, Water,
 };
 pub use arbrume_lod::{BillboardMethod, BillboardOptions};
 pub use arbrume_mesh::{Junctions, LeafInstance, LeafInstances, LodOptions};

@@ -82,7 +82,8 @@ def forest_config(
     ``heights`` are the ground heights of the samples, row-major, ``nan`` where the
     terrain has no ground; those are filled from their neighbours and excluded. ``options``
     gives ``seed``, ``density`` (a factor on every density), ``variants``, ``lods``,
-    ``billboard`` and ``textures``.
+    ``billboard``, ``textures`` and ``water_level`` (a height, or ``None`` for dry land:
+    aquatic species stand below it, the others above).
     """
     heights = np.asarray(heights, dtype=np.float64).reshape(grid.rows, grid.columns)
     missing = ~np.isfinite(heights)
@@ -117,6 +118,8 @@ def forest_config(
             "textures": bool(options.get("textures", True)),
         },
     }
+    if options.get("water_level") is not None:
+        config["placement"] = {"water_level": float(options["water_level"])}
     if missing.any():
         values = missing.astype(np.float32).reshape(-1).tolist()
         mask = {"columns": grid.columns, "rows": grid.rows, "values": values}

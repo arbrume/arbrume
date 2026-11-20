@@ -88,6 +88,12 @@ active plant:
   be a support too, for ivy on a tree: select it as a support slot.
 - **Brush.** The *Brush* sub-panel and the *Arbrume Brush* tool of the toolbar paint
   strokes that steer a self-organizing plant (see [Brush](#brush) below).
+- **Water.** The *Water* sub-panel gives an aquatic species ([Underwater plants](underwater.md))
+  its water: *Water Surface* is *Species* (still water as deep as the species says),
+  *Height* (the surface at a height above the plant) or *Object* (the surface at the top
+  of an object, such as a plane: its world bounding box less the height of the plant);
+  *Current* is a steady current along X and Y in m/s. A land species shows that it
+  ignores the water. Moving the surface object does not regenerate the plant by itself.
 - **Roots.** The *Roots* sub-panel chooses the root system of the plant ([Roots](roots.md)):
   *Species* grows the `[roots]` of the species when it has one (the presets
   `*_rooted`), *Grow Roots* adds the heart habit to a species without roots, *No Roots*
@@ -141,6 +147,7 @@ terrain mesh, the active object by default. Its redo panel takes:
 | *Terrain Resolution* | 2 m | spacing of the height samples |
 | *Viewport Level* | last | level of detail drawn in the viewport; renders draw level 0 |
 | *Config* | none | a `forest.toml` whose terrain is replaced by the mesh: exclusions, slopes, altitudes, modes |
+| *Water* | none | *Height* (*Water Height*) or *Object* (*Water Object*, its top): the water level; aquatic species of the mix stand under it, the others above ([Forests](forest.md#aquatic-species)) |
 
 The terrain is sampled by casting rays straight down onto its evaluated mesh on a grid of
 the chosen resolution; samples off the mesh take the heights of their neighbours and are
@@ -178,6 +185,7 @@ Blender:
 | `packs` | the species of installed packs as groups of the species menu |
 | `voxels` | meshes voxelized in the frame of a plant (parity fill of the inside, surface shell, trunk passage), the voxel size from the species, the cache key of an object |
 | `frames` | the visibility keys of growth frames |
+| `water` | the water of a plant (surface from a height or an object, current turned from Z up to Y up) and the water level of a forest |
 
 Since the parameter panels are built from the species data, a parameter added to the
 species schema appears in Blender without a change to the extension.
@@ -326,7 +334,10 @@ materials, every tree on the terrain, one instance per tree, the same trees for 
 seed and others for another, a negative density refused, an EEVEE still), a rooted
 preset with its roots turned off and on, a root parameter, and a stone under the ground
 that no root node enters (`blender/tests/roots_steps.py`, whose `render_still` makes a
-Cycles still of a rooted spruce next to a stone, the ground left out), disabling and
+Cycles still of a rooted spruce next to a stone, the ground left out), a bull kelp under
+the surface of its species, of a height and of a plane, bent along X by a current, a shrub
+that ignores the water, and a forest over a sloping seabed with kelp only under a water
+plane and herbs only above it (`blender/tests/water_steps.py`), disabling and
 enabling the extension, upload timings and three EEVEE stills, the last a plant in a sphere envelope
 next to a wall. The third opens a window (with `--enable-event-simulate`), draws the
 panels, saves screenshots of the sidebar, then drags a point of a curve widget with

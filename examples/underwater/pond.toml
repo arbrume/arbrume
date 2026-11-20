@@ -1,0 +1,58 @@
+# A pond 1.6 m deep: water lilies on the open water, tape grass in the shallows,
+# waterweed in the deepest part, and low herbs on the bank.
+# arbrume forest --config examples/underwater/pond.toml --out out/pond
+name = "pond"
+seed = 5
+
+[terrain]
+size = [24.0, 20.0]
+heightmap = "pond.png"
+heights = [-1.6, 0.4]
+
+[placement]
+water_level = 0.0
+
+[[species]]
+species = "water_lily_like"
+density = 1200.0
+age = 7
+variants = 3
+overlap = 0.5
+depth = [0.5, 1.2]
+depth_falloff = 0.2
+
+[[species]]
+species = "ribbon_grass_like"
+density = 2200.0
+age = 8
+variants = 3
+layer = 1
+overlap = 0.75
+depth = [0.2, 0.8]
+depth_falloff = 0.15
+
+[[species]]
+species = "waterweed_like"
+density = 2500.0
+age = 12
+variants = 3
+layer = 2
+overlap = 0.6
+depth = [0.9, 1.6]
+depth_falloff = 0.2
+
+[[species]]
+species = "rosette_herb"
+density = 2500.0
+age = 2
+variants = 3
+layer = 3
+altitude = [0.05, 0.4]
+altitude_falloff = 0.05
+
+[library]
+lods = 2
+billboard = "none"
+textures = true
+wind = true
+quality = 1.0

@@ -75,7 +75,7 @@ pub fn texture_cache() -> Arc<TextureCache> {
 
 impl Options {
     /// Reads `kwargs`: `scale`, `quality`, `textures`, `junctions`, `surroundings`,
-    /// `guides`, `overrides` and dotted overrides.
+    /// `water`, `guides`, `overrides` and dotted overrides.
     pub fn parse(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
         let mut options = Self {
             scale: 1.0,
@@ -96,8 +96,10 @@ impl Options {
         {
             extra.update(explicit.cast::<PyDict>()?.as_mapping())?;
         }
+        let mut water = None;
         for (key, value) in kwargs.iter() {
             match key.extract::<String>()?.as_str() {
+                "water" if !value.is_none() => water = Some(crate::water::parse(&value)?),
                 "scale" => options.scale = number(&value, "scale")?,
                 "quality" => options.quality = number(&value, "quality")?,
                 "overrides" => {}
@@ -105,7 +107,7 @@ impl Options {
                 "surroundings" => options.surroundings = crate::surroundings::parse(&value)?,
                 "guides" => options.guides = crate::guides::parse(&value)?,
                 "soil" => options.soil = crate::roots::parse_soil(&value)?,
-                "roots" if value.is_none() => {}
+                "roots" | "water" if value.is_none() => {}
                 "textures" => {
                     options.textures = value.extract::<bool>().map_err(|_| {
                         PyTypeError::new_err("`textures` must be a bool".to_owned())
@@ -119,6 +121,10 @@ impl Options {
             return Err(PyValueError::new_err(reason));
         }
         options.overrides = dict_to_toml(&extra)?;
+        if let Some(water) = water {
+            let given = options.surroundings.as_deref();
+            options.surroundings = Some(crate::water::merge(given, water));
+        }
         Ok(options)
     }
 }

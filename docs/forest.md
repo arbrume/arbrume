@@ -243,7 +243,7 @@ height = 0.0             # flat ground, when nothing else is given
 
 [placement]
 mode = "competition"     # "poisson" (default) or "competition"
-# water_level = 12.0     # no tree where the ground is lower
+# water_level = 12.0     # no land species where the ground is lower, aquatic species only there
 # band_rows = 0          # cell rows per band, 0 automatic; the result does not depend on it
 
 [[species]]
@@ -263,6 +263,9 @@ altitude_falloff = 10.0
 lean = 3.0               # largest lean, degrees
 tint = 0.08              # half-width of the colour factor
 sink = 0.0               # extra depth of the base, meters
+# depth = [6.0, 15.0]   # aquatic species: water depths taken fully, below placement.water_level
+# depth_falloff = 1.0
+# fit_depth = true       # scale each aquatic tree to the water over its base
 
 [[exclude]]              # exactly one of circle, path, polygon, mask, mask_grid
 path = { points = [[-300.0, -60.0], [0.0, 25.0], [300.0, 40.0]], width = 10.0 }
@@ -297,6 +300,32 @@ quality = 0.5
 The defaults of the species rule (`overlap` 0.5, 4 variants, the slope and altitude
 windows wide open) and of the library are starting values chosen for the look of the
 example renders, not measurements.
+
+## Aquatic species
+
+A species with an `[aquatic]` table ([Underwater plants](underwater.md)) stands under
+`placement.water_level`, where land species do not: its rule is `underwater`, so the
+exclusions free the ground below the water level for it and close the ground above it.
+A config with an aquatic species needs a water level. Two keys of `[[species]]` are read
+for them only:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `depth` | any | `[shallow, deep]`, water depths taken fully, in meters below the water level: the altitude window `[level - deep, level - shallow]` |
+| `depth_falloff` | 0 | fade outside `depth`, in meters |
+| `fit_depth` | true | scale each tree to the water over its base (below) |
+
+The variants are grown in still water as deep as the `aquatic.water_depth` of the
+species, the depth its parameters were tuned for. With `fit_depth` every tree is then
+scaled by the depth of the water over its base divided by that depth (kept within
+`underwater::FIT_RANGE`, 0.25 to 4), so its canopy, floats and pads reach the surface
+wherever it stands; its scale range then only sets its spacing. `examples/underwater/`
+has a kelp forest on a shelving rocky seabed and a pond with lilies, tape grass,
+waterweed and herbs on the bank.
+
+```sh
+arbrume forest --config examples/underwater/kelp_forest.toml --out out/kelp_forest
+```
 
 ## Command line, Python, Blender
 
@@ -351,6 +380,10 @@ In Blender the valley (17 339 trees) is 47 objects: 44 variant meshes, the insta
 the ground and the river; building it from the result of `arbrume.forest` takes 0.6 s.
 
 ## Limits
+
+- The variants of aquatic species grow in still water: a current set for a forest has no
+  carriage yet, and a tree fitted to a much shallower or deeper place is a scaled copy,
+  not a plant grown there.
 
 - Hard-core densities are capped at `1 / (pi d^2)` per species; dense natural stands
   need a smaller spacing than the crowns suggest (or `overlap` near 1), and the

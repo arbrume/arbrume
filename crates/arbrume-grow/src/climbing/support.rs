@@ -202,6 +202,7 @@ mod tests {
         let surroundings = Surroundings {
             envelope: None,
             occluders: vec![Occluder::obstacle(wall())],
+            water: None,
         };
         let supports = Supports::new(&surroundings, Some(0.0));
         let point = Vec3::new(0.0, 1.0, 0.2);
@@ -228,6 +229,7 @@ mod tests {
         let surroundings = Surroundings {
             envelope: None,
             occluders: vec![Occluder::obstacle(Shape::Voxels(Arc::new(mask)))],
+            water: None,
         };
         let supports = Supports::new(&surroundings, None);
         let point = Vec3::new(0.01, 1.01, 0.2);

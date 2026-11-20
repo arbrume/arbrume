@@ -1,0 +1,41 @@
+# A kelp forest on a shelving rocky seabed, 5 m deep on one side and 17 m on the other:
+# giant kelp in the deeper water, bull kelp in the shallows. Every tree is scaled to the
+# depth over its base so that its canopy, floats and blades reach the surface.
+# arbrume forest --config examples/underwater/kelp_forest.toml --out out/kelp_forest
+name = "kelp_forest"
+seed = 11
+
+[terrain]
+size = [60.0, 60.0]
+heightmap = "seabed.png"
+heights = [-17.0, -5.0]
+
+[placement]
+water_level = 0.0
+
+[[species]]
+species = "kelp_like"
+density = 320.0
+age = 14
+variants = 4
+spacing = 2.6
+depth = [8.0, 17.0]
+depth_falloff = 2.0
+tint = 0.08
+
+[[species]]
+species = "bull_kelp_like"
+density = 300.0
+age = 12
+variants = 3
+overlap = 0.6
+depth = [5.0, 9.0]
+depth_falloff = 1.5
+tint = 0.06
+
+[library]
+lods = 2
+billboard = "none"
+textures = true
+wind = true
+quality = 0.8

@@ -1,0 +1,99 @@
+# Waterweed-like plant: a clump of slender submerged stems clothed in whorls of three
+# small translucent leaves. The stems rise and branch; competing for the light that
+# fades with depth, they grow most near the surface and spread under it in a mat.
+#
+# Typical size at age 14 in 1.4 m of water: stems 1.5 to 2.5 m, the mat about 1.5 m
+# across. Every value is a starting point chosen by eye, not a measurement; the leaf
+# whorls follow the descriptions cited in docs/underwater.md.
+
+schema_version = 0
+name = "Waterweed-like plant"
+
+[architecture]
+branching = "monopodial"
+growth_rhythm = "continuous"
+branching_pattern = "diffuse"
+branch_timing = "proleptic"
+max_order = 2
+phyllotaxis = { leaves_per_node = 3, divergence_deg = 60.0 }
+
+[growth]
+mode = "self_organizing"
+stems = 8
+stem_spread = 0.12
+stem_angle = 18.0
+axis_length = { by_order = [1.9, 0.9, 0.4] }
+shoot_length = { by_order = [0.25, 0.15, 0.08] }
+internode_length = { by_order = [0.02, 0.016, 0.012] }
+branch_probability = { by_order = [[[0.0, 0.0], [0.15, 0.12], [1.0, 0.2]], 0.1] }
+branching_angle = { by_order = [40.0, 45.0] }
+branching_angle_variation = 10.0
+direction_variation = { by_order = [3.0, 6.0] }
+gnarl = { by_order = [5.0, 10.0] }
+gravitropic_setpoint = { by_order = [0.0, 35.0] }
+tropism_weight = 0.06
+environment_weight = 0.2
+
+[growth.self_organization]
+sensing = "shadow"
+allocation = "borchert_honda"
+axis_bias = 0.53
+resource_coefficient = 7.0
+shadow_cell = 1.5
+shadow_strength = 0.12
+shadow_depth = 4
+shedding_threshold = 0.004
+bud_lifespan = 6
+
+[geometry]
+radius_model = "tapered"
+radius_ratio = 0.0007
+child_radius_exponent = 1.0
+taper = [[0.0, 1.0], [1.0, 0.7]]
+flare = 0.0
+collar_flare = 0.1
+radial_segments = [3, 5]
+
+[foliage]
+length = 0.014
+width_ratio = 0.3
+shape = "elliptic"
+segments = 2
+fold_deg = 10.0
+curvature_deg = -15.0
+petiole_length = 0.0
+inclination_deg = 65.0
+retention_cycles = 40
+color = [0.16, 0.36, 0.07]
+roughness = 0.35
+hue_variation = 0.08
+brightness_variation = 0.25
+size_variation = 0.25
+orientation_variation_deg = 15.0
+texture_resolution = 64
+venation = { kind = "none" }
+
+[bark]
+color = [0.16, 0.3, 0.08]
+roughness = 0.4
+texture_resolution = 32
+pattern = { kind = "smooth", feature_size = 0.004, coverage = 0.0, relief = 0.05 }
+
+[aquatic]
+water_depth = 1.4
+buoyancy = 0.35
+stiffness = 1.5e6
+stem_buoyancy = 0.03
+leaf_lift = 0.2
+leaf_flex = 0.3
+
+[variation]
+age = [8, 16]
+scale = [0.85, 1.15]
+weight = 0.0
+
+[variation.jitter]
+"growth.axis_length" = 0.15
+"growth.stems" = 0.3
+"growth.self_organization.axis_bias" = 0.02
+"foliage.color" = 0.1

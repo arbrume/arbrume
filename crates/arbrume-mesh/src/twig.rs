@@ -369,7 +369,7 @@ impl TemplateSet {
 }
 
 /// Distance of each vertex of `template` from its origin, divided by the largest.
-fn flutter_of(template: &LeafTemplate) -> Vec<f32> {
+pub(crate) fn flutter_of(template: &LeafTemplate) -> Vec<f32> {
     let reach = template
         .positions
         .iter()

@@ -15,7 +15,8 @@
 //! * [`Terrain`]: heights on a regular grid (16-bit PNG, explicit grid or procedural
 //!   hills), with bilinear height and slope.
 //! * [`Exclusions`]: clearings, roads, rivers (which can carve the terrain), polygons,
-//!   painted masks and a water level, each with a soft edge.
+//!   painted masks and a water level, each with a soft edge; aquatic species stand
+//!   under the water level instead of above it ([`underwater`]).
 //! * [`SpeciesRule`] and [`place`]: a species mix with densities, slope and altitude
 //!   preferences, placed by hard-core thinning of Poisson candidates, with random or
 //!   size priorities ([`Mode`]); deterministic, in bands of bounded memory, parallel.
@@ -50,6 +51,7 @@ mod place;
 mod rules;
 pub mod table;
 mod terrain;
+pub mod underwater;
 
 pub use config::{
     BillboardConfig, CircleConfig, CoupledConfig, ExcludeConfig, ForestConfig, GridConfig,

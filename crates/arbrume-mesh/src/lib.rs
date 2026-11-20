@@ -44,13 +44,16 @@
 
 mod axes;
 mod bark;
+mod blade_float;
 mod junction;
 mod leaf;
 mod leaves;
 pub mod lod;
 mod options;
+mod pad;
 mod provenance;
 mod ring;
+mod ripple;
 pub mod synthetic;
 pub mod topology;
 mod tube;
@@ -181,7 +184,8 @@ impl Mesher {
         let (foliage, bark) = (&species.foliage, &species.bark);
         let (tolerance, seed) = (options.tolerance, options.seed);
         let fraction = options.twig_leaf_fraction;
-        let template = TemplateSet::thinned(foliage, bark, tolerance, seed, fraction);
+        let mut template = TemplateSet::thinned(foliage, bark, tolerance, seed, fraction);
+        blade_float::add_blade_floats(&mut template, species);
         let (vertices, _) = leaves::leaf_counts(&template, self.leaves.organs.len());
         if u32::try_from(vertices).is_err() {
             return Err(MeshError::TooLarge { vertices });

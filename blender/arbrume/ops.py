@@ -306,6 +306,7 @@ class ARBRUME_OT_scatter(bpy.types.Operator):
             quality=args["quality"],
             textures=args["textures"],
             junctions=args["junctions"],
+            water=args["water"],
         )
 
     def execute(self, context):

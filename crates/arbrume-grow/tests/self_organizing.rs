@@ -222,6 +222,7 @@ fn a_tree_grows_away_from_a_wall() {
     let beside = Surroundings {
         envelope: None,
         occluders: vec![Occluder::obstacle(wall.clone())],
+        water: None,
     };
     let mut shift = 0.0;
     for seed in 0..4 {
@@ -263,6 +264,7 @@ fn shaded_lower_branches_are_shed() {
     let under = Surroundings {
         envelope: None,
         occluders: vec![Occluder::neighbour(canopy, 3.0)],
+        water: None,
     };
     let shaded = grow_in(&species, &params(3, 14), &under);
     let live_count = |graph: &PlantGraph| graph.flags().iter().filter(|f| !f.is_shed()).count();
@@ -294,6 +296,7 @@ fn an_envelope_is_respected() {
             let surroundings = Surroundings {
                 envelope: Some(envelope.clone()),
                 occluders: Vec::new(),
+                water: None,
             };
             let graph = grow_in(&species, &params(5, 12), &surroundings);
             graph.check_invariants().unwrap();
@@ -311,6 +314,7 @@ fn an_envelope_is_respected() {
     let surroundings = Surroundings {
         envelope: Some(voxels.clone()),
         occluders: Vec::new(),
+        water: None,
     };
     let graph = grow_in(&fixture(), &params(5, 12), &surroundings);
     let centre = Vec3::new(0.0, 2.0, 0.0);
@@ -416,6 +420,7 @@ fn parametric_species_ignore_their_surroundings() {
     let inside = Surroundings {
         envelope: None,
         occluders: vec![Occluder::obstacle(wall)],
+        water: None,
     };
     let params = params(1, 8);
     let plain = grow(&species, &params);
@@ -447,6 +452,7 @@ fn a_crown_leans_away_from_a_shading_wall() {
     let beside = Surroundings {
         envelope: None,
         occluders: vec![Occluder::neighbour(wall, 2.0)],
+        water: None,
     };
     for (seed, before) in (1..=3).zip(LEAN_FROM_EXPOSURE_ALONE) {
         let open = lean_towards_minus_x(&grow(&species, &params(seed, 14)));
@@ -484,6 +490,7 @@ fn a_trunk_rises_into_a_floating_voxel_envelope_as_into_an_analytic_one() {
         let surroundings = Surroundings {
             envelope: Some(envelope.clone()),
             occluders: Vec::new(),
+            water: None,
         };
         let graph = grow_in(&fixture(), &params(5, 16), &surroundings);
         graph.check_invariants().unwrap();

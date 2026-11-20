@@ -163,6 +163,38 @@ class VIEW3D_PT_arbrume_surroundings(bpy.types.Panel):
         _surroundings_status(layout, obj)
 
 
+class VIEW3D_PT_arbrume_water(bpy.types.Panel):
+    """Water surface and current of an aquatic plant"""
+
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = CATEGORY
+    bl_label = "Water"
+    bl_parent_id = MAIN_PANEL
+    bl_options: ClassVar[set[str]] = {"DEFAULT_CLOSED"}
+
+    @classmethod
+    def poll(cls, context):
+        return active_plant(context) is not None
+
+    def draw(self, context):
+        obj = active_plant(context)
+        settings = obj.arbrume
+        layout = self.layout
+        layout.enabled = plant.is_editable(obj)
+        if props.effective_species(settings).get("aquatic") is None:
+            layout.label(text="Land species ignore the water", icon="INFO")
+        col = layout.column()
+        col.use_property_split = True
+        col.use_property_decorate = False
+        col.prop(settings, "water_mode")
+        if settings.water_mode == "HEIGHT":
+            col.prop(settings, "water_height")
+        elif settings.water_mode == "OBJECT":
+            col.prop(settings, "water_object")
+        col.prop(settings, "water_current")
+
+
 class VIEW3D_PT_arbrume_tools(bpy.types.Panel):
     """Variations, batches, levels of detail and species files"""
 
@@ -282,4 +314,9 @@ def menu_add(self, _context) -> None:
     self.layout.operator("arbrume.add_plant", icon="OUTLINER_OB_POINTCLOUD")
 
 
-CLASSES = (VIEW3D_PT_arbrume, VIEW3D_PT_arbrume_surroundings, VIEW3D_PT_arbrume_tools)
+CLASSES = (
+    VIEW3D_PT_arbrume,
+    VIEW3D_PT_arbrume_surroundings,
+    VIEW3D_PT_arbrume_water,
+    VIEW3D_PT_arbrume_tools,
+)

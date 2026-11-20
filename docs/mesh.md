@@ -324,10 +324,12 @@ All defaults are starting points for tuning, not measured values.
 | Field | Default | Meaning |
 |---|---|---|
 | `geometry` | `"outline"` | `"outline"` mesh or `"card"` rectangle |
-| `shape` | `"ovate"` | blade outline: `elliptic`, `ovate`, `obovate`, `lanceolate`, `needle` |
+| `shape` | `"ovate"` | blade outline: `elliptic`, `ovate`, `obovate`, `lanceolate`, `needle`, `strap` (a ribbon of nearly constant width) or `pad` (a floating disc with a notch, centred on its site, never a card; [Underwater plants](underwater.md#geometry)) |
 | `segments` | 4 | most segments along the midrib of a blade (2 to 16), or 1 for a single triangle |
 | `fold_deg` | 15 | angle by which each half of the blade is raised about the midrib |
 | `curvature_deg` | 25 | bend of the blade from base to tip, positive towards its lower side |
+| `twist_deg` | 0 | twist of the blade about its midrib from base to tip |
+| `undulation`, `undulation_waves` | 0, 4 | amplitude of the waves of the margin, as a fraction of the half-width, and their number ([Underwater plants](underwater.md#geometry)) |
 | `petiole_length` | 0.15 | petiole length divided by the leaf length |
 | `leaflet_pairs` | 0 | pairs of lateral leaflets of a compound leaf, 0 for a simple leaf (at most 32) |
 | `leaflet_angle_deg` | 55 | angle between a lateral leaflet and the rachis |

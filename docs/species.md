@@ -49,6 +49,12 @@ Triangles are those of one plant at the stated age and full quality.
 | `maple_like_rooted` | broadleaf tree with roots | `maple_like` over a heart root system: oblique roots in a rounded mass | 45 | 13 m | 12 m | 0.4 m | 400 k |
 | `spruce_like_rooted` | conifer with roots | `spruce_like` over a plate root system with sinkers, the primaries showing at the trunk base | 45 | 18 m | 8.5 m | 0.35 m | 280 k |
 | `palm_like_rooted` | palm with roots | `palm_like` over a dense tuft of thin fibrous roots | 25 | 7 m | 5.5 m | 0.2 m | 48 k |
+| `kelp_like` | giant kelp, aquatic | holdfast of branched haptera, a dozen buoyant fronds of ruffled blades each with a float, a canopy spreading on the surface; in 10 m of water | 14 | 10 m | 16 m | 4 cm | 51 k |
+| `bull_kelp_like` | bull kelp, aquatic | one whip-like stipe swelling upwards, a single large float at the surface, a tuft of long ruffled blades trailing on it | 12 | 10 m | 5.6 m | 2 cm | 3.2 k |
+| `seagrass_like` | seagrass meadow, aquatic | a branching rhizome under the sand, a ramet of arching strap leaves at each node | 10 | 0.8 m | 3.3 m | | 11 k |
+| `ribbon_grass_like` | tape grass, aquatic | rosettes of long twisted ribbons on runners, the longest reaching the surface | 8 | 0.9 m | 3.7 m | | 6.1 k |
+| `waterweed_like` | waterweed, aquatic, self-organizing | slender stems in whorls of three small leaves, growing most near the surface and spreading under it in a mat | 12 | 1.4 m | 0.8 m | | 52 k |
+| `water_lily_like` | water lily, aquatic | a thick rhizome bearing crowns of long petioles, each ending in a notched pad floating on the surface | 7 | 0.95 m | 1.8 m | 5 cm | 2.6 k |
 
 `broadleaf`, `conifer` and `shrub` are the generic presets; the three files of the same
 names in `crates/arbrume-grow/tests/data/` are older starter species kept as test
@@ -56,7 +62,7 @@ fixtures of the growth engine.
 
 ## How the presets are built
 
-Ten presets grow in the self-organizing mode (the three climbers and the seven of the
+Eleven presets grow in the self-organizing mode (the three climbers, `waterweed_like` and the seven of the
 next section); the others use the parametric growth mode ([Growth](growth.md)). All use
 the foliage and bark of the mesher ([Meshing](mesh.md)). In the parametric presets a few devices recur:
 
@@ -88,6 +94,20 @@ the foliage and bark of the mesher ([Meshing](mesh.md)). In the parametric prese
   spreading decurrent tree, and needles with two opaque variants and the spray of their
   fins on the conifers. Trees use 512 texel bark and leaves, shrubs and needles 256, herbs
   less.
+
+## Aquatic presets
+
+`kelp_like`, `bull_kelp_like`, `seagrass_like`, `ribbon_grass_like`, `waterweed_like`
+and `water_lily_like` have an `[aquatic]` table ([Underwater plants](underwater.md)):
+they grow under the water of their surroundings, or in still water as deep as their
+`aquatic.water_depth` (10 m for the kelps, 0.9 to 1.5 m for the others). Heights in the
+table of presets are those of the surface in that water; widths include the canopy,
+the pads and, for the meadows, the spread of the rhizome. Their `variation.weight` is 0:
+an aquatic plant is only itself in water, so the random sampler leaves them out and the
+random mix is unchanged; scenes that provide water draw them by name
+(`examples/underwater/`). Their ages: `kelp_like` 8 to 20, `bull_kelp_like` 6 to 16,
+`seagrass_like` 6 to 14, `ribbon_grass_like` 5 to 12, `waterweed_like` 8 to 16,
+`water_lily_like` 4 to 9.
 
 ## Climbing presets
 

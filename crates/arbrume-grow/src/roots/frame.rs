@@ -140,6 +140,7 @@ impl<'a> SoilView<'a> {
             turned: Surroundings {
                 envelope: None,
                 occluders,
+                water: None,
             },
         }
     }
@@ -243,6 +244,7 @@ mod tests {
         let surroundings = Surroundings {
             envelope: None,
             occluders: vec![Occluder::obstacle(rock)],
+            water: None,
         };
         let view = SoilView::new(&soil, &surroundings, 3.0, 0.1);
         let turned = |p: Vec3| view.mirror.point(p);

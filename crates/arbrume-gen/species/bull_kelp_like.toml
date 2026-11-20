@@ -1,0 +1,99 @@
+# Bull-kelp-like plant: one long whip-like stipe, thin at the holdfast and swelling
+# towards the top, ends at the surface in a single large gas float from which a tuft
+# of long ribbon blades trails on the water.
+#
+# Typical size at age 12 in 10 m of water: a stipe of 10 m, blades of 2 to 3 m. Every
+# value is a starting point chosen by eye, not a measurement; the morphology follows
+# the descriptions cited in docs/underwater.md.
+
+schema_version = 0
+name = "Bull-kelp-like alga"
+
+[architecture]
+branching = "monopodial"
+growth_rhythm = "continuous"
+branching_pattern = "diffuse"
+branch_timing = "proleptic"
+max_order = 0
+
+[growth]
+stems = 1
+axis_length = 14.0
+shoot_length = 1.2
+length_variation = 0.1
+internode_length = [[0.0, 0.12], [0.02, 0.5], [1.0, 0.5]]
+branch_probability = 0.0
+direction_variation = 3.0
+gnarl = 8.0
+gravitropic_setpoint = 0.0
+tropism_weight = 0.05
+
+[geometry]
+radius_model = "tapered"
+radius_ratio = 0.0013
+taper = [[0.0, 0.4], [0.7, 0.75], [1.0, 1.0]]
+flare = 0.0
+collar_flare = 0.0
+radial_segments = [4, 10]
+
+[foliage]
+length = 2.4
+width_ratio = 0.045
+shape = "strap"
+segments = 16
+fold_deg = 2.0
+curvature_deg = 6.0
+undulation = 0.6
+undulation_waves = 10.0
+twist_deg = 40.0
+petiole_length = 0.0
+inclination_deg = 30.0
+retention_cycles = 60
+color = [0.38, 0.26, 0.06]
+roughness = 0.35
+hue_variation = 0.05
+brightness_variation = 0.25
+size_variation = 0.3
+orientation_variation_deg = 4.0
+texture_resolution = 256
+venation = { kind = "none" }
+
+[bark]
+color = [0.24, 0.16, 0.04]
+young_color = [0.32, 0.22, 0.05]
+young_radius = 0.01
+roughness = 0.3
+texture_resolution = 64
+pattern = { kind = "smooth", feature_size = 0.01, coverage = 0.0, relief = 0.05 }
+
+[aquatic]
+water_depth = 10.0
+buoyancy = 0.4
+surface = "stop"
+stiffness = 6.0e6
+stem_buoyancy = 0.02
+leaf_lift = 0.3
+leaf_flex = 0.7
+float_color = [0.3, 0.21, 0.05]
+
+[aquatic.tip_float]
+radius = 0.065
+length = 0.22
+blades = 28
+
+[aquatic.holdfast]
+haptera = 10
+reach = 0.2
+radius = 0.009
+forks = 2
+variation = 0.3
+
+[variation]
+age = [6, 16]
+scale = [0.85, 1.15]
+weight = 0.0
+
+[variation.jitter]
+"growth.axis_length" = 0.1
+"foliage.length" = 0.2
+"foliage.color" = 0.1

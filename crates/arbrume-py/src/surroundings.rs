@@ -174,16 +174,18 @@ fn from_dict(dict: &Bound<'_, PyDict>) -> PyResult<Surroundings> {
     let mut surroundings = Surroundings::none();
     for (key, value) in dict.iter() {
         match key.extract::<String>()?.as_str() {
-            "envelope" if value.is_none() => {}
+            "envelope" | "water" if value.is_none() => {}
             "envelope" => surroundings.envelope = Some(shape(&value, "envelope")?),
             "occluders" => {
                 for (index, item) in value.try_iter()?.enumerate() {
                     surroundings.occluders.push(occluder(&item?, index)?);
                 }
             }
+            "water" => surroundings.water = Some(crate::water::parse(&value)?),
             other => {
                 return Err(PyValueError::new_err(format!(
-                    "surroundings: unknown key `{other}`, expected `envelope` or `occluders`"
+                    "surroundings: unknown key `{other}`, expected `envelope`, `occluders` \
+                     or `water`"
                 )));
             }
         }

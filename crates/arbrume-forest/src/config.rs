@@ -189,6 +189,15 @@ pub struct SpeciesConfig {
     /// Extra depth of the base, in meters.
     #[serde(default)]
     pub sink: f32,
+    /// Water depths taken fully by an aquatic species, in meters below
+    /// `placement.water_level` (docs/underwater.md); any depth by default.
+    pub depth: Option<[f32; 2]>,
+    /// Fade outside `depth`, in meters.
+    #[serde(default)]
+    pub depth_falloff: f32,
+    /// Scale each tree of an aquatic species so that its surface canopy meets the water
+    /// surface over its own ground (true by default).
+    pub fit_depth: Option<bool>,
 }
 
 const fn default_overlap() -> f32 {
@@ -604,6 +613,8 @@ impl ForestConfig {
         radii: Option<(f32, f32)>,
     ) -> Result<SpeciesRule, ForestError> {
         let entry = &self.species[index];
+        let water = crate::underwater::placement(entry, species, self.placement.water_level)
+            .map_err(|reason| ForestError::Config(format!("species {index}: {reason}")))?;
         let scale = entry.scale.unwrap_or(species.variation.scale);
         let mean_scale = f32::midpoint(scale[0], scale[1]);
         let spacing = match (entry.spacing, radii) {
@@ -622,13 +633,17 @@ impl ForestConfig {
             scale,
             slope: entry.slope,
             slope_falloff: entry.slope_falloff,
-            altitude: entry.altitude.unwrap_or([f32::NEG_INFINITY, f32::INFINITY]),
-            altitude_falloff: entry.altitude_falloff,
+            altitude: water
+                .altitude
+                .or(entry.altitude)
+                .unwrap_or([f32::NEG_INFINITY, f32::INFINITY]),
+            altitude_falloff: water.falloff.unwrap_or(entry.altitude_falloff),
             variants: entry.variants.max(1),
             lean_deg: entry.lean,
             tint: entry.tint,
             trunk_radius: radii.map_or(0.0, |(_, trunk)| trunk),
             sink: entry.sink,
+            underwater: water.underwater,
         })
     }
 }

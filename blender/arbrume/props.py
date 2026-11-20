@@ -31,6 +31,7 @@ from bpy.props import (
 from . import plant, surroundings
 from .logic import roots as root_modes
 from .logic import schema
+from .logic import water as water_logic
 from .logic.packs import display_name
 from .logic.species import readable_name
 from .logic.values import (
@@ -241,6 +242,36 @@ class ARBRUME_PG_plant(bpy.types.PropertyGroup):
         min=0.0,
         soft_max=0.5,
         subtype="DISTANCE",
+        update=_changed,
+    )
+    water_mode: EnumProperty(
+        name="Water Surface",
+        description="Where the surface of the water of an aquatic plant is",
+        items=water_logic.MODES,
+        default="SPECIES",
+        update=_changed,
+    )
+    water_height: FloatProperty(
+        name="Height",
+        description="Height of the water surface above the plant",
+        default=2.0,
+        min=0.01,
+        subtype="DISTANCE",
+        update=_changed,
+    )
+    water_object: PointerProperty(
+        name="Surface Object",
+        description="Object whose top is the water surface, such as a plane",
+        type=bpy.types.Object,
+        update=_changed,
+    )
+    water_current: FloatVectorProperty(
+        name="Current",
+        description="Steady current along X and Y, in meters per second",
+        size=2,
+        default=(0.0, 0.0),
+        soft_min=-2.0,
+        soft_max=2.0,
         update=_changed,
     )
     curve_order: IntProperty(

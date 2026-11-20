@@ -14,7 +14,7 @@ use glam::Vec3;
 
 let ivy = arbrume_gen::preset("ivy_like").unwrap();
 let wall = Shape::Box { min: Vec3::new(-3.0, 0.0, -0.42), max: Vec3::new(3.0, 4.0, -0.12) };
-let surroundings = Surroundings { envelope: None, occluders: vec![Occluder::obstacle(wall)] };
+let surroundings = Surroundings { occluders: vec![Occluder::obstacle(wall)], ..Surroundings::none() };
 let graph = grow_in(&ivy, &GrowParams { seed: 4, age: 16, scale: 1.0 }, &surroundings);
 ```
 

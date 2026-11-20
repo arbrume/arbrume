@@ -320,6 +320,7 @@ its own fields, so layers can be extended independently.
 | `[variation]` | `variation.rs` | `age` and `scale` ranges, `weight`, and the `[variation.jitter]` table (below) |
 | `[climbing]` | `climbing.rs` | optional: `attachment` (adhesive, tendril, twining), reach and search distances, gap, droop, tendrils, rootlets, leaf facing ([Climbing plants](climbing.md)) |
 | `[roots]` | `roots.rs` | optional: the root system below the collar: `habit` (tap, heart, plate, fibrous), `mode`, primaries, lengths, branching and tropism curves, sinkers, pipe balance, flare, exposure ([Roots](roots.md)) |
+| `[aquatic]` | `aquatic.rs` | optional: growth under water: `water_depth`, `buoyancy`, `surface` (spread, stop), stiffness, buoyancy and drag of stems and leaves, floating leaves, pads, blade floats, and the sub-tables `holdfast`, `tip_float` and `rhizome` ([Underwater plants](underwater.md)) |
 
 Growth curves take one of two positions, stated in the documentation of each field:
 *along the parent* (where the axis is attached, 0 at the parent's base) or *along the

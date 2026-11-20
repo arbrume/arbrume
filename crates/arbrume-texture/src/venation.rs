@@ -30,7 +30,7 @@
 //! that paper, not its simulation.
 
 use crate::noise::{random, smoothstep};
-use arbrume_core::species::{Foliage, MarginKind, VenationKind};
+use arbrume_core::species::{BladeShape, Foliage, MarginKind, PAD_NOTCH_HALF_ANGLE, VenationKind};
 use glam::Vec2;
 
 /// A vein segment in the frame of a blade, widths in blade lengths.
@@ -229,7 +229,11 @@ impl<'a> Blade<'a> {
         }
         let side = if q.y < 0.0 { -1.0 } else { 1.0 };
         let across = self.width(q.x.clamp(0.0, 1.0), side) - q.y.abs();
-        across.min(q.x).min(1.0 - q.x)
+        let inside = across.min(q.x).min(1.0 - q.x);
+        if self.foliage.shape == BladeShape::Pad {
+            return inside.min(pad_notch(q));
+        }
+        inside
     }
 
     /// [`Blade::inside`] for palmate lobes: in polar coordinates about the base, the
@@ -349,4 +353,15 @@ fn arc(a: Vec2, c: Vec2, b: Vec2, widths: [f32; 2], pieces: u32) -> Vec<Vein> {
             }
         })
         .collect()
+}
+
+/// Signed distance from the point `q` of a pad (blade frame, centre at `x = 0.5`) out
+/// of its notch: negative inside the wedge that runs from the centre to the base edge.
+fn pad_notch(q: Vec2) -> f32 {
+    let back = 0.5 - q.x;
+    if back <= 0.0 {
+        return q.distance(Vec2::new(0.5, 0.0));
+    }
+    let (sin, cos) = PAD_NOTCH_HALF_ANGLE.sin_cos();
+    q.y.abs() * cos - back * sin
 }
